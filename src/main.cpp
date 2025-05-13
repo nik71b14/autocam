@@ -29,6 +29,7 @@
 #include "voxelVolume.hpp"
 #include "quadtreeFlat.hpp"
 #include "transitionCompressor.hpp"
+#include "transitionCompressorGPU.hpp"
 
 const int RESOLUTION = 1024;
 const char* STL_PATH = "models/model3_bin.stl";
@@ -42,7 +43,11 @@ GLuint vao, vbo, ebo;
 Shader* shader;
 VoxelVolume volume1;
 QuadtreeVolume volume2(RESOLUTION, RESOLUTION);
-TransitionCompressor compressor(RESOLUTION, RESOLUTION);
+TransitionCompressor transitionCompressor(RESOLUTION, RESOLUTION);
+TransitionCompressorGPU transitionCompressorGPU(RESOLUTION, RESOLUTION); //###
+
+// Compute shader
+Shader* computeShader; //###
 
 // --- Initialization ---
 void setupGL() {
@@ -64,7 +69,8 @@ void createFramebuffer() {
 
     glGenTextures(1, &colorTex);
     glBindTexture(GL_TEXTURE_2D, colorTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, RESOLUTION, RESOLUTION, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, RESOLUTION, RESOLUTION, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, RESOLUTION, RESOLUTION, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr); //###
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
@@ -203,7 +209,7 @@ void sliceModel(int triangleCount, float zSpan, bool preview = false) {
         // Read pixels from offscreen framebuffer
         glReadPixels(0, 0, RESOLUTION, RESOLUTION, GL_RGBA, GL_UNSIGNED_BYTE, pixelBuffer.data());
 
-        // Compress the pixel buffer
+        // Compress pixelBuffer into a bit matrix
         std::vector<uint8_t> compressed((RESOLUTION * RESOLUTION + 7) / 8, 0);
         for (int j = 0; j < RESOLUTION * RESOLUTION; ++j) {
             int byteIndex = j / 8;
@@ -212,13 +218,13 @@ void sliceModel(int triangleCount, float zSpan, bool preview = false) {
                 compressed[byteIndex] |= (1 << bitIndex);
         }
 
-        // Store slice in transition compressor
-        compressor.addSlice(pixelBuffer);
+        // Compress pixelBuffer into a transitions array
+        transitionCompressor.addSlice(pixelBuffer);
 
         if (i % (RESOLUTION / 10) == 0)
-            std::cout << "Progress: " << (100 * i / RESOLUTION) << "%\n";
+        std::cout << "Progress: " << (100 * i / RESOLUTION) << "%\n";
 
-        // Optional preview on screen
+        //@@@ Optional preview on screen
         if (preview) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0); // Back to default framebuffer (window)
             glViewport(0, 0, RESOLUTION, RESOLUTION);
@@ -243,11 +249,99 @@ void sliceModel(int triangleCount, float zSpan, bool preview = false) {
     std::cout << "Quadtree compressed size: " << volume2Size / (1024.0 * 1024.0) << " MB\n";
     std::cout << "Memory savings: " << savings << " %\n";
 
-    size_t transitionCompressedSize = compressor.getSize() * sizeof(uint32_t);
+    size_t transitionCompressedSize = transitionCompressor.getSize() * sizeof(uint32_t);
     std::cout << "Transition compressed size: " << transitionCompressedSize / (1024.0 * 1024.0) << " MB\n";
     double savings2 = 100.0 * (static_cast<double>(compressedSize) - static_cast<double>(transitionCompressedSize)) / static_cast<double>(compressedSize);
     std::cout << "Memory savings (transition): " << savings2 << " %\n";
-    std::cout << "Transition compressor size: " << compressor.getSize() / (1024.0 * 1024.0) << " MB\n";
+    std::cout << "Transition compressor size: " << transitionCompressor.getSize() / (1024.0 * 1024.0) << " MB\n";
+}
+
+void sliceModel2(int triangleCount, float zSpan) {
+    GLuint transitionSSBO, counterSSBO;
+    const size_t MAX_TRANSITIONS = RESOLUTION * RESOLUTION * 2;
+
+    glGenBuffers(1, &transitionSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_TRANSITIONS * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, transitionSSBO);
+
+    glGenBuffers(1, &counterSSBO);
+    uint32_t counterInit = 0;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(uint32_t), &counterInit, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, counterSSBO);
+
+    computeShader->use();
+    computeShader->setUInt("resolution", RESOLUTION);
+
+    for (int i = 0; i < RESOLUTION; ++i) {
+        float z = zSpan / 2.0f - static_cast<float>(i) * zSpan / RESOLUTION;
+        glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), z);
+
+        shader->use();
+        shader->setMat4("projection", glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan));
+        shader->setMat4("view", glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0)));
+        shader->setMat4("model", glm::mat4(1.0f));
+        shader->setVec4("clippingPlane", clippingPlane);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glViewport(0, 0, RESOLUTION, RESOLUTION);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+
+        glBindVertexArray(vao);
+        glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
+
+        // Bind framebuffer texture
+        glBindImageTexture(0, colorTex, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA8);
+
+        // Reset counter
+        counterInit = 0;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterSSBO);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(uint32_t), &counterInit);
+
+        // Dispatch compute shader
+        computeShader->use();
+        glDispatchCompute(RESOLUTION, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+
+        // Read counter
+        uint32_t count = 0;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterSSBO);
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(uint32_t), &count);
+
+        // Read transitions
+        std::vector<uint32_t> transitions(count);
+        if (count > 0) {
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+            glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, count * sizeof(uint32_t), transitions.data());
+
+            transitionCompressorGPU.addTransitionSlice(transitions);  // Implementa questo metodo
+        }
+
+        if (i % (RESOLUTION / 10) == 0)
+            std::cout << "Progress: " << (100 * i / RESOLUTION) << "%\n";
+    }
+
+    //@@@ Performance Information Output
+    size_t compressedSize = static_cast<size_t>(RESOLUTION) * static_cast<size_t>(RESOLUTION) * static_cast<size_t>(RESOLUTION) / 8;
+    std::cout << "Size of uint8_t: " << sizeof(uint8_t) << " bytes\n";
+
+    size_t volume2Size = volume2.getDataSize();
+    double savings = 100.0 * (static_cast<double>(compressedSize) - static_cast<double>(volume2Size)) / static_cast<double>(compressedSize);
+
+    std::cout << "Bit compressed size: " << compressedSize / (1024.0 * 1024.0) << " MB\n";
+    std::cout << "Quadtree compressed size: " << volume2Size / (1024.0 * 1024.0) << " MB\n";
+    std::cout << "Memory savings: " << savings << " %\n";
+
+    size_t transitionCompressedSize = transitionCompressor.getSize() * sizeof(uint32_t);
+    std::cout << "Transition compressed size: " << transitionCompressedSize / (1024.0 * 1024.0) << " MB\n";
+    double savings2 = 100.0 * (static_cast<double>(compressedSize) - static_cast<double>(transitionCompressedSize)) / static_cast<double>(compressedSize);
+    std::cout << "Memory savings (transition): " << savings2 << " %\n";
+    std::cout << "Transition compressor size: " << transitionCompressorGPU.getSize() / (1024.0 * 1024.0) << " MB\n";
+
+    glDeleteBuffers(1, &transitionSSBO);
+    glDeleteBuffers(1, &counterSSBO);
 }
 
 
@@ -362,6 +456,7 @@ int main() {
         uploadMesh(vertices, indices);
 
         shader = new Shader("shaders/vertex_ok.glsl", "shaders/fragment_ok.glsl");
+        computeShader = new Shader("shaders/transition_compress.comp"); //###
 
         createFramebuffer();
 
@@ -403,7 +498,11 @@ int main() {
 
         auto startTime = std::chrono::high_resolution_clock::now();
 
+        // Slice using the CPU (CPU)
         sliceModel(indices.size(), zSpan, true);
+
+        // Slice using a compute shader (GPU)
+        //sliceModel2(indices.size(), zSpan);
 
         auto endTime = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsedTime = endTime - startTime;

@@ -13,6 +13,7 @@ class Shader {
 public:
     unsigned int ID;
 
+    // Vertex and fragment shader constructor
     Shader(const char* vertexPath, const char* fragmentPath) {
         std::string vertexCode, fragmentCode;
         std::ifstream vShaderFile(vertexPath), fShaderFile(fragmentPath);
@@ -41,8 +42,33 @@ public:
         glDeleteShader(fragment);
     }
 
+    // Compute shader constructor
+    Shader(const char* computePath) {
+        std::ifstream cShaderFile(computePath);
+        if (!cShaderFile.is_open())
+            throw std::runtime_error("Failed to open compute shader file");
+
+        std::stringstream cShaderStream;
+        cShaderStream << cShaderFile.rdbuf();
+        std::string computeCode = cShaderStream.str();
+
+        unsigned int compute = compile(GL_COMPUTE_SHADER, computeCode.c_str());
+
+        ID = glCreateProgram();
+        glAttachShader(ID, compute);
+        glLinkProgram(ID);
+
+        checkLinkErrors(ID);
+        glDeleteShader(compute);
+    }
+
+
     void use() const {
         glUseProgram(ID);
+    }
+
+    void setUInt(const std::string& name, unsigned int value) const {
+        glUniform1ui(glGetUniformLocation(ID, name.c_str()), value);
     }
 
     void setMat4(const std::string &name, const glm::mat4 &mat) const {
