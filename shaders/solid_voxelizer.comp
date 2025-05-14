@@ -1,0 +1,124 @@
+#version 450
+
+// This shader runs one thread per triangle.
+// It tests which voxels the triangle intersects and marks them using atomicOr.
+// The result is a bit-packed solid voxel grid.
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer Voxels {
+    uint voxels[];
+};
+
+layout(std430, binding = 1) readonly buffer Vertices {
+    vec3 vertices[];
+};
+
+layout(std430, binding = 2) readonly buffer Indices {
+    uint indices[];
+};
+
+uniform int gridRes;
+uniform int triangleCount;
+uniform vec3 bboxMin;
+uniform vec3 bboxMax;
+
+vec3 toGridSpace(vec3 p) {
+    return (p - bboxMin) / (bboxMax - bboxMin) * float(gridRes);
+}
+
+void setVoxel(uint flatIndex) {
+    uint wordIndex = flatIndex / 32;
+    uint bitOffset = flatIndex % 32;
+    atomicOr(voxels[wordIndex], 1u << bitOffset);
+}
+
+// SAT-based triangle-AABB test
+// Ref: Tomas Akenine-Möller – "Fast 3D Triangle-Box Overlap Testing"
+bool triangleAABBIntersect(vec3 v0, vec3 v1, vec3 v2, vec3 boxCenter, vec3 boxHalfSize) {
+    vec3 e0 = v1 - v0;
+    vec3 e1 = v2 - v1;
+    vec3 e2 = v0 - v2;
+
+    vec3 f0 = abs(e0);
+    vec3 f1 = abs(e1);
+    vec3 f2 = abs(e2);
+
+    vec3 v0c = v0 - boxCenter;
+    vec3 v1c = v1 - boxCenter;
+    vec3 v2c = v2 - boxCenter;
+
+    // 1. Test the 9 axes perpendicular to the triangle edges and box axes
+    #define AXISTEST(a, b, fa, fb) { \
+        float p0 = a * v0c.y - b * v0c.z; \
+        float p1 = a * v1c.y - b * v1c.z; \
+        float p2 = a * v2c.y - b * v2c.z; \
+        float r = fa * boxHalfSize.y + fb * boxHalfSize.z; \
+        if (max(-max(p0, max(p1, p2)), min(p0, min(p1, p2))) > r) return false; \
+    }
+
+    AXISTEST(e0.z, e0.y, f0.z, f0.y);
+    AXISTEST(e0.z, e0.x, f0.z, f0.x);
+    AXISTEST(e0.y, e0.x, f0.y, f0.x);
+
+    AXISTEST(e1.z, e1.y, f1.z, f1.y);
+    AXISTEST(e1.z, e1.x, f1.z, f1.x);
+    AXISTEST(e1.y, e1.x, f1.y, f1.x);
+
+    AXISTEST(e2.z, e2.y, f2.z, f2.y);
+    AXISTEST(e2.z, e2.x, f2.z, f2.x);
+    AXISTEST(e2.y, e2.x, f2.y, f2.x);
+
+    // 2. Test overlap in the box's axes
+    float minT, maxT;
+
+    // X-axis
+    minT = min(v0c.x, min(v1c.x, v2c.x));
+    maxT = max(v0c.x, max(v1c.x, v2c.x));
+    if (minT > boxHalfSize.x || maxT < -boxHalfSize.x) return false;
+
+    // Y-axis
+    minT = min(v0c.y, min(v1c.y, v2c.y));
+    maxT = max(v0c.y, max(v1c.y, v2c.y));
+    if (minT > boxHalfSize.y || maxT < -boxHalfSize.y) return false;
+
+    // Z-axis
+    minT = min(v0c.z, min(v1c.z, v2c.z));
+    maxT = max(v0c.z, max(v1c.z, v2c.z));
+    if (minT > boxHalfSize.z || maxT < -boxHalfSize.z) return false;
+
+    // 3. Test if the triangle's normal intersects the box
+    vec3 normal = cross(e0, e1);
+    float d = -dot(normal, v0c);
+    vec3 boxExtents = vec3(boxHalfSize);
+    float r = boxExtents.x * abs(normal.x) + boxExtents.y * abs(normal.y) + boxExtents.z * abs(normal.z);
+    if (abs(d) > r) return false;
+
+    return true;
+}
+
+void main() {
+    uint triID = gl_GlobalInvocationID.x;
+    if (triID >= triangleCount) return;
+
+    uint i0 = indices[triID * 3 + 0];
+    uint i1 = indices[triID * 3 + 1];
+    uint i2 = indices[triID * 3 + 2];
+
+    vec3 v0 = toGridSpace(vertices[i0]);
+    vec3 v1 = toGridSpace(vertices[i1]);
+    vec3 v2 = toGridSpace(vertices[i2]);
+
+    ivec3 minV = ivec3(clamp(floor(min(v0, min(v1, v2))), vec3(0), vec3(gridRes - 1)));
+    ivec3 maxV = ivec3(clamp(ceil(max(v0, max(v1, v2))), vec3(0), vec3(gridRes - 1)));
+
+    for (int z = minV.z; z <= maxV.z; ++z)
+    for (int y = minV.y; y <= maxV.y; ++y)
+    for (int x = minV.x; x <= maxV.x; ++x) {
+        vec3 center = vec3(x + 0.5, y + 0.5, z + 0.5);
+        if (triangleAABBIntersect(v0, v1, v2, center, vec3(0.5))) {
+            uint flatIndex = uint(x + y * gridRes + z * gridRes * gridRes);
+            setVoxel(flatIndex);
+        }
+    }
+}
