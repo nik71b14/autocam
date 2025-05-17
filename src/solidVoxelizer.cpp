@@ -12,14 +12,20 @@
 #include <assimp/postprocess.h>
 #include "voxelizerComputeShader.hpp"
 #include "meshLoader.hpp"
+#include "glUtils.hpp"
 
 void solidVoxelize(const char* stlPath, GLuint& voxelSSBO, GLuint& vertexSSBO, GLuint& indexSSBO, VoxelizerComputeShader* computeShader, const glm::vec3& bboxMin, const glm::vec3& bboxMax) {
-  std::vector<float> vertices;
+  std::vector<glm::vec3> vertices;  // changed here
   std::vector<unsigned int> indices;
-  float zSpan = 1.01f * loadMesh(stlPath, vertices, indices);
+  float zSpan = 1.01f * loadMeshVec3(stlPath, vertices, indices);  // changed here
   std::cout << "zSpan: " << zSpan << std::endl;
 
-  const int GRID_RES = 256;
+  // If your computeBoundingBox expects std::vector<float>, you need to adapt it to accept std::vector<glm::vec3>
+  auto [bbMin, bbMax] = computeBoundingBoxVec3(vertices);
+  std::cout << "Min scaled coordinates: (" << bbMin.x << ", " << bbMin.y << ", " << bbMin.z << ")\n";
+  std::cout << "Max scaled coordinates: (" << bbMax.x << ", " << bbMax.y << ", " << bbMax.z << ")\n";
+
+  const int GRID_RES = 1024;
   const int TRIANGLE_COUNT = indices.size() / 3;
   const size_t TOTAL_VOXELS = GRID_RES * GRID_RES * GRID_RES;
   const size_t WORD_COUNT = (TOTAL_VOXELS + 31) / 32;
@@ -45,6 +51,57 @@ void solidVoxelize(const char* stlPath, GLuint& voxelSSBO, GLuint& vertexSSBO, G
   computeShader->setVec3("bboxMin", bboxMin);
   computeShader->setVec3("bboxMax", bboxMax);
 
-  glDispatchCompute((TRIANGLE_COUNT + 63) / 64, 1, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  glDispatchCompute((TRIANGLE_COUNT + 63) / 64, 1, 1); // Rounds up to the nearest multiple of 64 without using floating point division
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure all writes to the SSBO are finished before reading
+}
+
+void solidVoxelizeTransition(
+  const char* stlPath,
+  GLuint& transitionsSSBO,
+  GLuint& vertexSSBO,
+  GLuint& indexSSBO,
+  VoxelizerComputeShader* computeShader,
+  const glm::vec3& bboxMin,
+  const glm::vec3& bboxMax)
+{
+    std::vector<glm::vec3> vertices;
+    std::vector<unsigned int> indices;
+    float zSpan = 1.01f * loadMeshVec3(stlPath, vertices, indices);
+    std::cout << "zSpan: " << zSpan << std::endl;
+
+    auto [bbMin, bbMax] = computeBoundingBoxVec3(vertices);
+    std::cout << "Min scaled coordinates: (" << bbMin.x << ", " << bbMin.y << ", " << bbMin.z << ")\n";
+    std::cout << "Max scaled coordinates: (" << bbMax.x << ", " << bbMax.y << ", " << bbMax.z << ")\n";
+
+    const int GRID_RES = 1024;
+    const int TRIANGLE_COUNT = indices.size() / 3;
+    const int MAX_TRANSITIONS_PER_COLUMN = 32; // tune this
+
+    // Buffer size for transitions: gridRes * gridRes * maxTransitions * uint
+    size_t transitionsCount = GRID_RES * GRID_RES * MAX_TRANSITIONS_PER_COLUMN;
+
+    glGenBuffers(1, &transitionsSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionsSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, transitionsCount * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, transitionsSSBO);
+
+    glGenBuffers(1, &vertexSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertexSSBO);
+
+    glGenBuffers(1, &indexSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexSSBO);
+
+    computeShader->use();
+    computeShader->setInt("gridRes", GRID_RES);
+    computeShader->setInt("triangleCount", TRIANGLE_COUNT);
+    computeShader->setInt("maxTransitions", MAX_TRANSITIONS_PER_COLUMN);
+    computeShader->setVec3("bboxMin", bboxMin);
+    computeShader->setVec3("bboxMax", bboxMax);
+
+    glDispatchCompute((TRIANGLE_COUNT + 63) / 64, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }

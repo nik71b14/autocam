@@ -35,6 +35,7 @@
 
 // Solid voxelizer using shader (GPU)
 #include "solidVoxelizer.hpp"
+#include "glUtils.hpp"
 
 const int RESOLUTION = 512;
 const char* STL_PATH = "models/model3_bin.stl";
@@ -373,6 +374,8 @@ int main() {
 
         std::vector<float> vertices;
         std::vector<unsigned int> indices;
+
+        /*
         float zSpan = 1.01f * loadMesh(STL_PATH, vertices, indices);
 
         std::cout << "Number of vertices: " << vertices.size() / 3 << std::endl;
@@ -385,49 +388,47 @@ int main() {
 
         createFramebuffer();
 
-        /*
         // ---------------------------------------------------------------
         //@@@ DEBUG: static rendering for testing
-        glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan); // Last two terms referred to eye position, are distances from the eye to the near and far planes
+        // glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan); // Last two terms referred to eye position, are distances from the eye to the near and far planes
 
-        glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-        glm::mat4 model = glm::mat4(1.0f);
+        // glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        // glm::mat4 model = glm::mat4(1.0f);
     
-        shader->use();
-        shader->setMat4("projection", projection);
-        shader->setMat4("view", view);
-        shader->setMat4("model", model);
+        // shader->use();
+        // shader->setMat4("projection", projection);
+        // shader->setMat4("view", view);
+        // shader->setMat4("model", model);
 
-        glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), 0.0f);
-        shader->setVec4("clippingPlane", clippingPlane);
+        // glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), 0.0f);
+        // shader->setVec4("clippingPlane", clippingPlane);
 
-        // Set up framebuffer
-        // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, RESOLUTION, RESOLUTION);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glEnable(GL_DEPTH_TEST);
+        // // Set up framebuffer
+        // // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        // glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // glViewport(0, 0, RESOLUTION, RESOLUTION);
+        // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        // glEnable(GL_DEPTH_TEST);
 
-        // Draw the mesh
-        glBindVertexArray(vao);
-        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        // // Draw the mesh
+        // glBindVertexArray(vao);
+        // glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
 
-        glfwSwapBuffers(window);
+        // glfwSwapBuffers(window);
 
-        glfwPollEvents();
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-        return EXIT_SUCCESS;
+        // glfwPollEvents();
+        // std::this_thread::sleep_for(std::chrono::seconds(2));
+        // return EXIT_SUCCESS;
         // ---------------------------------------------------------------
-        */
-
+        
         auto startTime = std::chrono::high_resolution_clock::now();
 
-        // Slice using the CPU (CPU)
+        // ---> Slice using the CPU (CPU)
         //sliceModel(indices.size(), zSpan, true);
 
-        // Slice using a compute shader (GPU)
-        sliceModel2(indices.size(), zSpan);
+        // ---> Slice using a compute shader (GPU)
+        //sliceModel2(indices.size(), zSpan);
 
         auto endTime = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsedTime = endTime - startTime;
@@ -443,19 +444,32 @@ int main() {
         delete shader;
         glfwDestroyWindow(window);
         glfwTerminate();
-
+        */
 
         // Solid voxelizer using shader (GPU) #################################
-        VoxelizerComputeShader computeShader("shaders/solid_voxelizer.comp");
+        std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+        std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+        queryGPULimits();
+
+        
 
         // Voxelization parameters
+        // An SSBO (Shader Storage Buffer Object) is an OpenGL buffer object that allows read and write access to a large block of memory
+        // from within shader programs, particularly compute shaders, but also vertex, geometry, and fragment shaders if needed.
         GLuint voxelSSBO, vertexSSBO, indexSSBO;
         glm::vec3 bboxMin(-1.0f, -1.0f, -1.0f);  // Example bounding box min
         glm::vec3 bboxMax(1.0f, 1.0f, 1.0f);    // Example bounding box max
         
-        // Perform voxelization
-        solidVoxelize("path/to/model.stl", voxelSSBO, vertexSSBO, indexSSBO, &computeShader, bboxMin, bboxMax);
+        // ---> Perform GPU voxelization using the compute shader
+        //VoxelizerComputeShader computeShader("shaders/solid_voxelizer.comp");
+        //solidVoxelize(STL_PATH, voxelSSBO, vertexSSBO, indexSSBO, &computeShader, bboxMin, bboxMax);
+
+        VoxelizerComputeShader computeShader("shaders/solid_voxelizer_transitions_naive.comp");
+        solidVoxelizeTransition(STL_PATH, voxelSSBO, vertexSSBO, indexSSBO, &computeShader, bboxMin, bboxMax);
         
+        // Check the size of voxelSSBO
+        std::cout << "Size of voxelSSBO: " << logSSBOSize(voxelSSBO) / (1024.0 * 1024.0) << " MB\n";
+
         // Cleanup
         glDeleteBuffers(1, &vertexSSBO);
         glDeleteBuffers(1, &indexSSBO);

@@ -1,19 +1,20 @@
 #ifndef COMPUTESHADER_HPP
 #define COMPUTESHADER_HPP
 
+#include <glad/glad.h>
+#include <glm/glm.hpp>
 #include <string>
 #include <fstream>
 #include <sstream>
 #include <iostream>
-#include <glad/glad.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
+#include <vector>
 
 class VoxelizerComputeShader {
 public:
     GLuint ID;
 
     VoxelizerComputeShader(const std::string& path) {
+
         std::string code;
         std::ifstream file(path);
         if (!file.is_open()) {
@@ -24,33 +25,41 @@ public:
         std::stringstream buffer;
         buffer << file.rdbuf();
         code = buffer.str();
-
         const char* shaderCode = code.c_str();
+
+        // Create shader object
         GLuint shader = glCreateShader(GL_COMPUTE_SHADER);
         glShaderSource(shader, 1, &shaderCode, nullptr);
         glCompileShader(shader);
 
-        // Check compilation
-        GLint success;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-        if (!success) {
-            char infoLog[512];
-            glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-            std::cerr << "Compute shader compilation failed:\n" << infoLog << std::endl;
+        // Check for compilation errors
+        GLint compileSuccess = 0;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &compileSuccess);
+        if (!compileSuccess) {
+            GLint logLength = 0;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+            std::vector<GLchar> infoLog(logLength);
+            glGetShaderInfoLog(shader, logLength, nullptr, infoLog.data());
+            std::cerr << "Compute shader compilation failed:\n" << infoLog.data() << std::endl;
         }
 
+        // Create program and attach shader
         ID = glCreateProgram();
         glAttachShader(ID, shader);
         glLinkProgram(ID);
 
-        // Check linking
-        glGetProgramiv(ID, GL_LINK_STATUS, &success);
-        if (!success) {
-            char infoLog[512];
-            glGetProgramInfoLog(ID, 512, nullptr, infoLog);
-            std::cerr << "Compute shader linking failed:\n" << infoLog << std::endl;
+        // Check for linking errors
+        GLint linkSuccess = 0;
+        glGetProgramiv(ID, GL_LINK_STATUS, &linkSuccess);
+        if (!linkSuccess) {
+            GLint logLength = 0;
+            glGetProgramiv(ID, GL_INFO_LOG_LENGTH, &logLength);
+            std::vector<GLchar> infoLog(logLength);
+            glGetProgramInfoLog(ID, logLength, nullptr, infoLog.data());
+            std::cerr << "Compute shader linking failed:\n" << infoLog.data() << std::endl;
         }
 
+        // Shader object no longer needed after linking
         glDeleteShader(shader);
     }
 
@@ -65,6 +74,7 @@ public:
     void setFloat(const std::string& name, float value) const {
         glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
     }
+
 
     void setVec3(const std::string& name, const glm::vec3& value) const {
         glUniform3f(glGetUniformLocation(ID, name.c_str()), value.x, value.y, value.z);
