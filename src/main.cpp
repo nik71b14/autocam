@@ -456,24 +456,47 @@ int main() {
         // Voxelization parameters
         // An SSBO (Shader Storage Buffer Object) is an OpenGL buffer object that allows read and write access to a large block of memory
         // from within shader programs, particularly compute shaders, but also vertex, geometry, and fragment shaders if needed.
-        GLuint voxelSSBO, vertexSSBO, indexSSBO;
+        GLuint transitionsSSBO = 0;
+        GLuint counterSSBO = 0;
+        GLuint vertexSSBO = 0;
+        GLuint indexSSBO = 0;
         glm::vec3 bboxMin(-1.0f, -1.0f, -1.0f);  // Example bounding box min
         glm::vec3 bboxMax(1.0f, 1.0f, 1.0f);    // Example bounding box max
         
-        // ---> Perform GPU voxelization using the compute shader
+        // Perform GPU voxelization using the compute shader, bit compression strategy
         //VoxelizerComputeShader computeShader("shaders/solid_voxelizer.comp");
-        //solidVoxelize(STL_PATH, voxelSSBO, vertexSSBO, indexSSBO, &computeShader, bboxMin, bboxMax);
+        //solidVoxelize(STL_PATH, transitionsSSBO, vertexSSBO, indexSSBO, &computeShader, bboxMin, bboxMax);
 
-        VoxelizerComputeShader computeShader("shaders/solid_voxelizer_transitions_naive.comp");
-        solidVoxelizeTransition(STL_PATH, voxelSSBO, vertexSSBO, indexSSBO, &computeShader, bboxMin, bboxMax);
-        
-        // Check the size of voxelSSBO
-        std::cout << "Size of voxelSSBO: " << logSSBOSize(voxelSSBO) / (1024.0 * 1024.0) << " MB\n";
+        // Naive voxelization with transitions
+        //VoxelizerComputeShader computeShader("shaders/solid_voxelizer_transitions_naive.comp");
+        //solidVoxelizeTransition(STL_PATH, transitionsSSBO, vertexSSBO, indexSSBO, &computeShader, bboxMin, bboxMax);
+        //std::cout << "Size of transitionsSSBO: " << logSSBOSize(transitionsSSBO) / (1024.0 * 1024.0) << " MB\n"; // Check the size of transitionsSSBO
+
+        // Assume you have a valid compute shader wrapper class with proper interface
+        VoxelizerComputeShader computeShader("shaders/solid_voxelizer_transitions.comp");
+        solidVoxelizeTransition(
+            STL_PATH,
+            transitionsSSBO,
+            counterSSBO,
+            vertexSSBO,
+            indexSSBO,
+            &computeShader,
+            bboxMin,
+            bboxMax
+        );
+        std::cout << "Size of transitionsSSBO: " << logSSBOSize(transitionsSSBO) / (1024.0 * 1024.0) << " MB\n"; // Check the size of transitionsSSBO
+
+        // @@@
+        // At this point, transitionsSSBO is the resized buffer containing only used transitions.
+        // You can now bind transitionsSSBO for further GPU work or read back:
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, transitionsSSBO);
+        // ... further dispatches or readbacks ...
 
         // Cleanup
+        glDeleteBuffers(1, &transitionsSSBO);
+        glDeleteBuffers(1, &counterSSBO);
         glDeleteBuffers(1, &vertexSSBO);
         glDeleteBuffers(1, &indexSSBO);
-        glDeleteBuffers(1, &voxelSSBO);
         
         computeShader.destroy();
         glfwDestroyWindow(window);

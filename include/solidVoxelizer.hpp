@@ -17,11 +17,25 @@
 // - bboxMax: Maximum bounding box coordinates of the model.
 void solidVoxelize(const char* stlPath, GLuint& voxelSSBO, GLuint& vertexSSBO, GLuint& indexSSBO, VoxelizerComputeShader* computeShader, const glm::vec3& bboxMin, const glm::vec3& bboxMax);
 
+GLuint resizeTransitionBufferGPU(GLuint originalBuffer, GLuint counterBuffer);
+
+// Naive voxelization with transitions
+// void solidVoxelizeTransition(
+//   const char* stlPath,
+//   GLuint& transitionsSSBO,
+//   GLuint& vertexSSBO,
+//   GLuint& indexSSBO,
+//   VoxelizerComputeShader* computeShader,
+//   const glm::vec3& bboxMin,
+//   const glm::vec3& bboxMax);
+
 void solidVoxelizeTransition(
   const char* stlPath,
   GLuint& transitionsSSBO,
+  GLuint& counterSSBO,
   GLuint& vertexSSBO,
   GLuint& indexSSBO,
   VoxelizerComputeShader* computeShader,
   const glm::vec3& bboxMin,
-  const glm::vec3& bboxMax);
+  const glm::vec3& bboxMax
+);
