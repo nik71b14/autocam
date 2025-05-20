@@ -129,6 +129,24 @@ float loadMeshVec3(const char* path, std::vector<glm::vec3>& vertices, std::vect
         indices.push_back(face.mIndices[2]);
     }
 
+    //@@@ Debug: Recalculate the bounding box after scaling and centering -----------
+    glm::vec3 newMinExtents(FLT_MAX);
+    glm::vec3 newMaxExtents(-FLT_MAX);
+
+    for (const auto& vertex : vertices) {
+        newMinExtents.x = std::min(newMinExtents.x, vertex.x);
+        newMinExtents.y = std::min(newMinExtents.y, vertex.y);
+        newMinExtents.z = std::min(newMinExtents.z, vertex.z);
+
+        newMaxExtents.x = std::max(newMaxExtents.x, vertex.x);
+        newMaxExtents.y = std::max(newMaxExtents.y, vertex.y);
+        newMaxExtents.z = std::max(newMaxExtents.z, vertex.z);
+    }
+
+    std::cout << "New Min Extents: (" << newMinExtents.x << ", " << newMinExtents.y << ", " << newMinExtents.z << ")\n";
+    std::cout << "New Max Extents: (" << newMaxExtents.x << ", " << newMaxExtents.y << ", " << newMaxExtents.z << ")\n";
+    // -------------------------------------------------------------------------------
+    
     float zSize = std::abs(maxExtents.z - minExtents.z) * scale;
     return zSize;
 }

@@ -139,7 +139,10 @@ void solidVoxelizeTransition(
     const int TRIANGLE_COUNT = indices.size() / 3;
 
     // Conservative max transition count: each triangle could, in worst case, affect multiple XY columns
-    const size_t MAX_TRANSITIONS = GRID_RES * GRID_RES * 64;
+    const size_t MAX_TRANSITIONS = GRID_RES * GRID_RES * 64; // = 64 transitions per XY column on average (this is a conservative estimate)
+
+    //@@@ Debug: Output the size of a Transition struct
+    std::cout << "Size of a Transition: " << sizeof(Transition) << " bytes" << std::endl;
 
     // === Allocate GPU buffer for transition list (struct: float z, uint x, uint y, uint enter) ===
     glGenBuffers(1, &transitionsSSBO);
@@ -183,12 +186,18 @@ void solidVoxelizeTransition(
     // === Ensure compute shader finishes writing before reading data back ===
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    // === (Optional) Read back how many transitions were written ===
+    //@@@ === (Optional) Read back how many transitions were written ===
     // glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterSSBO);
     // uint32_t* counterPtr = (uint32_t*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(uint32_t), GL_MAP_READ_BIT);
     // uint32_t transitionCount = *counterPtr;
     // glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     // std::cout << "Total transitions written: " << transitionCount << std::endl;
+
+    //@@@ Debug: Output the size of transitionsSSBO before resizing
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionsSSBO);
+    GLint bufferSize = 0;
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &bufferSize);
+    std::cout << "Size of transitionsSSBO before resizing: " << bufferSize << " bytes" << std::endl;
     
     // === Resize transition buffer to only the used transitions ===
     // Resize transitionsSSBO to minimal size (reuse or replace the old buffer)
@@ -227,6 +236,8 @@ GLuint resizeTransitionBufferGPU(GLuint originalBuffer, GLuint counterBuffer) {
       return 0;
   }
 
+  // std::cout << "Transition count (again, from resizeTransitionBufferGPU): " << transitionCount << std::endl;
+
   // Create a new smaller buffer to hold only the used transitions
   GLuint smallerBuffer;
   glGenBuffers(1, &smallerBuffer);
@@ -241,6 +252,12 @@ GLuint resizeTransitionBufferGPU(GLuint originalBuffer, GLuint counterBuffer) {
   // Unbind buffers
   glBindBuffer(GL_COPY_READ_BUFFER, 0);
   glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+
+  // Debug: Output the size of the smaller buffer
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, smallerBuffer);
+  GLint smallerBufferSize = 0;
+  glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &smallerBufferSize);
+  // std::cout << "Size of smallerBuffer (again, from resizeTransitionBufferGPU): " << (smallerBufferSize / (1024.0 * 1024.0)) << " MB" << std::endl;
 
   return smallerBuffer;
 }

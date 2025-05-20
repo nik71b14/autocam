@@ -60,8 +60,12 @@ float edgeFunc(vec2 a, vec2 b, vec2 c) {
 // Safely append a transition pair (enter and exit) using atomic counter
 void insertTransition(uint x, uint y, float z1, float z2) {
     //if (z1 == z2) return; // Skip zero-thickness transitions
-    if (abs(z1 - z2) < 1e-6) return; // Skip almost zero-thickness transitions
+    //if (abs(z1 - z2) < 1e-6) return; // Skip almost zero-thickness transitions
 
+    if (z1 == z2) {
+        // Artificially stretch to ensure insertion
+        z2 += 1e-5;
+    }
 
     // Determine ordering
     float zEnter = min(z1, z2);

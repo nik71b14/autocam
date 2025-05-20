@@ -37,23 +37,26 @@
 #include "solidVoxelizer.hpp"
 #include "glUtils.hpp"
 
-const int RESOLUTION = 512;
+const int RESOLUTION = 1024;
 const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
-// const char* STL_PATH = "models/cube.stl";
+//const char* STL_PATH = "models/cube.stl";
+//const char* STL_PATH = "models/single_face_xy.stl";
 
 
 GLFWwindow* window;
 GLuint fbo, colorTex, depthRbo;
 GLuint vao, vbo, ebo;
-Shader* shader;
+
 VoxelVolume volume1;
 QuadtreeVolume volume2(RESOLUTION, RESOLUTION);
 TransitionCompressor transitionCompressor(RESOLUTION, RESOLUTION);
 TransitionCompressorGPU transitionCompressorGPU(RESOLUTION, RESOLUTION); //###
 
-// Compute shader
+// Shaders
+Shader* shader;
 Shader* computeShader; //###
+Shader* transitionShader; //###
 
 // --- Initialization ---
 void setupGL() {
@@ -67,7 +70,6 @@ void setupGL() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         throw std::runtime_error("Failed to initialize GLAD");
 }
-
 
 void createFramebuffer() {
     glGenFramebuffers(1, &fbo);
@@ -107,10 +109,6 @@ void uploadMesh(const std::vector<float>& vertices, const std::vector<unsigned i
 
 void sliceModel(int triangleCount, float zSpan, bool preview = false) {
     std::vector<uint8_t> pixelBuffer(RESOLUTION * RESOLUTION * 4);
-
-    // glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, -10.0f, 10.0f);
-    // glm::mat4 view = glm::lookAt(glm::vec3(0, 0, 1), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-    // glm::mat4 model = glm::mat4(1.0f);
 
     glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan); // Last two terms referred to eye position, are distances from the eye to the near and far planes
     glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
@@ -271,6 +269,359 @@ void sliceModel2(int triangleCount, float zSpan) {
     glDeleteBuffers(1, &counterSSBO);
 }
 
+void sliceModel3(int triangleCount, float zSpan, bool preview = false) {
+    std::vector<uint8_t> pixelBuffer(RESOLUTION * RESOLUTION * 4);
+
+    glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
+    glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+    glm::mat4 model = glm::mat4(1.0f);
+
+    shader->use();
+    shader->setMat4("projection", projection);
+    shader->setMat4("view", view);
+    shader->setMat4("model", model);
+
+    GLuint transitionSSBO;
+    //size_t maxTransitionCount = size_t(RESOLUTION) * RESOLUTION * RESOLUTION; // Multiplication using size_t math to avoid overflow
+    size_t maxTransitionCount = size_t(RESOLUTION) * RESOLUTION * RESOLUTION; // Multiplication using size_t math to avoid overflow
+
+
+    glGenBuffers(1, &transitionSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, maxTransitionCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); 
+    // Check for allocation errors
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cerr << "TransitionSSBO allocation failed! Error: " << err << std::endl;
+        glDeleteBuffers(1, &transitionSSBO); // Cleanup
+        return; // Exit early to prevent further errors
+    }
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, transitionSSBO); // Assuming binding point 1 in shader
+
+
+    GLuint counterBuffer;
+    glGenBuffers(1, &counterBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 4 * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, counterBuffer); // Assuming binding point 2 in shader
+
+    GLuint zero[4] = {0, 0, 0, 0};
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4 * sizeof(GLuint), zero);
+
+    for (int i = 0; i < RESOLUTION; ++i) {
+        shader->use(); // Switch to fragment shader
+
+        float z = zSpan / 2.0f - static_cast<float>(i) * zSpan / RESOLUTION;
+
+        glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), z);
+        shader->setVec4("clippingPlane", clippingPlane);
+
+        // Render to offscreen framebuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+        glViewport(0, 0, RESOLUTION, RESOLUTION);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_DEPTH_BUFFER_BIT);
+        glDisable(GL_STENCIL_BUFFER_BIT);
+
+        glBindVertexArray(vao);
+        glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
+
+        glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT); // Wait for framebuffer to finish writing
+
+        // ####################################################################
+        //@@@ Optional preview on screen
+        if (preview) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0); // Back to default framebuffer (window)
+            glViewport(0, 0, RESOLUTION, RESOLUTION);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            glBindVertexArray(vao);
+            glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
+ 
+            glfwSwapBuffers(window);
+            //glfwPollEvents();
+        }
+        // ####################################################################
+
+
+        //@@@ Debug: Read back the texture dato to check the result
+        // glBindTexture(GL_TEXTURE_2D, colorTex);
+        // std::vector<GLubyte> texData(RESOLUTION * RESOLUTION * 4);
+        // glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, texData.data());
+        // int nonZeroCount = 0;
+        // for (size_t j = 0; j < texData.size(); j += 4) {
+        //     if (texData[j] != 0 /*|| texData[j + 1] != 0 || texData[j + 2] != 0*/) {
+        //         ++nonZeroCount;
+        //     }
+        // }
+        // std::cout << "Number of elements with R, G, or B != 0: " << nonZeroCount << std::endl;
+        
+        // Bind framebuffer image
+        glBindImageTexture(0, colorTex, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA8);
+
+        // Launch compute shader
+        transitionShader->use(); // Switch to compute shader
+        transitionShader->setInt("resolution", RESOLUTION);
+        transitionShader->setUInt("maxTransitionCount", maxTransitionCount);
+        glDispatchCompute(1, RESOLUTION, 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT); // Wait for compute shader to finish writing
+
+        if (i % (RESOLUTION / 10) == 0)
+        std::cout << "Progress: " << (100 * i / RESOLUTION) << "%\n";
+
+    }
+
+    GLuint result[4];
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterBuffer);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4 * sizeof(GLuint), result);
+    GLuint totalTransitions = result[1]; // Read the second counter for actual transitions
+
+    std::cout << "Total transitions written: " << totalTransitions << std::endl;
+
+    if (totalTransitions > maxTransitionCount) {
+        std::cerr << "Warning: transition counter overflow! Capping to maxTransitionCount.\n";
+        totalTransitions = maxTransitionCount;
+    }    
+
+    // ########################################################################
+    // Sentinel check:
+    GLuint sentinel = 0;
+    size_t sentinelIndex = maxTransitionCount - 1;
+
+    // 1. Bind the buffer
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+
+    // 2. Verify the buffer size matches expectations
+    GLint bufferSizeBytes;
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &bufferSizeBytes);
+    size_t bufferSizeUints = bufferSizeBytes / sizeof(GLuint);
+
+    if (sentinelIndex >= bufferSizeUints) {
+        std::cerr << "ERROR: Sentinel index " << sentinelIndex 
+                << " exceeds buffer size (" << bufferSizeUints << ")\n";
+        return;
+    }
+
+    // 3. Read the sentinel
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, sentinelIndex * sizeof(GLuint), sizeof(GLuint), &sentinel);
+
+    // 4. Validate
+    if (sentinel != 0xDEADBEEF) {
+        std::cerr << "ERROR: Buffer overflow detected (sentinel = 0x" 
+                << std::hex << sentinel << ")\n";
+    } else {
+        std::cout << "Sentinel check passed: 0x" << std::hex << sentinel << "\n";
+    }
+    // ########################################################################
+
+    // Resize SSBO to fit only actual data
+    std::vector<GLuint> finalData(totalTransitions);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalTransitions * sizeof(GLuint), finalData.data());
+
+    // Now finalData holds all transition values from all slices
+    // You can reupload this into a new trimmed buffer if needed:
+    GLuint trimmedSSBO;
+    glGenBuffers(1, &trimmedSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, trimmedSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, totalTransitions * sizeof(GLuint), finalData.data(), GL_STATIC_DRAW);
+
+    //@@@ FINALIZE
+    // Retrieve trimmedSSBO data back to CPU
+    std::vector<GLuint> trimmedData(totalTransitions);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, trimmedSSBO);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalTransitions * sizeof(GLuint), trimmedData.data());
+
+    // Output the size of the trimmed data
+    std::cout << "Trimmed SSBO size: " << (trimmedData.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB\n";
+
+    // Clean up the trimmed SSBO
+    glDeleteBuffers(1, &trimmedSSBO);
+}
+
+void sliceModel4(int triangleCount, float zSpan, bool preview = false) {
+    std::vector<uint8_t> pixelBuffer(RESOLUTION * RESOLUTION * 4);
+
+    glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
+    glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+    glm::mat4 model = glm::mat4(1.0f);
+
+    shader->use();
+    shader->setMat4("projection", projection);
+    shader->setMat4("view", view);
+    shader->setMat4("model", model);
+
+    GLuint transitionSSBO;
+    const int MAX_TRANSITIONS_PER_ROW = 32; // Safe upper bound (adjust as needed) //&&&
+    size_t maxTransitionCount = size_t(RESOLUTION) * RESOLUTION * MAX_TRANSITIONS_PER_ROW; //&&&
+
+    std::cout << "Transitions SSBO size: " << (maxTransitionCount * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB\n";
+    //@@@ Here check if this is lower than "Max SSBO size"
+
+    glGenBuffers(1, &transitionSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, maxTransitionCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); 
+    // Check for allocation errors
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cerr << "TransitionSSBO allocation failed! Error: " << err << std::endl;
+        glDeleteBuffers(1, &transitionSSBO); // Cleanup
+        return; // Exit early to prevent further errors
+    }
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, transitionSSBO); // Assuming binding point 1 in shader
+
+
+    GLuint counterBuffer;
+    glGenBuffers(1, &counterBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 4 * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, counterBuffer); // Assuming binding point 2 in shader
+
+    GLuint zero[4] = {0, 0, 0, 0};
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4 * sizeof(GLuint), zero);
+
+    for (int i = 0; i < RESOLUTION; ++i) {
+        shader->use(); // Switch to fragment shader
+
+        float z = zSpan / 2.0f - static_cast<float>(i) * zSpan / RESOLUTION;
+
+        glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), z);
+        shader->setVec4("clippingPlane", clippingPlane);
+
+        // Render to offscreen framebuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+        glViewport(0, 0, RESOLUTION, RESOLUTION);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_DEPTH_BUFFER_BIT);
+        glDisable(GL_STENCIL_BUFFER_BIT);
+
+        glBindVertexArray(vao);
+        glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
+
+        glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT); // Wait for framebuffer to finish writing
+
+        // ####################################################################
+        //@@@ Optional preview on screen
+        if (preview) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0); // Back to default framebuffer (window)
+            glViewport(0, 0, RESOLUTION, RESOLUTION);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            glBindVertexArray(vao);
+            glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
+ 
+            glfwSwapBuffers(window);
+            //glfwPollEvents();
+        }
+        // ####################################################################
+
+
+        //@@@ Debug: Read back the texture dato to check the result
+        // glBindTexture(GL_TEXTURE_2D, colorTex);
+        // std::vector<GLubyte> texData(RESOLUTION * RESOLUTION * 4);
+        // glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, texData.data());
+        // int nonZeroCount = 0;
+        // for (size_t j = 0; j < texData.size(); j += 4) {
+        //     if (texData[j] != 0 /*|| texData[j + 1] != 0 || texData[j + 2] != 0*/) {
+        //         ++nonZeroCount;
+        //     }
+        // }
+        // std::cout << "Number of elements with R, G, or B != 0: " << nonZeroCount << std::endl;
+        
+        // Bind framebuffer image
+        glBindImageTexture(0, colorTex, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA8);
+
+        // Launch compute shader
+        transitionShader->use(); // Switch to compute shader
+        transitionShader->setInt("resolution", RESOLUTION);
+        transitionShader->setUInt("maxTransitionCount", maxTransitionCount);
+        transitionShader->setUInt("maxTransitionsPerRow", MAX_TRANSITIONS_PER_ROW); //&&&
+        glDispatchCompute(1, RESOLUTION, 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT); // Wait for compute shader to finish writing
+
+        if (i % (RESOLUTION / 10) == 0)
+        std::cout << "Progress: " << (100 * i / RESOLUTION) << "%\n";
+
+    }
+
+    GLuint result[4];
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, counterBuffer);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, 4 * sizeof(GLuint), result);
+    GLuint totalTransitions = result[1]; // Read the second counter for actual transitions
+
+    std::cout << "Total transitions written: " << totalTransitions << std::endl;
+
+    if (totalTransitions > maxTransitionCount) {
+        std::cerr << "Warning: transition counter overflow! Capping to maxTransitionCount.\n";
+        totalTransitions = maxTransitionCount;
+    }    
+
+    // ########################################################################
+    // Sentinel check:
+    GLuint sentinel = 0;
+    size_t sentinelIndex = maxTransitionCount - 1;
+
+    // 1. Bind the buffer
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+
+    // 2. Verify the buffer size matches expectations
+    GLint bufferSizeBytes;
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &bufferSizeBytes);
+    size_t bufferSizeUints = bufferSizeBytes / sizeof(GLuint);
+
+    if (sentinelIndex >= bufferSizeUints) {
+        std::cerr << "ERROR: Sentinel index " << sentinelIndex 
+                << " exceeds buffer size (" << bufferSizeUints << ")\n";
+        return;
+    }
+
+    // 3. Read the sentinel
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, sentinelIndex * sizeof(GLuint), sizeof(GLuint), &sentinel);
+
+    // 4. Validate
+    if (sentinel != 0xDEADBEEF) {
+        std::cerr << "ERROR: Buffer overflow detected (sentinel = 0x" 
+                << std::hex << sentinel << ")\n";
+    } else {
+        std::cout << "Sentinel check passed: 0x" << std::hex << sentinel << "\n";
+    }
+    // ########################################################################
+
+    // Resize SSBO to fit only actual data
+    std::vector<GLuint> finalData(totalTransitions);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalTransitions * sizeof(GLuint), finalData.data());
+
+    // Now finalData holds all transition values from all slices
+    // You can reupload this into a new trimmed buffer if needed:
+    GLuint trimmedSSBO;
+    glGenBuffers(1, &trimmedSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, trimmedSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, totalTransitions * sizeof(GLuint), finalData.data(), GL_STATIC_DRAW);
+
+    //@@@ FINALIZE
+    // Retrieve trimmedSSBO data back to CPU
+    std::vector<GLuint> trimmedData(totalTransitions);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, trimmedSSBO);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalTransitions * sizeof(GLuint), trimmedData.data());
+
+    // Output the size of the trimmed data
+    std::cout << "Trimmed SSBO size: " << (trimmedData.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB\n";
+
+    // Clean up the trimmed SSBO
+    glDeleteBuffers(1, &trimmedSSBO);
+}
+
 /*
 void sliceModel(int triangleCount) {
     std::vector<uint8_t> pixelBuffer(RESOLUTION * RESOLUTION * 4);
@@ -372,10 +723,13 @@ int main() {
     try {
         setupGL();
 
+        std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+        std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+        queryGPULimits();
+
         std::vector<float> vertices;
         std::vector<unsigned int> indices;
 
-        /*
         float zSpan = 1.01f * loadMesh(STL_PATH, vertices, indices);
 
         std::cout << "Number of vertices: " << vertices.size() / 3 << std::endl;
@@ -385,41 +739,44 @@ int main() {
 
         shader = new Shader("shaders/vertex_ok.glsl", "shaders/fragment_ok.glsl");
         computeShader = new Shader("shaders/transition_compress.comp"); //###
+        transitionShader = new Shader("shaders/transitions.comp"); //###
 
         createFramebuffer();
 
         // ---------------------------------------------------------------
         //@@@ DEBUG: static rendering for testing
-        // glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan); // Last two terms referred to eye position, are distances from the eye to the near and far planes
+        /*
+        glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan); // Last two terms referred to eye position, are distances from the eye to the near and far planes
 
-        // glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-        // glm::mat4 model = glm::mat4(1.0f);
+        glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        glm::mat4 model = glm::mat4(1.0f);
     
-        // shader->use();
-        // shader->setMat4("projection", projection);
-        // shader->setMat4("view", view);
-        // shader->setMat4("model", model);
+        shader->use();
+        shader->setMat4("projection", projection);
+        shader->setMat4("view", view);
+        shader->setMat4("model", model);
 
-        // glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), 0.0f);
-        // shader->setVec4("clippingPlane", clippingPlane);
+        glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), 0.0f);
+        shader->setVec4("clippingPlane", clippingPlane);
 
-        // // Set up framebuffer
-        // // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        // glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        // glViewport(0, 0, RESOLUTION, RESOLUTION);
-        // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        // glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        // glEnable(GL_DEPTH_TEST);
+        // Set up framebuffer
+        // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, RESOLUTION, RESOLUTION);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glEnable(GL_DEPTH_TEST);
 
-        // // Draw the mesh
-        // glBindVertexArray(vao);
-        // glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        // Draw the mesh
+        glBindVertexArray(vao);
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
 
-        // glfwSwapBuffers(window);
+        glfwSwapBuffers(window);
 
-        // glfwPollEvents();
-        // std::this_thread::sleep_for(std::chrono::seconds(2));
-        // return EXIT_SUCCESS;
+        glfwPollEvents();
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        return EXIT_SUCCESS;
+        */
         // ---------------------------------------------------------------
         
         auto startTime = std::chrono::high_resolution_clock::now();
@@ -429,6 +786,10 @@ int main() {
 
         // ---> Slice using a compute shader (GPU)
         //sliceModel2(indices.size(), zSpan);
+
+        // ---> Slice using a compute shader (GPU)
+        //sliceModel3(indices.size(), zSpan, true);
+        sliceModel4(indices.size(), zSpan, true);
 
         auto endTime = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsedTime = endTime - startTime;
@@ -444,14 +805,10 @@ int main() {
         delete shader;
         glfwDestroyWindow(window);
         glfwTerminate();
-        */
+
 
         // Solid voxelizer using shader (GPU) #################################
-        std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
-        std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-        queryGPULimits();
-
-        
+        /*
 
         // Voxelization parameters
         // An SSBO (Shader Storage Buffer Object) is an OpenGL buffer object that allows read and write access to a large block of memory
@@ -460,8 +817,8 @@ int main() {
         GLuint counterSSBO = 0;
         GLuint vertexSSBO = 0;
         GLuint indexSSBO = 0;
-        glm::vec3 bboxMin(-1.0f, -1.0f, -1.0f);  // Example bounding box min
-        glm::vec3 bboxMax(1.0f, 1.0f, 1.0f);    // Example bounding box max
+        glm::vec3 bboxMin(-0.5f, -0.5f, -0.5f);  // Example bounding box min
+        glm::vec3 bboxMax(0.5f, 0.5f, 0.5f);    // Example bounding box max
         
         // Perform GPU voxelization using the compute shader, bit compression strategy
         //VoxelizerComputeShader computeShader("shaders/solid_voxelizer.comp");
@@ -484,7 +841,7 @@ int main() {
             bboxMin,
             bboxMax
         );
-        std::cout << "Size of transitionsSSBO: " << logSSBOSize(transitionsSSBO) / (1024.0 * 1024.0) << " MB\n"; // Check the size of transitionsSSBO
+        std::cout << "Size of transitionsSSBO after resizing: " << logSSBOSize(transitionsSSBO) / (1024.0 * 1024.0) << " MB\n"; // Check the size of transitionsSSBO
 
         // @@@
         // At this point, transitionsSSBO is the resized buffer containing only used transitions.
@@ -501,6 +858,7 @@ int main() {
         computeShader.destroy();
         glfwDestroyWindow(window);
         glfwTerminate();
+        */
         // ####################################################################
 
     } catch (const std::exception& e) {

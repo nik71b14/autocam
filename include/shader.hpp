@@ -83,6 +83,10 @@ public:
         glUniform4fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]);
     }
 
+    void setInt(const std::string &name, int value) const {
+        glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
+    }
+
 private:
     static unsigned int compile(GLenum type, const char* code) {
         unsigned int shader = glCreateShader(type);
