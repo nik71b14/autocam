@@ -27,24 +27,26 @@
 #version 460
 layout(local_size_x = 1, local_size_y = 1) in;
 
-// Texture to read color data
 layout(binding = 0, rgba8) readonly uniform image2D colorTex;
 
-// TransitionBuffer to store transition positions
 layout(std430, binding = 1) buffer TransitionBuffer {
     uint transitions[];
 };
 
-// RowCounts buffer to store transition counts per row
-layout(std430, binding = 2) buffer RowCounts {
-    uint rowTransitionCounts[]; // one entry per row
+layout(std430, binding = 2) buffer CounterBuffer {
+    uint transitionCounter; // Cumulative count of transitions, shared across all rows
+    uint totalTransitions;  // Actual transitions count for the current row
+    uint padding2;
+    uint padding3;
 };
 
 uniform int resolution;
-uniform int sliceIndex; // current slice being processed
 uniform uint maxTransitionCount;
 uniform uint maxTransitionsPerRow; // Added: Max transitions per row (e.g., 32)
-uniform uint totalRowCount; // Total number of rows in the image
+
+// bool isRed(vec4 color) {
+//     return color.r > 0.5 && color.r > color.g + 0.05 && color.r > color.b + 0.05;
+// }
 
 bool isRed(vec4 color) {
     return color.r == 1.0;
@@ -54,22 +56,20 @@ void main() {
     uint y = gl_GlobalInvocationID.y;
     if (y >= uint(resolution)) return;
 
-    uint index = sliceIndex * uint(resolution) + y; // linear index in RowCounts buffer
-    if (index >= totalRowCount) return;
-
-    // baseIndex is the starting index for this row in transitions[]
-    uint baseIndex = (sliceIndex * resolution + y) * maxTransitionsPerRow;
+    // transitionCounter is atomically incremented by maxTransitionsPerRow per row to reserve fixed space.
+    uint baseIndex = atomicAdd(transitionCounter, maxTransitionsPerRow);
     if (baseIndex + maxTransitionsPerRow > maxTransitionCount) return;
 
-    // Initialize counter
-    uint count = 0u;
+    // Initialize marker and counter
+    transitions[baseIndex] = 0u;
+    uint count = 1u;
 
     // Scan the row
-    vec4 prev = imageLoad(colorTex, ivec2(0, int(y))); // Load the first pixel
+    vec4 prev = imageLoad(colorTex, ivec2(0, int(y)));
     bool wasRed = isRed(prev);
 
     for (uint x = 1u; x < uint(resolution); ++x) {
-        vec4 curr = imageLoad(colorTex, ivec2(int(x), int(y))); // Load the current pixel
+        vec4 curr = imageLoad(colorTex, ivec2(int(x), int(y)));
         bool isCurrRed = isRed(curr);
 
         if (isCurrRed != wasRed) {
@@ -82,8 +82,8 @@ void main() {
         }
     }
 
-    // Store the number of transitions for this row
-    rowTransitionCounts[index] = count;
+    // Update actual transitions count (excluding initial marker)
+    atomicAdd(totalTransitions, count - 1u);
 
     // Write sentinel once at the end of all processing
     if (gl_GlobalInvocationID.y == resolution - 1 && 
