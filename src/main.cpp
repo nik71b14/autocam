@@ -35,7 +35,8 @@ const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
 //const char* STL_PATH = "models/cube.stl";
 //const char* STL_PATH = "models/single_face_xy.stl";
-const int RESOLUTION = 1024;
+const int RESOLUTION = 2048;
+const bool PREVIEW = false; // Set to false to disable preview rendering
 
 // Global variables -----------------------------------------------------------
 MeshBuffers meshBuffers;
@@ -54,7 +55,7 @@ int main(int argc, char** argv) {
     const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
 
     try {
-        setupGL(&window, RESOLUTION, RESOLUTION, "STL Viewer");
+        setupGL(&window, RESOLUTION, RESOLUTION, "STL Viewer", !PREVIEW);
         if (!window) throw std::runtime_error("Failed to create GLFW window");
 
         std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
@@ -78,7 +79,7 @@ int main(int argc, char** argv) {
 
         auto startTime = std::chrono::high_resolution_clock::now();
         // --------------------------------------------------------------------
-        voxelize(meshBuffers, indices.size(), zSpan, shader, transitionShader, window, fbo, colorTex, RESOLUTION, true);
+        voxelize(meshBuffers, indices.size(), zSpan, shader, transitionShader, window, fbo, colorTex, RESOLUTION, PREVIEW);
         // --------------------------------------------------------------------
         auto endTime = std::chrono::high_resolution_clock::now();
 

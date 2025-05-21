@@ -228,13 +228,17 @@ void deleteMeshBuffers(MeshBuffers& buffers) {
     buffers = {}; // resetta i valori
 }
 
-void setupGL(GLFWwindow** window, int width, int height, const std::string& title) {
+void setupGL(GLFWwindow** window, int width, int height, const std::string& title, bool hideWindow) {
     if (!glfwInit())
         throw std::runtime_error("Failed to initialize GLFW");
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    if (hideWindow) {
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    }
 
     *window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!*window)

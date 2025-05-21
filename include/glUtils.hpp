@@ -38,7 +38,7 @@ MeshBuffers uploadMesh(const std::vector<float>& vertices, const std::vector<uns
 // Libera le risorse GPU associate ai buffer passati.
 void deleteMeshBuffers(MeshBuffers& buffers);
 
-void setupGL(GLFWwindow** window, int width, int height, const std::string& title = "OpenGL Window");
+void setupGL(GLFWwindow** window, int width, int height, const std::string& title = "OpenGL Window", bool hideWindow=false);
 
 void createFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo, int resolution);
 
