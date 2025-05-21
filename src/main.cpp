@@ -80,6 +80,10 @@ int main(int argc, char** argv) {
         auto startTime = std::chrono::high_resolution_clock::now();
         // --------------------------------------------------------------------
         voxelize(meshBuffers, indices.size(), zSpan, shader, transitionShader, window, fbo, colorTex, RESOLUTION, PREVIEW);
+        // Mantains the context alive while the voxelization is running
+        // while (!glfwWindowShouldClose(window)) {
+        //     glfwPollEvents();
+        // }
         // --------------------------------------------------------------------
         auto endTime = std::chrono::high_resolution_clock::now();
 

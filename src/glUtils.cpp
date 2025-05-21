@@ -7,6 +7,7 @@
 #include <iostream>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <execution>
 
 void queryGPULimits() {
     GLint maxSSBOSize = 0;
@@ -147,19 +148,61 @@ bool checkSentinelAt(GLuint ssbo, size_t sentinelIndex, GLuint expectedMarker) {
 }
 
 GLuint sumUIntBuffer(GLuint ssbo, size_t numElements) {
-    // Step 1: Allocate space for CPU-side buffer
-    std::vector<GLuint> data(numElements);
+    
+    // 1. Memory barrier to ensure SSBO writes are complete
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
 
-    // Step 2: Bind and read from SSBO
+    // 2. Error checking wrapper
+    auto checkError = [](const char* msg) {
+        GLenum err = glGetError();
+        if(err != GL_NO_ERROR) {
+            std::cerr << "OpenGL error (" << std::hex << err 
+                        << ") at: " << msg << "\n";
+            return false;
+        }
+        return true;
+    };
+
+    // 3. Bind buffer safely
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numElements * sizeof(GLuint), data.data());
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    if(!checkError("Buffer binding")) return 0;
 
-    // Step 3: Sum all values
-    GLuint total = 0;
-    for (GLuint value : data) {
-        total += value;
+    // 4. Verify buffer size
+    GLint bufferSize;
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &bufferSize);
+    if(static_cast<size_t>(bufferSize) < numElements * sizeof(GLuint)) {
+        std::cerr << "Buffer too small! Required: " 
+                    << numElements * sizeof(GLuint)
+                    << ", Actual: " << bufferSize << "\n";
+        return 0;
     }
+
+    // 5. Map buffer instead of GetBufferSubData for large buffers
+    GLuint* data = static_cast<GLuint*>(
+        glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0,
+                        numElements * sizeof(GLuint),
+                        GL_MAP_READ_BIT)
+    );
+    if(!data || !checkError("Buffer mapping")) {
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        return 0;
+    }
+
+    // 6. Parallel sum for large datasets
+    GLuint total = 0;
+
+    // Using OpenMP for parallel reduction (requires OpenMP, i.e. "-fopenmp" flag in GCC compiler, insert it in tasks.json)
+    // #pragma omp parallel for reduction(+:total) ----------------------------
+    // for(size_t i = 0; i < numElements; ++i) {
+    //     total += data[i];
+    // }
+    // C++17 alternative without OpenMP ---------------------------------------
+    std::vector<GLuint> tmp(data, data + numElements);
+    total = std::reduce(std::execution::par_unseq, tmp.begin(), tmp.end());
+
+    // 7. Cleanup
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     return total;
 }

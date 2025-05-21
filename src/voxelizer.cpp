@@ -14,8 +14,8 @@
 #include "meshLoader.hpp"
 #include "glUtils.hpp"
 
+#define FLUSH_INTERVAL 50
 
-// OPTIMIZED BY DEEPSEEK
 void voxelize(
   const MeshBuffers& mesh,
   int triangleCount,
@@ -53,7 +53,8 @@ void voxelize(
   GLuint rowCountBuffer;
   glGenBuffers(1, &rowCountBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, rowCountBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, totalRows * sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
+  // glBufferData(GL_SHADER_STORAGE_BUFFER, totalRows * sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, totalRows * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, rowCountBuffer);
 
   std::vector<GLuint> zeroRowCounts(totalRows, 0);
@@ -77,17 +78,20 @@ void voxelize(
   glBindVertexArray(mesh.vao);
 
   float deltaZ = zSpan / resolution;
+  static const glm::vec3 planeNormal(0.0f, 0.0f, -1.0f);
 
   for (int i = 0; i < resolution; ++i) {
       shader->use();
       float z = zSpan / 2.0f - static_cast<float>(i) * deltaZ;
-      glm::vec4 clippingPlane(glm::normalize(glm::vec3(0.0f, 0.0f, -1.0f)), z);
+      glm::vec4 clippingPlane(planeNormal, z);
       shader->setVec4("clippingPlane", clippingPlane);
 
       glBindFramebuffer(GL_FRAMEBUFFER, fbo);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       
       glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
+      if (!checkGLError("Drawing failed")) return;
+
       glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
       if (preview) {
@@ -95,24 +99,42 @@ void voxelize(
       }
 
       transitionShader->use();
-      transitionShader->setInt("sliceIndex", i); // Only dynamic uniform
+      transitionShader->setInt("sliceIndex", i); // This is a dynamic uniform
 
-      glDispatchCompute(1, resolution, 1);
+      //glDispatchCompute(1, resolution, 1);
+      const int WG_SIZE = 32; // Most GPUs need 32-64 threads per workgroup
+      glDispatchCompute(1, (resolution + WG_SIZE-1)/WG_SIZE, 1);
+      if (!checkGLError("Compute failed")) return;
+
       glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
 
       // Invalidate framebuffer to optimize memory usage
       GLenum attachments[] = { GL_COLOR_ATTACHMENT0, GL_DEPTH_ATTACHMENT };
       glInvalidateFramebuffer(GL_FRAMEBUFFER, 2, attachments);
 
-      if (i % (resolution / 10) == 0)
-          std::cout << "Progress: " << (100 * i / resolution) << "%\n";
+      #ifdef FLUSH_INTERVAL
+        if (i % FLUSH_INTERVAL == 0) glFlush(); // Partial synchronization every 10 slices, prevents stalling the GPU
+      #endif
+
+      if (i % (resolution / 10) == 0 || i == resolution - 1) {
+        int percent = static_cast<int>((100.0f * i) / (resolution - 1));
+        std::cout << "\rGPU progress: " << std::setw(3) << percent << "%" << std::flush;
+      }
   }
 
+  glFinish(); // Ensure all commands are completed before reading back data
+
   GLuint totalTransitions = sumUIntBuffer(rowCountBuffer, totalRows);
-  std::cout << "Total transitions in volume: " << totalTransitions << std::endl;
+  std::cout << std::endl << "Total transitions in volume: " << totalTransitions << std::endl;
+
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
   checkSentinelAt(transitionSSBO, maxTransitionCount - 1, 0xDEADBEEF);
 
   //&&& Buffer compression
+
+  // Cleanup
+  GLuint buffers[] = {transitionSSBO, rowCountBuffer};
+  glDeleteBuffers(2, buffers);
 }
 
 
