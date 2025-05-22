@@ -38,8 +38,9 @@ void voxelize(
   shader->setMat4("model", model);
 
   const int MAX_TRANSITIONS_PER_ROW = 32;
-  size_t maxTransitionCount = size_t(resolution) * resolution * MAX_TRANSITIONS_PER_ROW;
   size_t totalRows = size_t(resolution) * resolution;
+  size_t maxTransitionCount = totalRows * MAX_TRANSITIONS_PER_ROW;
+  
 
   std::cout << "Transitions SSBO size: " << (maxTransitionCount * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB\n";
 
@@ -119,18 +120,60 @@ void voxelize(
       if (i % (resolution / 10) == 0 || i == resolution - 1) {
         int percent = static_cast<int>((100.0f * i) / (resolution - 1));
         std::cout << "\rGPU progress: " << std::setw(3) << percent << "%" << std::flush;
+        if (percent == 100) std::cout << std::endl;
       }
   }
 
   glFinish(); // Ensure all commands are completed before reading back data
 
+  // Check for errors after the compute shader dispatch
+  if (!checkSentinelAt(transitionSSBO, maxTransitionCount - 1, 0xDEADBEEF)) {
+      std::cerr << "Sentinel check failed!" << std::endl;
+      GLuint buffers[] = {transitionSSBO, rowCountBuffer};
+      glDeleteBuffers(2, buffers);
+      return;
+  }
+
+  // Read back the total number of transitions
   GLuint totalTransitions = sumUIntBuffer(rowCountBuffer, totalRows);
-  std::cout << std::endl << "Total transitions in volume: " << totalTransitions << std::endl;
+  std::cout << "Total transitions in volume: " << totalTransitions << std::endl;
 
-  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-  checkSentinelAt(transitionSSBO, maxTransitionCount - 1, 0xDEADBEEF);
+  // Data extraction and compression
+  // - transitionSSBO is a 1D array of size totalRows * MAX_TRANSITIONS_PER_ROW,
+  // meaning each row has a fixed block of MAX_TRANSITIONS_PER_ROW reserved elements.
+  // - rowCountBuffer[row] indicates how many of these elements are actually valid
+  // and have been written for that row.
+  // - The remaining values in the block for that row (up to MAX_TRANSITIONS_PER_ROW)
+  // can be ignored / are garbage / placeholders.
 
-  //&&& Buffer compression
+  // 1. Read the row counts from the rowCountBuffer
+  std::vector<GLuint> rowCounts(totalRows);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, rowCountBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalRows * sizeof(GLuint), rowCounts.data());
+
+  // 2. Read the transition data from the transitionSSBO
+  std::vector<GLuint> transitionData(totalRows * MAX_TRANSITIONS_PER_ROW);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionSSBO);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, transitionData.size() * sizeof(GLuint), transitionData.data());
+
+  // 3. Create compacted buffer
+  std::vector<GLuint> compactTransitions;
+  compactTransitions.reserve(totalTransitions);
+
+  // 4. Compact data from transitionData into compactTransitions
+  for (size_t row = 0; row < totalRows; ++row) {
+      GLuint count = rowCounts[row];
+      size_t baseIndex = row * MAX_TRANSITIONS_PER_ROW;
+      for (GLuint i = 0; i < count; ++i) {
+          compactTransitions.push_back(transitionData[baseIndex + i]);
+      }
+  }
+
+  // Ora compactTransitions contiene solo i valori validi, uno dietro l'altro
+  std::cout << "Compacted transitions: " 
+            << compactTransitions.size() << " (" 
+            << (compactTransitions.size() * sizeof(GLuint)) / (1024.0 * 1024.0) 
+            << " MB)" << std::endl;
 
   // Cleanup
   GLuint buffers[] = {transitionSSBO, rowCountBuffer};

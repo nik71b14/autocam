@@ -113,6 +113,9 @@ std::pair<glm::vec3, glm::vec3> computeBoundingBoxVec3(const std::vector<glm::ve
 bool checkSentinelAt(GLuint ssbo, size_t sentinelIndex, GLuint expectedMarker) {
     GLuint sentinelValue = 0;
 
+    // Memory barrier to ensure SSBO writes are complete
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
     // Bind the buffer
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
 
