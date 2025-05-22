@@ -27,7 +27,7 @@
 
 #include "shader.hpp"
 #include "meshLoader.hpp"
-#include "glUtils.hpp"
+#include "GLUtils.hpp"
 #include "voxelizer.hpp"
 
 // Constants ----------------------------------------------------------------

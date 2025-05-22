@@ -12,7 +12,7 @@
 #include <assimp/postprocess.h>
 #include "shader.hpp"
 #include "meshLoader.hpp"
-#include "glUtils.hpp"
+#include "GLUtils.hpp"
 
 #define FLUSH_INTERVAL 50
 

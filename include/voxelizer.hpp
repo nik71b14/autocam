@@ -3,7 +3,7 @@
 
 #include <GLFW/glfw3.h>
 #include "shader.hpp"
-#include "glUtils.hpp"
+#include "GLUtils.hpp"
 
 void voxelize(
     const MeshBuffers& mesh,
