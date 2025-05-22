@@ -43,3 +43,6 @@ void setupGL(GLFWwindow** window, int width, int height, const std::string& titl
 void createFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo, int resolution);
 
 void destroyFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo);
+
+std::size_t getAvailableVRAM(std::size_t maxTestSize = 16384);
+

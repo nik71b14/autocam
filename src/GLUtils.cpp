@@ -29,6 +29,15 @@ void queryGPULimits() {
     GLint maxComputeWorkGroupInvocations = 0;
     glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &maxComputeWorkGroupInvocations);
 
+    GLint maxTextureSize;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+
+    GLint max3DSize;
+    glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &max3DSize);
+
+    GLint maxArrayLayers;
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxArrayLayers);
+
     std::cout << "=========================================\n";
     std::cout << "|           GPU Limits Overview         |\n";
     std::cout << "=========================================\n";
@@ -50,7 +59,17 @@ void queryGPULimits() {
     std::cout << "|---------------------------------------|\n";
     std::cout << "| Max compute work group invocations:   |\n";
     std::cout << "|   " << maxComputeWorkGroupInvocations << "\n";
+    std::cout << "|---------------------------------------|\n";
+    std::cout << "| Max 2D texture size:                  |\n";
+    std::cout << "|   " << maxTextureSize << "x" << maxTextureSize << "\n";
+    std::cout << "|---------------------------------------|\n";
+    std::cout << "| Max 3D texture size:                  |\n";
+    std::cout << "|   " << max3DSize << "x" << max3DSize << "x" << max3DSize << "\n";
+    std::cout << "|---------------------------------------|\n";
+    std::cout << "| Max 2D array texture layers:          |\n";
+    std::cout << "|   " << maxArrayLayers << "\n";
     std::cout << "=========================================\n";
+
 }
 
 int logSSBOSize(GLuint ssbo) {
@@ -336,3 +355,32 @@ void destroyFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo) {
     }
 }
 
+std::size_t getAvailableVRAM(std::size_t maxTestSize) {
+    GLuint tex = 0;
+    std::size_t maxSuccessfulBytes = 0;
+
+    // Start from 512x512 and double the size up to maxTestSize
+    for (std::size_t dim = 512; dim <= maxTestSize; dim *= 2) {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+
+        // Each texel in GL_R32UI is 4 bytes (32-bit unsigned integer)
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32UI, dim, dim);
+
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR) {
+            // Allocation failed; return last successful estimate
+            //printf("Allocation failed at %zux%zu (GL error: 0x%x)\n", dim, dim, err);
+            glDeleteTextures(1, &tex);
+            break;
+        }
+
+        std::size_t bytes = dim * dim * sizeof(GLuint);
+        //printf("Success: %zux%zu = %.2f MB\n", dim, dim, bytes / (1024.0 * 1024.0));
+        maxSuccessfulBytes = bytes;
+
+        glDeleteTextures(1, &tex);
+    }
+
+    return maxSuccessfulBytes;
+}

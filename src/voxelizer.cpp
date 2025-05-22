@@ -135,8 +135,8 @@ void voxelize(
   }
 
   // Read back the total number of transitions
-  GLuint totalTransitions = sumUIntBuffer(rowCountBuffer, totalRows);
-  std::cout << "Total transitions in volume: " << totalTransitions << std::endl;
+GLuint totalTransitions = sumUIntBuffer(rowCountBuffer, totalRows);
+std::cout << "Total transitions in volume: " << std::dec << totalTransitions << std::endl;
 
   // Data extraction and compression
   // - transitionSSBO is a 1D array of size totalRows * MAX_TRANSITIONS_PER_ROW,
@@ -170,7 +170,7 @@ void voxelize(
   }
 
   // Ora compactTransitions contiene solo i valori validi, uno dietro l'altro
-  std::cout << "Compacted transitions: " 
+  std::cout << "Compacted transitions: " << std::dec
             << compactTransitions.size() << " (" 
             << (compactTransitions.size() * sizeof(GLuint)) / (1024.0 * 1024.0) 
             << " MB)" << std::endl;

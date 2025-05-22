@@ -35,7 +35,7 @@ const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
 //const char* STL_PATH = "models/cube.stl";
 //const char* STL_PATH = "models/single_face_xy.stl";
-const int RESOLUTION = 2048;
+const int RESOLUTION = 1024;
 const bool PREVIEW = false; // Set to false to disable preview rendering
 
 // Global variables -----------------------------------------------------------
@@ -62,6 +62,9 @@ int main(int argc, char** argv) {
         std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
 
         queryGPULimits();
+
+        std::size_t vram = getAvailableVRAM();
+        std::cout << "Estimated available VRAM for 2D textures: " << (vram / (1024 * 1024)) << " MB\n";
 
         std::vector<float> vertices;
         std::vector<unsigned int> indices;
