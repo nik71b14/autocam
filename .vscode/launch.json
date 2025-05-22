@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug quadtree.exe (MSYS2)", // THIS must be selected
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/debug/quadtree_debug.exe",
+      "args": ["models/model3_bin.stl"],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:\\msys64\\ucrt64\\bin\\gdb.exe",
+      "environment": [
+        {
+          "name": "MSYSTEM",
+          "value": "UCRT64"
+        },
+        {
+          "name": "PATH",
+          "value": "C:\\msys64\\ucrt64\\bin;${env:PATH}"
+        }
+      ],
+      "externalConsole": false
+    }
+  ]
+}

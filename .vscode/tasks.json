@@ -1,0 +1,85 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "cppbuild",
+      "label": "C/C++: Build quadtree project (Release)",
+      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+      "args": [
+        "-fdiagnostics-color=always",
+        "-std=c++17",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Iinclude",
+        "-IC:/msys64/ucrt64/include/glm",
+        "-IC:/msys64/ucrt64/include/assimp",
+        "-Llib",
+        "-fopenmp",
+        "src/glad.c",
+        "src/meshLoader.cpp",
+        "src/main.cpp",
+        "src/glUtils.cpp",
+        "src/voxelizer.cpp",
+        "-o",
+        "${workspaceFolder}\\release\\quadtree.exe",
+        "-lglfw3",
+        "-lassimp",
+        "-lopengl32",
+        "-lgdi32"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "MSYSTEM": "UCRT64",
+          "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}"
+        }
+      },
+      "problemMatcher": ["$gcc"],
+      "group": "build",
+      "detail": "Compiles the quadtree project in Release mode with GLFW/GLAD."
+    },
+    {
+      "type": "cppbuild",
+      "label": "C/C++: Build quadtree project (Debug)",
+      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+      "args": [
+        "-fdiagnostics-color=always",
+        "-std=c++17",
+        "-O0",
+        "-g",
+        "-Wall",
+        "-Wextra",
+        "-Iinclude",
+        "-IC:/msys64/ucrt64/include/glm",
+        "-IC:/msys64/ucrt64/include/assimp",
+        "-Llib",
+        "-fopenmp",
+        "src/glad.c",
+        "src/meshLoader.cpp",
+        "src/main.cpp",
+        "src/glUtils.cpp",
+        "src/voxelizer.cpp",
+        "-o",
+        "${workspaceFolder}\\debug\\quadtree_debug.exe",
+        "-lglfw3",
+        "-lassimp",
+        "-lopengl32",
+        "-lgdi32"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "MSYSTEM": "UCRT64",
+          "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}"
+        }
+      },
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "detail": "Compiles the quadtree project in Debug mode with GLFW/GLAD."
+    }
+  ]
+}
