@@ -143,7 +143,8 @@ void voxelizeZ(
   */
   // --------------------------------------------------------------------------
 
-  //@@@ Optional: read back the transition buffer for debugging ---------------
+  //@@@ DEBUG read back the transition buffer for debugging -------------------
+  
   std::vector<GLuint> hostCounts(totalPixels);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, hostCounts.size() * sizeof(GLuint), hostCounts.data());
@@ -157,10 +158,119 @@ void voxelizeZ(
   for (uint i = 0; i < hostCounts[colIndex]; ++i) {
       std::cout << "Transition Z: " << hostTransitions[colIndex * params.maxTransitionsPerZColumn + i] << "\n";
   }
+  
   // --------------------------------------------------------------------------
 
+  // Compression of the transition buffer -------------------------------------
+  // Input:
+  // transitionBuffer → [RES*RES * MAX_TRANSITIONS_PER_COLUMN] elements
+  // countBuffer → [RES*RES] elements, each telling how many transitions are valid for that XY column
+  //
+  // Output:
+  // compressedTransitionsBuffer: tightly packed transitions
+  // indexBuffer: prefix sum buffer that tells where to find each column's transitions in the compressed buffer
+  //
+  // Strategy:
+  // 1. Compute prefix sum on countBuffer to determine where to write each pixel's transitions in compressedTransitionsBuffer.
+  // 2. Copy valid transitions from transitionBuffer to the correct position in compressedTransitionsBuffer.
+  
+  //  Each column’s compressed transitions are located starting from prefixSum[i] with countBuffer[i] entries in compressedBuffer.
+  
+  //@@@ Move this to main, to avoid re-creating shaders every time and recompiling them
+  Shader* prefixSumShader = new Shader("shaders/prefix_sum.comp");
+  GLuint prefixSumBuffer;
+  
+  // Allocate prefix sum buffer
+  glGenBuffers(1, &prefixSumBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer); // Bind to SSBO binding point 1
+
+  // Run prefix sum shader
+  prefixSumShader->use();
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, countBuffer);      // input
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);  // output
+  glDispatchCompute((totalPixels + 255) / 256, 1, 1); // Launch enough workgroups to cover all pixels
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  // @@@ DEBUG
+
+  // @@@ Non-zero entries in countBuffer
+  std::vector<GLuint> counts(totalPixels);
+
+  // Bind and read the buffer
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), counts.data());
+
+  // Count how many are non-zero
+  int nonZeroCount = 0;
+  for (int i = 0; i < totalPixels; ++i) {
+      if (counts[i] != 0) ++nonZeroCount;
+  }
+
+  std::cout << "Non-zero entries in countBuffer: " << nonZeroCount << " out of " << totalPixels << "\n";
+
+  // @@@ Non-zero entries in prefix sum buffer
+  std::vector<GLuint> prefixSum(totalPixels);
+
+  // Bind and read the buffer
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefixSum.data());
+
+  // Count how many are non-zero
+  int nonZeroPrefixSum = 0;
+  for (int i = 0; i < totalPixels; ++i) {
+      if (prefixSum[i] != 0) ++nonZeroPrefixSum;
+  }
+
+  std::cout << "Non-zero entries in prefixSumBuffer: " << nonZeroPrefixSum << " out of " << totalPixels << "\n";
+
+  //@@@ END DEBUG
+
+  // =======> REVIEW FROM HERE <========
+  /*
+  Shader* compressTransitionsShader = new Shader("shaders/compress_transitions.comp");
+  GLuint compressedBuffer;
+
+  // Read total compressed size (last prefix sum + count)
+  std::vector<GLuint> counts(totalPixels);
+  std::vector<GLuint> prefix(totalPixels);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), counts.data());
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefix.data());
+
+  GLuint totalCompressedCount = prefix.back() + counts.back();
+
+  // Allocate compressed transition buffer
+  glGenBuffers(1, &compressedBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, totalCompressedCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, compressedBuffer);
+
+  // Run compression shader
+  compressTransitionsShader->use(); // Bind `compress_transitions.comp`
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, transitionBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, countBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, prefixSumBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, compressedBuffer);
+
+  glDispatchCompute((totalPixels + 255) / 256, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  //@@@ Check size of compressed buffer
+  GLint64 compressedSize = 0;
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
+  glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &compressedSize);
+  std::cout << "Compressed GPU buffer size: " << compressedSize << " bytes" << std::endl;
+  */
+  // --------------------------------------------------------------------------
+  
+  // Cleanup
   glDeleteBuffers(1, &transitionBuffer);
   glDeleteBuffers(1, &countBuffer);
   glDeleteBuffers(1, &overflowBuffer);
+  delete prefixSumShader;
+  //delete compressTransitionsShader;
 
 }

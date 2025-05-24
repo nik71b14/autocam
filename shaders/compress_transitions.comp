@@ -1,0 +1,35 @@
+// compress_transitions.comp
+#version 460
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) buffer Transitions {
+    readonly uint transitions[];
+};
+
+layout(std430, binding = 1) buffer Counts {
+    readonly uint counts[];
+};
+
+layout(std430, binding = 2) buffer PrefixSum {
+    readonly uint prefixSum[];
+};
+
+layout(std430, binding = 3) buffer Compressed {
+    writeonly uint compressedTransitions[];
+};
+
+const uint MAX_TRANSITIONS = 32;
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+
+    if (gid >= counts.length()) return;
+
+    uint count = counts[gid];
+    uint baseIn = gid * MAX_TRANSITIONS;
+    uint baseOut = prefixSum[gid];
+
+    for (uint i = 0; i < count; ++i) {
+        compressedTransitions[baseOut + i] = transitions[baseIn + i];
+    }
+}

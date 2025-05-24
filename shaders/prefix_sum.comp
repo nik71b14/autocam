@@ -1,0 +1,34 @@
+// prefix_sum.comp
+#version 460
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) buffer Counts {
+    readonly uint counts[];
+};
+
+layout(std430, binding = 1) buffer PrefixSum {
+    writeonly uint prefixSum[];
+};
+
+shared uint temp[256 + 1]; // +1 for exclusive shift
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+
+    if (gid >= counts.length()) return;
+
+    temp[gl_LocalInvocationID.x + 1] = counts[gid];
+    barrier();
+
+    if (gl_LocalInvocationID.x == 0)
+        temp[0] = 0;
+
+    barrier();
+
+    // Exclusive scan (sequential in workgroup)
+    for (uint i = 1; i <= gl_LocalInvocationID.x; ++i) {
+        temp[gl_LocalInvocationID.x + 1] += temp[i - 1];
+    }
+
+    prefixSum[gid] = temp[gl_LocalInvocationID.x];
+}
