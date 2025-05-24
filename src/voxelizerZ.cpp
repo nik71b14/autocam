@@ -128,6 +128,7 @@ void voxelizeZ(
   std::cout << "Voxelization complete. Execution time: " << elapsedTime.count() << " seconds\n";
 
   // Read back the overflow buffer to check for overflow --------------------
+  /*
   std::vector<GLuint> overflowFlags(totalPixels);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, overflowBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
@@ -139,6 +140,7 @@ void voxelizeZ(
           std::cout << "Overflow at pixel column " << i << "\n";
       }
   }
+  */
   // --------------------------------------------------------------------------
 
   //@@@ Optional: read back the transition buffer for debugging ---------------
@@ -159,5 +161,6 @@ void voxelizeZ(
 
   glDeleteBuffers(1, &transitionBuffer);
   glDeleteBuffers(1, &countBuffer);
+  glDeleteBuffers(1, &overflowBuffer);
 
 }

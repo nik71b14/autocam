@@ -36,12 +36,6 @@ const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
 //const char* STL_PATH = "models/cube.stl";
 //const char* STL_PATH = "models/single_face_xy.stl";
-//const int RESOLUTION = 1024;
-//const int RESOLUTION_Z = 1024;
-//const int SLICES_PER_BLOCK = 32; // Number of slices per block for Z voxelization
-//const bool PREVIEW = false; // Set to false to disable preview rendering
-//const size_t MAX_MEMORY_BUDGET_BYTES = 512 * 1024 * 1024; // 512 MB
-//const int MAX_TRANSITIONS_PER_Z_COLUMN = 32;
 
 // Global variables -----------------------------------------------------------
 MeshBuffers meshBuffers;
@@ -54,29 +48,26 @@ Shader* transitionShaderZ;
 
 int main(int argc, char** argv) {
 
-  // if (argc < 2) {
-  //     std::cerr << "Usage: " << argv[0] << " <path_to_stl_file>" << std::endl;
-  //     return EXIT_FAILURE;
-  // }
-
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
 
   try {
-    queryGPULimits();
 
     VoxelizationParams params;
     params.resolution = 1024;
     params.resolutionZ = 1024; // Default Z resolution
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
-    params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
-    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
-    std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
 
     setupGL(&window, params.resolution, params.resolution, "STL Viewer", !params.preview);
     if (!window) throw std::runtime_error("Failed to create GLFW window");
 
+    // Get system information
     std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
     std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+    queryGPULimits();
+
+    params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
+    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
+    std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
 
     std::size_t vram = getAvailableVRAM();
     std::cout << "Estimated available VRAM for 2D textures: " << (vram / (1024 * 1024)) << " MB\n";
@@ -95,23 +86,6 @@ int main(int argc, char** argv) {
     transitionShader = new Shader("shaders/transitions.comp");
     transitionShaderZ = new Shader("shaders/transitions_z.comp");
 
-    /*
-    createFramebuffer(fbo, colorTex, depthRbo, RESOLUTION);
-    auto startTime = std::chrono::high_resolution_clock::now();
-    // --------------------------------------------------------------------
-    voxelize(meshBuffers, indices.size(), zSpan, drawShader, transitionShader, window, fbo, colorTex, RESOLUTION, PREVIEW);
-    // Mantains the context alive while the voxelization is running
-    // while (!glfwWindowShouldClose(window)) {
-    //     glfwPollEvents();
-    // }
-    // --------------------------------------------------------------------
-    auto endTime = std::chrono::high_resolution_clock::now();
-
-    std::chrono::duration<double> elapsedTime = endTime - startTime;
-    std::cout << "Execution time: " << elapsedTime.count() << " seconds\n";
-    */
-
-    // --------------------------------------------------------------------
     GLuint sliceTex, fbo;
 
     // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
@@ -136,7 +110,6 @@ int main(int argc, char** argv) {
         sliceTex,
         params
     );
-    // --------------------------------------------------------------------
 
     // Clean up
     deleteMeshBuffers(meshBuffers);

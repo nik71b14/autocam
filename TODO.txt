@@ -1,4 +1,5 @@
 -> Visualizzazione dei dati voxelizzati (es.: marching cube ecc.)
+-> Estendere anche a risoluzioni diverse da potenze di 2
 
 -> Gestire la situazione per diverse schede video con varie caratteristiche: istanziare SSBO multipli o splittare l'immagine in più parti e voxelizzare a sezioni
 -> La voxelizzazione per parti forse è la cosa più comoda, poi devo riassemblare i blocchi ecc.
