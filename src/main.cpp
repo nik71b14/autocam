@@ -29,16 +29,19 @@
 #include "meshLoader.hpp"
 #include "GLUtils.hpp"
 #include "voxelizerZ.hpp"
+#include "voxelizerZUtils.hpp"
 
 // Constants ----------------------------------------------------------------
 const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
 //const char* STL_PATH = "models/cube.stl";
 //const char* STL_PATH = "models/single_face_xy.stl";
-const int RESOLUTION = 1024;
-const int RESOLUTION_Z = 1024;
-const int SLICES_PER_BLOCK = 32; // Number of slices per block for Z voxelization
-const bool PREVIEW = false; // Set to false to disable preview rendering
+//const int RESOLUTION = 1024;
+//const int RESOLUTION_Z = 1024;
+//const int SLICES_PER_BLOCK = 32; // Number of slices per block for Z voxelization
+//const bool PREVIEW = false; // Set to false to disable preview rendering
+//const size_t MAX_MEMORY_BUDGET_BYTES = 512 * 1024 * 1024; // 512 MB
+//const int MAX_TRANSITIONS_PER_Z_COLUMN = 32;
 
 // Global variables -----------------------------------------------------------
 MeshBuffers meshBuffers;
@@ -47,6 +50,7 @@ GLuint fbo, colorTex, depthRbo;
 Shader* drawShader;
 Shader* transitionShader;
 Shader* transitionShaderZ;
+
 
 int main(int argc, char** argv) {
 
@@ -58,13 +62,21 @@ int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
 
   try {
-    setupGL(&window, RESOLUTION, RESOLUTION, "STL Viewer", !PREVIEW);
+    queryGPULimits();
+
+    VoxelizationParams params;
+    params.resolution = 1024;
+    params.resolutionZ = 1024; // Default Z resolution
+    params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
+    params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
+    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
+    std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
+
+    setupGL(&window, params.resolution, params.resolution, "STL Viewer", !params.preview);
     if (!window) throw std::runtime_error("Failed to create GLFW window");
 
     std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
     std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-
-    queryGPULimits();
 
     std::size_t vram = getAvailableVRAM();
     std::cout << "Estimated available VRAM for 2D textures: " << (vram / (1024 * 1024)) << " MB\n";
@@ -105,7 +117,7 @@ int main(int argc, char** argv) {
     // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
     glGenTextures(1, &sliceTex);
     glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
-    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, RESOLUTION, RESOLUTION, SLICES_PER_BLOCK + 1);
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolution, params.resolution, params.slicesPerBlock + 1);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -122,10 +134,7 @@ int main(int argc, char** argv) {
         transitionShaderZ,
         fbo,
         sliceTex,
-        RESOLUTION,
-        RESOLUTION_Z,
-        SLICES_PER_BLOCK//,
-        //PREVIEW
+        params
     );
     // --------------------------------------------------------------------
 

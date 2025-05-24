@@ -3,6 +3,7 @@
 
 #include "shader.hpp"
 #include "GLUtils.hpp"
+#include "voxelizerZUtils.hpp"
 
 void voxelizeZ(
   const MeshBuffers& mesh,
@@ -11,11 +12,8 @@ void voxelizeZ(
   Shader* drawShader,
   Shader* computeShader,
   GLuint fbo,
-  GLuint sliceTex,
-  int resolution,
-  int resolutionZ,
-  int slicesPerBlock//,
-  //bool preview
+  GLuint sliceTex, 
+  const VoxelizationParams& params
 );
 
 #endif // VOXELIZERZ_HPP
