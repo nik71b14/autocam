@@ -1,0 +1,14 @@
+I want a voxelizeZ function which:  
+(i) renders a block of slices of my volume and stores them  
+(ii) launches a compute shader which compares each pair of consecutive slices checking for red->black or black->red transitions  
+(iii) stores the transitions in a buffer array  
+(iv) for each x,y pair, stores the number of transitions for that z "column" in a separate array.  
+
+Please note:  
+(a) when I go from a block to the next, the last slice of the previous block should be used to make the comparison to detect transitions.  
+    For the first block, this slice is considered as composed of all black pixels.  
+(b) the comparison between slices must be done using a compute shader  
+(c) the number of slices per block must be parametrized by SLICES_PER_BLOCK  
+(d) the resolution in the xy plane is RESOLUTION x RESOLUTION, while in the Z direction the resolution can be different (RESOLUTION_Z).  
+
+Please provide both the host code and a working compute shader.  

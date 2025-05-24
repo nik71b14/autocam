@@ -28,7 +28,7 @@
 #include "shader.hpp"
 #include "meshLoader.hpp"
 #include "GLUtils.hpp"
-#include "voxelizer.hpp"
+#include "voxelizerZ.hpp"
 
 // Constants ----------------------------------------------------------------
 const char* STL_PATH = "models/model3_bin.stl";
@@ -36,74 +36,112 @@ const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cube.stl";
 //const char* STL_PATH = "models/single_face_xy.stl";
 const int RESOLUTION = 1024;
+const int RESOLUTION_Z = 1024;
+const int SLICES_PER_BLOCK = 32; // Number of slices per block for Z voxelization
 const bool PREVIEW = false; // Set to false to disable preview rendering
 
 // Global variables -----------------------------------------------------------
 MeshBuffers meshBuffers;
 GLFWwindow* window;
 GLuint fbo, colorTex, depthRbo;
-Shader* shader;
+Shader* drawShader;
 Shader* transitionShader;
+Shader* transitionShaderZ;
 
 int main(int argc, char** argv) {
 
-    // if (argc < 2) {
-    //     std::cerr << "Usage: " << argv[0] << " <path_to_stl_file>" << std::endl;
-    //     return EXIT_FAILURE;
+  // if (argc < 2) {
+  //     std::cerr << "Usage: " << argv[0] << " <path_to_stl_file>" << std::endl;
+  //     return EXIT_FAILURE;
+  // }
+
+  const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
+
+  try {
+    setupGL(&window, RESOLUTION, RESOLUTION, "STL Viewer", !PREVIEW);
+    if (!window) throw std::runtime_error("Failed to create GLFW window");
+
+    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+    std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+
+    queryGPULimits();
+
+    std::size_t vram = getAvailableVRAM();
+    std::cout << "Estimated available VRAM for 2D textures: " << (vram / (1024 * 1024)) << " MB\n";
+
+    std::vector<float> vertices;
+    std::vector<unsigned int> indices;
+    float zSpan = 1.01f * loadMesh(stlPath, vertices, indices);
+
+    std::cout << "Loaded mesh: " << stlPath << std::endl;
+    std::cout << "Number of vertices: " << vertices.size() / 3 << std::endl;
+    std::cout << "Number of faces: " << indices.size() / 3 << std::endl;
+
+    meshBuffers = uploadMesh(vertices, indices);
+
+    drawShader = new Shader("shaders/vertex_ok.glsl", "shaders/fragment_ok.glsl");
+    transitionShader = new Shader("shaders/transitions.comp");
+    transitionShaderZ = new Shader("shaders/transitions_z.comp");
+
+    /*
+    createFramebuffer(fbo, colorTex, depthRbo, RESOLUTION);
+    auto startTime = std::chrono::high_resolution_clock::now();
+    // --------------------------------------------------------------------
+    voxelize(meshBuffers, indices.size(), zSpan, drawShader, transitionShader, window, fbo, colorTex, RESOLUTION, PREVIEW);
+    // Mantains the context alive while the voxelization is running
+    // while (!glfwWindowShouldClose(window)) {
+    //     glfwPollEvents();
     // }
+    // --------------------------------------------------------------------
+    auto endTime = std::chrono::high_resolution_clock::now();
 
-    const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
+    std::chrono::duration<double> elapsedTime = endTime - startTime;
+    std::cout << "Execution time: " << elapsedTime.count() << " seconds\n";
+    */
 
-    try {
-        setupGL(&window, RESOLUTION, RESOLUTION, "STL Viewer", !PREVIEW);
-        if (!window) throw std::runtime_error("Failed to create GLFW window");
+    // --------------------------------------------------------------------
+    GLuint sliceTex, fbo;
 
-        std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
-        std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+    // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
+    glGenTextures(1, &sliceTex);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, RESOLUTION, RESOLUTION, SLICES_PER_BLOCK + 1);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-        queryGPULimits();
+    // Create framebuffer
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-        std::size_t vram = getAvailableVRAM();
-        std::cout << "Estimated available VRAM for 2D textures: " << (vram / (1024 * 1024)) << " MB\n";
+    voxelizeZ(
+        meshBuffers,
+        indices.size(),
+        zSpan,
+        drawShader,
+        transitionShaderZ,
+        fbo,
+        sliceTex,
+        RESOLUTION,
+        RESOLUTION_Z,
+        SLICES_PER_BLOCK//,
+        //PREVIEW
+    );
+    // --------------------------------------------------------------------
 
-        std::vector<float> vertices;
-        std::vector<unsigned int> indices;
-        float zSpan = 1.01f * loadMesh(stlPath, vertices, indices);
+    // Clean up
+    deleteMeshBuffers(meshBuffers);
+    destroyFramebuffer(fbo, colorTex, depthRbo);
+    delete drawShader;
+    delete transitionShader;
+    delete transitionShaderZ;
+    glfwDestroyWindow(window);
+    glfwTerminate();
 
-        std::cout << "Number of vertices: " << vertices.size() / 3 << std::endl;
-        std::cout << "Number of faces: " << indices.size() / 3 << std::endl;
+  } catch (const std::exception& e) {
+    std::cerr << "[Error] " << e.what() << std::endl;
+    return EXIT_FAILURE;
+  }
 
-        meshBuffers = uploadMesh(vertices, indices);
-
-        shader = new Shader("shaders/vertex_ok.glsl", "shaders/fragment_ok.glsl");
-        transitionShader = new Shader("shaders/transitions.comp"); //###
-
-        createFramebuffer(fbo, colorTex, depthRbo, RESOLUTION);
-
-        auto startTime = std::chrono::high_resolution_clock::now();
-        // --------------------------------------------------------------------
-        voxelize(meshBuffers, indices.size(), zSpan, shader, transitionShader, window, fbo, colorTex, RESOLUTION, PREVIEW);
-        // Mantains the context alive while the voxelization is running
-        // while (!glfwWindowShouldClose(window)) {
-        //     glfwPollEvents();
-        // }
-        // --------------------------------------------------------------------
-        auto endTime = std::chrono::high_resolution_clock::now();
-
-        std::chrono::duration<double> elapsedTime = endTime - startTime;
-        std::cout << "Execution time: " << elapsedTime.count() << " seconds\n";
-
-        // Clean up
-        deleteMeshBuffers(meshBuffers);
-        destroyFramebuffer(fbo, colorTex, depthRbo);
-        delete shader;
-        glfwDestroyWindow(window);
-        glfwTerminate();
-
-    } catch (const std::exception& e) {
-        std::cerr << "[Error] " << e.what() << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
+  return EXIT_SUCCESS;
 }

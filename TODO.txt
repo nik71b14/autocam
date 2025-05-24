@@ -1,0 +1,10 @@
+-> Visualizzazione dei dati voxelizzati (es.: marching cube ecc.)
+
+-> Gestire la situazione per diverse schede video con varie caratteristiche: istanziare SSBO multipli o splittare l'immagine in più parti e voxelizzare a sezioni
+-> La voxelizzazione per parti forse è la cosa più comoda, poi devo riassemblare i blocchi ecc.
+-> Dimensione dei blocchi in direzione Z
+
+-> Rotazione dei blocchi che rappresentano l'utensile secondo due assi (l'utensile è assialsimmetrico)
+-> Intersezione di due blocchi con un certo offset del blocco-utensile rispetto al blocco-pezzo, che considero fermo
+-> Quando faccio avanzare l'utensile a "step", creo uno scalloping nella direzione di avanzamento, che è fittizio; posso evitarlo?
+-> Unità di misura quando voxelizzo?
