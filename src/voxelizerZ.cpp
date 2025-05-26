@@ -127,8 +127,8 @@ void voxelizeZ(
   std::chrono::duration<double> elapsedTime = endTime - startTime;
   std::cout << "Voxelization complete. Execution time: " << elapsedTime.count() << " seconds\n";
   
-  /*
-  // Read back the overflow buffer to check for overflow --------------------
+  // Read back the overflow buffer to check for overflow
+  #ifdef DEBUG_GPU
   std::vector<GLuint> overflowFlags(totalPixels);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, overflowBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
@@ -140,12 +140,10 @@ void voxelizeZ(
           std::cout << "Overflow at pixel column " << i << "\n";
       }
   }
-  // --------------------------------------------------------------------------
-  */
+  #endif
   
-  /*
   // Read back the count buffer, i.e. how many transitions were found for each pixel column
-  // @@@ DEBUG
+  #ifdef DEBUG_GPU
   std::vector<GLuint> counts(totalPixels);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, counts.size() * sizeof(GLuint), counts.data());
@@ -160,8 +158,8 @@ void voxelizeZ(
   for (uint i = 0; i < counts[colIndex]; ++i) {
       std::cout << "Transition Z: " << hostTransitions[colIndex * params.maxTransitionsPerZColumn + i] << "\n";
   }
-  // --------------------------------------------------------------------------
-  */
+  std::cout << "Total transitions found: " << std::accumulate(counts.begin(), counts.end(), 0) << "\n";  
+  #endif
 
   // COMPRESSION OF THE TRANSITIONS BUFFER ====================================
   
@@ -250,14 +248,13 @@ void voxelizeZ(
   const int WORKGROUP_SIZE = 1024; // Max local workgroup size
   const int numBlocks = (totalPixels + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE; // Number of workgroups needed (rounded up)
 
-  //@@@ ENABLE GL DEBUG
-  /*
-  glEnable(GL_DEBUG_OUTPUT);
+  #ifdef DEBUG_GPU
+    glEnable(GL_DEBUG_OUTPUT);
   glDebugMessageCallback([](GLenum source, GLenum type, GLuint id, GLenum severity,
                             GLsizei length, const GLchar* message, const void* userParam) {
       std::cerr << "GL DEBUG: " << message << "\n";
   }, nullptr);
-  */
+  #endif
 
   // 1. Create prefix sum output buffer (same size as countBuffer)
   GLuint prefixSumBuffer;
@@ -306,7 +303,7 @@ void voxelizeZ(
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
   //@@@ DEBUG CHECKS
-  /*
+  #ifdef DEBUG_GPU
   // Download result from GPU
   std::vector<GLuint> prefixSumResult(totalPixels);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
@@ -323,7 +320,7 @@ void voxelizeZ(
     }
     std::cout << " (" << prefixSumResult[i] << ")\n";
   }
-  */
+  #endif
 
   // -----> COMPRESSION <-----
 
