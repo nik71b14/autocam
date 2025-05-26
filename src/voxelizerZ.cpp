@@ -178,6 +178,7 @@ void voxelizeZ(
   
   //  Each column’s compressed transitions are located starting from prefixSum[i] with countBuffer[i] entries in compressedBuffer.
   
+  /*
   std::vector<GLuint> counts(totalPixels); // CPU side buffer to read back counts of transitions per pixel column
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer); // Work on countBuffer
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), counts.data()); // Read back counts of transitions per pixel column
@@ -204,9 +205,89 @@ void voxelizeZ(
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer); // 1. Bind before allocating or uploading
   glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // 2. Allocate storage
   glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefix.data()); // 3. Upload data
-  
-  // @@@ Replace the prefix calculation above, done on the CPU, with a compute shader that calculates the prefix sum on the GPU.
+  */
 
+  // ##########################################################################
+  // @@@ Replace the prefix calculation above, done on the CPU, with a compute shader that calculates the prefix sum on the GPU.
+  // Use a Blelloch scan with two passes
+  const int WORKGROUP_SIZE = 1024; // Max local workgroup size
+  const int numBlocks = (totalPixels + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE; // Number of workgroups needed (rounded up)
+
+  //@@@ ENABLE GL DEBUG
+  // glEnable(GL_DEBUG_OUTPUT);
+  // glDebugMessageCallback([](GLenum source, GLenum type, GLuint id, GLenum severity,
+  //                           GLsizei length, const GLchar* message, const void* userParam) {
+  //     std::cerr << "GL DEBUG: " << message << "\n";
+  // }, nullptr);
+  //@@@ END ENABLE GL DEBUG
+
+  // 1. Create prefix sum output buffer (same size as countBuffer)
+  GLuint prefixSumBuffer;
+  glGenBuffers(1, &prefixSumBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3
+
+  // 2. Create blockSums buffer (one entry per block)
+  GLuint blockSumsBuffer;
+  glGenBuffers(1, &blockSumsBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockSumsBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, numBlocks * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1, input to pass 2
+
+  // 3. Create blockOffsets buffer (also one entry per block)
+  GLuint blockOffsetsBuffer;
+  glGenBuffers(1, &blockOffsetsBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockOffsetsBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, numBlocks * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 2, input to pass 3
+
+  // Load and build the prefix sum shaders
+  Shader* prefixPass1 = new Shader("shaders/prefix_sum_pass1.comp");
+  Shader* prefixPass2 = new Shader("shaders/prefix_sum_pass2.comp");
+  Shader* prefixPass3 = new Shader("shaders/prefix_sum_pass3.comp");
+
+  // Dispatch sequence
+  // Pass 1: Local scan and blockSums
+  prefixPass1->use();
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, countBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, blockSumsBuffer);
+  glDispatchCompute(numBlocks, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  // Pass 2: Scan blockSums into blockOffsets
+  prefixPass2->use();
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, blockSumsBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, blockOffsetsBuffer);
+  glDispatchCompute(1, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  // Pass 3: Add blockOffsets
+  prefixPass3->use();
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, blockOffsetsBuffer);
+  glDispatchCompute(numBlocks, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  //@@@ DEBUG CHECKS
+  // Download result from GPU
+  std::vector<GLuint> prefixSumResult(totalPixels);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefixSumResult.data());
+
+  // Print 100 values uniformly taken from prefixSumResult
+  std::cout << "Graphical representation of prefixSumResult:\n";
+  size_t step = totalPixels / 10;
+  for (size_t i = 0; i < totalPixels; i += step) {
+    int barLength = prefixSumResult[i] / 100000; // Scale down for terminal display
+    std::cout << "[" << i << "] ";
+    for (int j = 0; j < barLength; ++j) {
+      std::cout << ".";
+    }
+    std::cout << " (" << prefixSumResult[i] << ")\n";
+  }
+
+  // ##########################################################################
+
+  /*
   Shader* compressTransitionsShader = new Shader("shaders/compress_transitions.comp");
   GLuint compressedBuffer;
 
@@ -250,4 +331,5 @@ void voxelizeZ(
   //delete prefixSumShader;
   //delete compressTransitionsShader;
 
+  */
 }

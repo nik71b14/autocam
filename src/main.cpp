@@ -42,7 +42,6 @@ MeshBuffers meshBuffers;
 GLFWwindow* window;
 GLuint fbo, colorTex, depthRbo;
 Shader* drawShader;
-Shader* transitionShader;
 Shader* transitionShaderZ;
 
 
@@ -82,8 +81,7 @@ int main(int argc, char** argv) {
 
     meshBuffers = uploadMesh(vertices, indices);
 
-    drawShader = new Shader("shaders/vertex_ok.glsl", "shaders/fragment_ok.glsl");
-    transitionShader = new Shader("shaders/transitions.comp");
+    drawShader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
     transitionShaderZ = new Shader("shaders/transitions_z.comp");
 
     GLuint sliceTex, fbo;
@@ -115,7 +113,6 @@ int main(int argc, char** argv) {
     deleteMeshBuffers(meshBuffers);
     destroyFramebuffer(fbo, colorTex, depthRbo);
     delete drawShader;
-    delete transitionShader;
     delete transitionShaderZ;
     glfwDestroyWindow(window);
     glfwTerminate();

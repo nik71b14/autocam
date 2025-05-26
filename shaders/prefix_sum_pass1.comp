@@ -1,0 +1,54 @@
+#version 460
+
+layout(local_size_x = 1024) in;
+
+layout(std430, binding = 0) readonly buffer Counts {
+    uint counts[];
+};
+
+layout(std430, binding = 1) writeonly buffer PrefixSums {
+    uint prefix[];
+};
+
+layout(std430, binding = 2) writeonly buffer BlockSums {
+    uint blockSums[];
+};
+
+shared uint temp[1024]; // Same as local_size_x
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    uint group = gl_WorkGroupID.x;
+
+    // Load to shared memory
+    temp[lid] = (gid < counts.length()) ? counts[gid] : 0;
+    memoryBarrierShared();
+    barrier();
+
+    // Blelloch exclusive scan (up-sweep)
+    for (uint offset = 1; offset < 1024; offset *= 2) {
+        uint val = 0;
+        if (lid >= offset)
+            val = temp[lid - offset];
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Convert to exclusive scan
+    uint scanned = temp[lid];
+    if (lid == 0) temp[1023] = temp[1023]; // Store block total
+    barrier();
+    if (lid > 0) {
+        scanned = temp[lid - 1];
+    } else {
+        scanned = 0;
+    }
+
+    if (gid < counts.length())
+        prefix[gid] = scanned;
+
+    if (lid == 1023 && group < blockSums.length())
+        blockSums[group] = temp[1023]; // Final sum of the block
+}

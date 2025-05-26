@@ -1,0 +1,21 @@
+// Add Offsets to Each Block
+#version 430
+
+layout(local_size_x = 1024) in;
+
+layout(std430, binding = 1) buffer PrefixBuffer {
+    uint prefix[];
+};
+layout(std430, binding = 3) buffer BlockOffsets {
+    uint blockOffsets[];
+};
+
+void main() {
+    uint tid = gl_LocalInvocationID.x;
+    uint blockId = gl_WorkGroupID.x;
+    uint index = blockId * gl_WorkGroupSize.x + tid;
+
+    if (index < prefix.length()) {
+        prefix[index] += blockOffsets[blockId];
+    }
+}
