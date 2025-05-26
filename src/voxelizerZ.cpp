@@ -163,7 +163,8 @@ void voxelizeZ(
   // --------------------------------------------------------------------------
   */
 
-  // Compression of the transition buffer -------------------------------------
+  // COMPRESSION OF THE TRANSITIONS BUFFER ====================================
+  
   // Input:
   // transitionBuffer → [RES*RES * MAX_TRANSITIONS_PER_COLUMN] elements
   // countBuffer → [RES*RES] elements, each telling how many transitions are valid for that XY column
@@ -178,6 +179,7 @@ void voxelizeZ(
   
   //  Each column’s compressed transitions are located starting from prefixSum[i] with countBuffer[i] entries in compressedBuffer.
   
+  // MIXED GPU/CPU APPROACH
   /*
   std::vector<GLuint> counts(totalPixels); // CPU side buffer to read back counts of transitions per pixel column
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer); // Work on countBuffer
@@ -205,21 +207,57 @@ void voxelizeZ(
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer); // 1. Bind before allocating or uploading
   glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // 2. Allocate storage
   glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefix.data()); // 3. Upload data
+
+  Shader* compressTransitionsShader = new Shader("shaders/compress_transitions.comp");
+  GLuint compressedBuffer;
+
+  // Read total compressed size (last prefix sum + count)
+  // I need to add to the last prefix sum the count of transitions in the last pixel column!
+
+  std::cout << "Last prefix sum: " << prefix.back() << "\n";
+  std::cout << "Last value in counts: " << counts.back() << "\n";
+  GLuint totalCompressedCount = prefix.back() + counts.back();
+
+  std::cout << "Total compressed count: " << totalCompressedCount << "\n";
+
+  // Allocate compressed transition buffer
+  glGenBuffers(1, &compressedBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, totalCompressedCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+  // Run compression shader
+  compressTransitionsShader->use(); // Bind `compress_transitions.comp`
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, transitionBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, countBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, prefixSumBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, compressedBuffer);
+
+  glDispatchCompute((totalPixels + 255) / 256, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  //@@@ Check size of compressed buffer
+  GLint64 compressedSize = 0;
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
+  glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &compressedSize);
+  std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB" << std::endl;
   */
 
-  // ##########################################################################
-  // @@@ Replace the prefix calculation above, done on the CPU, with a compute shader that calculates the prefix sum on the GPU.
+  // FULL GPU APPROACH
+
+  // -----> PREFIX SUM ALGORITHM <-----
+
   // Use a Blelloch scan with two passes
   const int WORKGROUP_SIZE = 1024; // Max local workgroup size
   const int numBlocks = (totalPixels + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE; // Number of workgroups needed (rounded up)
 
   //@@@ ENABLE GL DEBUG
-  // glEnable(GL_DEBUG_OUTPUT);
-  // glDebugMessageCallback([](GLenum source, GLenum type, GLuint id, GLenum severity,
-  //                           GLsizei length, const GLchar* message, const void* userParam) {
-  //     std::cerr << "GL DEBUG: " << message << "\n";
-  // }, nullptr);
-  //@@@ END ENABLE GL DEBUG
+  /*
+  glEnable(GL_DEBUG_OUTPUT);
+  glDebugMessageCallback([](GLenum source, GLenum type, GLuint id, GLenum severity,
+                            GLsizei length, const GLchar* message, const void* userParam) {
+      std::cerr << "GL DEBUG: " << message << "\n";
+  }, nullptr);
+  */
 
   // 1. Create prefix sum output buffer (same size as countBuffer)
   GLuint prefixSumBuffer;
@@ -268,6 +306,7 @@ void voxelizeZ(
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
   //@@@ DEBUG CHECKS
+  /*
   // Download result from GPU
   std::vector<GLuint> prefixSumResult(totalPixels);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
@@ -284,29 +323,42 @@ void voxelizeZ(
     }
     std::cout << " (" << prefixSumResult[i] << ")\n";
   }
+  */
 
-  // ##########################################################################
+  // -----> COMPRESSION <-----
 
-  /*
+  // 1. Read the last value from prefixSumBuffer (from GPU).
+  // 2. Read the last value from countBuffer (from GPU).
+  // 3. Add them on the CPU to compute totalCompressedCount.
+  // 4. Use that to allocate compressedBuffer.
+  
   Shader* compressTransitionsShader = new Shader("shaders/compress_transitions.comp");
-  GLuint compressedBuffer;
 
-  // Read total compressed size (last prefix sum + count)
-  // I need to add to the last prefix sum the count of transitions in the last pixel column!
+  // --- 1. Read last value from prefixSumBuffer
+  GLuint lastPrefixValue = 0;
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, (totalPixels - 1) * sizeof(GLuint), sizeof(GLuint), &lastPrefixValue);
 
-  std::cout << "Last prefix sum: " << prefix.back() << "\n";
-  std::cout << "Last value in counts: " << counts.back() << "\n";
-  GLuint totalCompressedCount = prefix.back() + counts.back();
+  // --- 2. Read last value from countBuffer
+  GLuint lastCountValue = 0;
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, (totalPixels - 1) * sizeof(GLuint), sizeof(GLuint), &lastCountValue);
 
+  // --- 3. Compute total compressed count
+  GLuint totalCompressedCount = lastPrefixValue + lastCountValue;
+
+  std::cout << "Last prefix sum (GPU): " << lastPrefixValue << "\n";
+  std::cout << "Last count (GPU): " << lastCountValue << "\n";
   std::cout << "Total compressed count: " << totalCompressedCount << "\n";
 
-  // Allocate compressed transition buffer
+  // --- 4. Allocate compressed output buffer
+  GLuint compressedBuffer;
   glGenBuffers(1, &compressedBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
   glBufferData(GL_SHADER_STORAGE_BUFFER, totalCompressedCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
 
-  // Run compression shader
-  compressTransitionsShader->use(); // Bind `compress_transitions.comp`
+  // --- 5. Dispatch compression shader
+  compressTransitionsShader->use(); // Assume already compiled
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, transitionBuffer);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, countBuffer);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, prefixSumBuffer);
@@ -315,21 +367,27 @@ void voxelizeZ(
   glDispatchCompute((totalPixels + 255) / 256, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-  //@@@ Check size of compressed buffer
+  // --- 6. Debug: Check buffer size
   GLint64 compressedSize = 0;
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
   glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &compressedSize);
-  std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB" << std::endl;
-  
-  // --------------------------------------------------------------------------
+  std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB\n";
+
+  // ==========================================================================
   
   // Cleanup
   glDeleteBuffers(1, &transitionBuffer);
   glDeleteBuffers(1, &countBuffer);
   glDeleteBuffers(1, &overflowBuffer);
   glDeleteBuffers(1, &prefixSumBuffer);
-  //delete prefixSumShader;
-  //delete compressTransitionsShader;
+  glDeleteBuffers(1, &blockSumsBuffer);
+  glDeleteBuffers(1, &blockOffsetsBuffer);
+  glDeleteBuffers(1, &compressedBuffer);
+  glDeleteTextures(1, &sliceTex);
 
-  */
+  delete compressTransitionsShader;
+  delete prefixPass1;
+  delete prefixPass2;
+  delete prefixPass3;
+  
 }
