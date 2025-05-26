@@ -10,6 +10,10 @@
 #include <thread>
 #include "voxelizerZUtils.hpp"
 
+void RenderFullScreenQuad(GLuint &quadVAO, GLuint &quadVBO); //@@@ Forward declaration
+  GLFWwindow* InitWindow(int width, int height, const char* title); //@@@ Forward declaration
+
+
 // - Mesh is sliced and rendered into a 3D texture
 // - Adjacent slices are compared in a compute shader
 // - Transitions are detected (red ↔ black)
@@ -17,8 +21,6 @@
 // - Count of transitions per XY location is tracked
 
 // After that, i can pack data into an octree, bit compress it, or visualize in a raymarching shader.
-
-const int MAX_TRANSITIONS_PER_Z_COLUMN = 32;
 
 void voxelizeZ(
   const MeshBuffers& mesh,
@@ -183,17 +185,6 @@ void voxelizeZ(
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer); // Work on countBuffer
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), counts.data()); // Read back counts of transitions per pixel column
 
-  // In an exclusive prefix sum, each prefix[i] is the sum of all counts[j] before i, not including counts[i].
-  // Example:
-  // counts = [3, 1, 4, 0, 2]
-  //
-  // prefix[0] = 0
-  // prefix[1] = 3       // = counts[0]
-  // prefix[2] = 3 + 1   // = counts[0] + counts[1]
-  // prefix[3] = 3 + 1 + 4
-  // prefix[4] = 3 + 1 + 4 + 0
-  //
-  // Result: prefix = [0, 3, 4, 8, 8], which is what i we need (prefix is the offset in the compressed buffer where each pixel's transitions start).
   std::vector<GLuint> prefix(totalPixels, 0);
   for (size_t i = 1; i < totalPixels; ++i) {
       prefix[i] = prefix[i - 1] + counts[i - 1];
@@ -243,6 +234,17 @@ void voxelizeZ(
   // FULL GPU APPROACH
 
   // -----> PREFIX SUM ALGORITHM <-----
+  // In an exclusive prefix sum, each prefix[i] is the sum of all counts[j] before i, not including counts[i].
+  // Example:
+  // counts = [3, 1, 4, 0, 2]
+  //
+  // prefix[0] = 0
+  // prefix[1] = 3       // = counts[0]
+  // prefix[2] = 3 + 1   // = counts[0] + counts[1]
+  // prefix[3] = 3 + 1 + 4
+  // prefix[4] = 3 + 1 + 4 + 0
+  //
+  // Result: prefix = [0, 3, 4, 8, 8], which is what i we need (prefix is the offset in the compressed buffer where each pixel's transitions start).
 
   // Use a Blelloch scan with two passes
   const int WORKGROUP_SIZE = 1024; // Max local workgroup size
@@ -371,6 +373,115 @@ void voxelizeZ(
   std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB\n";
 
   // ==========================================================================
+
+  // VISUALIZATION: Render the voxelized mesh using raymarching ===============
+
+  // Concept
+  // 1. Implement a raymarching shader that casts rays through the voxel grid.
+  // 2. For each (x, y) column, use the prefixBuffer to get how many transitions there are.
+  // 3. Then, read the Z values from transitionsBuffer.
+  // 4. Reconstruct the inside/outside intervals using the even-odd rule.
+
+  // Upload buffers as 2D textures or SSBOs:
+  //   prefixBuffer → 2D texture (or SSBO).
+  //   transitionsBuffer → 3D texture or 2D texture with third dimension flattened.
+
+  // Raymarching fragment shader:
+  //   For each fragment ray (typically through a cube), transform the ray to voxel space.
+  //   For each ray step:
+  //   Map (x, y) to buffer index.
+  //   Lookup transition count and Z intervals.
+  //   Use even-odd filling to determine if current Z is inside or outside.
+
+  // Color according to state:
+  //   Inside = none
+  //   Outside = gray
+  //   Transition surfaces = highlight
+
+  // It is supposed that i have the following buffers ready for the raymarching shader:
+  //    - A compressedBuffer contains the Z transition indices for each XY column.
+  //    - A prefixSumBuffer contains the start index in the compressedBuffer for each XY column (exclusive prefix sum).
+  //    - Resolution is RESOLUTION, RESOLUTION, and RESOLUTION_Z (set appropriately).
+  //    - Voxel space origin is normalized to [0,1].
+
+  // - InitWindow() initializes GLFW, creates a window and context, loads GLAD.
+  // - RenderFullScreenQuad() creates a VAO/VBO for a simple two-triangle fullscreen quad and renders it.
+  // - The main loop clears the screen, binds buffers, sets uniforms, and draws the fullscreen quad.
+  // - You must have compressedBuffer and prefixSumBuffer created and filled beforehand.
+  // - This minimal example assumes your shader files are in the shaders/ folder.
+  // - Adjust uniforms and binding points as per your shader code.
+  // - You can expand this to handle inputs, resizing, camera movement, etc.
+
+  // Assume compressedBuffer and prefixSumBuffer are already filled and valid
+
+
+  // Load and compile the shader program
+  Shader* raymarchingShader;
+  raymarchingShader = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
+
+  // Global VAO/VBO for fullscreen quad
+  GLuint quadVAO = 0;
+  GLuint quadVBO = 0;
+
+  const int windowWidth = 800;
+  const int windowHeight = 600;
+
+  GLFWwindow* window = InitWindow(windowWidth, windowHeight, "Voxel Transition Viewer");
+  if (!window) exit(EXIT_FAILURE);
+
+  // Render loop
+  while (!glfwWindowShouldClose(window)) {
+    glfwPollEvents();
+
+    // Clear screen
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    raymarchingShader->use();
+
+    // Bind buffers
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_BUFFER, 0);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, compressedBuffer);
+    raymarchingShader->setBufferBase(0, compressedBuffer);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_BUFFER, 0);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, prefixSumBuffer);
+    raymarchingShader->setBufferBase(1, prefixSumBuffer);
+
+    // Set uniforms
+    raymarchingShader->setIVec3("resolution", glm::ivec3(params.resolution, params.resolution, params.resolutionZ));
+    raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
+
+    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 5.0f);
+    glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
+    float fov = 45.0f;
+    float aspectRatio = float(windowWidth) / float(windowHeight);
+    glm::mat4 proj = glm::perspective(glm::radians(fov), aspectRatio, 0.1f, 100.0f);
+
+    glm::mat4 invViewProj = glm::inverse(proj * view);
+
+    raymarchingShader->setMat4("invViewProj", invViewProj);
+    raymarchingShader->setVec3("cameraPos", cameraPos);
+
+    // Draw fullscreen quad
+    RenderFullScreenQuad(quadVAO, quadVBO);
+
+    glfwSwapBuffers(window);
+  }
+
+  // Cleanup
+  delete raymarchingShader;
+  glDeleteVertexArrays(1, &quadVAO);
+  glDeleteBuffers(1, &quadVBO);
+
+  glfwDestroyWindow(window);
+  glfwTerminate();
+  // ==========================================================================
   
   // Cleanup
   glDeleteBuffers(1, &transitionBuffer);
@@ -387,4 +498,67 @@ void voxelizeZ(
   delete prefixPass2;
   delete prefixPass3;
   
+}
+
+void RenderFullScreenQuad(GLuint &quadVAO, GLuint &quadVBO) {
+  if (quadVAO == 0) {
+      float quadVertices[] = {
+          // positions (NDC)
+          -1.0f, -1.0f,
+           1.0f, -1.0f,
+          -1.0f,  1.0f,
+          -1.0f,  1.0f,
+           1.0f, -1.0f,
+           1.0f,  1.0f,
+      };
+
+      glGenVertexArrays(1, &quadVAO);
+      glGenBuffers(1, &quadVBO);
+      glBindVertexArray(quadVAO);
+      glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+      glEnableVertexAttribArray(0); // layout location 0 in vertex shader
+      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+  }
+  glBindVertexArray(quadVAO);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glBindVertexArray(0);
+}
+
+// Create a GLFW window and initialize GLAD
+GLFWwindow* InitWindow(int width, int height, const char* title) {
+  if (!glfwInit()) {
+      std::cerr << "Failed to initialize GLFW\n";
+      return nullptr;
+  }
+
+  // OpenGL 4.6 Core Profile
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+  GLFWwindow* window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+  if (!window) {
+      std::cerr << "Failed to create GLFW window\n";
+      glfwTerminate();
+      return nullptr;
+  }
+
+  glfwMakeContextCurrent(window);
+
+  // Load OpenGL function pointers using GLAD
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+      std::cerr << "Failed to initialize GLAD\n";
+      glfwDestroyWindow(window);
+      glfwTerminate();
+      return nullptr;
+  }
+
+  // Enable vsync
+  glfwSwapInterval(1);
+
+  // Set viewport
+  glViewport(0, 0, width, height);
+
+  return window;
 }
