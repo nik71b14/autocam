@@ -10,8 +10,9 @@
 #include <thread>
 #include "voxelizerZUtils.hpp"
 
-void RenderFullScreenQuad(GLuint &quadVAO, GLuint &quadVBO); //@@@ Forward declaration
-  GLFWwindow* InitWindow(int width, int height, const char* title); //@@@ Forward declaration
+//@@@ Forward declarations
+void RenderFullScreenQuad(GLuint &quadVAO, Shader* raymarchingShader);
+GLFWwindow* InitWindow(int width, int height, const char* title);
 
 
 // - Mesh is sliced and rendered into a 3D texture
@@ -263,6 +264,7 @@ void voxelizeZ(
   glGenBuffers(1, &prefixSumBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
   glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3
+  //glBufferData(GL_SHADER_STORAGE_BUFFER, (totalPixels + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3 (totalPixels + 1 to handle exclusive prefix sum)
 
   // 2. Create blockSums buffer (one entry per block)
   GLuint blockSumsBuffer;
@@ -372,6 +374,17 @@ void voxelizeZ(
   glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &compressedSize);
   std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB\n";
 
+  // Cleanup
+  glDeleteBuffers(1, &transitionBuffer);
+  glDeleteBuffers(1, &countBuffer);
+  glDeleteBuffers(1, &overflowBuffer);
+  glDeleteBuffers(1, &blockSumsBuffer);
+  glDeleteBuffers(1, &blockOffsetsBuffer);
+  delete compressTransitionsShader;
+  delete prefixPass1;
+  delete prefixPass2;
+  delete prefixPass3;
+
   // ==========================================================================
 
   // VISUALIZATION: Render the voxelized mesh using raymarching ===============
@@ -417,7 +430,6 @@ void voxelizeZ(
 
   // Load and compile the shader program
   Shader* raymarchingShader;
-  raymarchingShader = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
 
   // Global VAO/VBO for fullscreen quad
   GLuint quadVAO = 0;
@@ -429,130 +441,169 @@ void voxelizeZ(
   GLFWwindow* window = InitWindow(windowWidth, windowHeight, "Voxel Transition Viewer");
   if (!window) exit(EXIT_FAILURE);
 
+  // Call this after creating the window (particularly after the functions GLFWwindow* window = glfwCreateWindow(...) and glfwMakeContextCurrent(window) have been called)
+  raymarchingShader = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
+  raymarchingShader->use();
+  
+  glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
+
+  // Setup a fullscreen quad VAO/VBO if not already created (using two triangles)
+  if (quadVAO == 0) {
+    float quadVertices[] = {
+        // positions
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+        -1.0f,  1.0f,
+        -1.0f,  1.0f,
+         1.0f, -1.0f,
+         1.0f,  1.0f,
+    };
+
+    glGenVertexArrays(1, &quadVAO);
+    glGenBuffers(1, &quadVBO);
+    glBindVertexArray(quadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+  }
+
+  // &&&&& WITH THESE DUMMY BUFFERS, EVERYTHING SEEMS TO WORK ======================================================
+  // Create dummy buffers for compressedBuffer and prefixSumBuffer
+  GLuint compressedBuffer1;
+
+  // Allocate and initialize compressedBuffer with zeros
+  glGenBuffers(1, &compressedBuffer1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer1);
+  std::vector<GLuint> zeroData(1024, 0); // Example size: 1024 elements initialized to zero
+  glBufferData(GL_SHADER_STORAGE_BUFFER, zeroData.size() * sizeof(GLuint), zeroData.data(), GL_DYNAMIC_COPY);
+
+  // Allocate and initialize prefixSumBuffer with zeros
+  GLuint prefixSumBuffer1;
+  glGenBuffers(1, &prefixSumBuffer1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer1);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, zeroData.size() * sizeof(GLuint), zeroData.data(), GL_DYNAMIC_COPY);
+    // &&&&& WITH THESE DUMMY BUFFERS, EVERYTHING SEEMS TO WORK ======================================================
+
+
+  //&&&&&&&& HERE THE ERROR 502 HAPPENS &&&&&&&&&&
+  // Bind the buffers
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, compressedBuffer1);  // TransitionBuffer
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer1);   // PrefixSumBuffer
+  //&&&&&&&& HERE THE ERROR 502 HAPPENS &&&&&&&&&&
+
+
   // Render loop
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
 
+    // Check if the current program (shader) is set correctly
+    /*
+    GLint currentProgram = -1;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    std::cout << "Current program after use(): " << currentProgram << std::endl;
+    */
+
     // Clear screen
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    raymarchingShader->use();
+    // // Bind buffers
+    // glActiveTexture(GL_TEXTURE0);
+    // glBindTexture(GL_TEXTURE_BUFFER, 0);
+    // glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, compressedBuffer);
+    // raymarchingShader->setBufferBase(0, compressedBuffer);
 
-    // Bind buffers
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, 0);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, compressedBuffer);
-    raymarchingShader->setBufferBase(0, compressedBuffer);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, 0);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, prefixSumBuffer);
-    raymarchingShader->setBufferBase(1, prefixSumBuffer);
+    // glActiveTexture(GL_TEXTURE1);
+    // glBindTexture(GL_TEXTURE_BUFFER, 0);
+    // glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, prefixSumBuffer);
+    // raymarchingShader->setBufferBase(1, prefixSumBuffer);
 
     // Set uniforms
     raymarchingShader->setIVec3("resolution", glm::ivec3(params.resolution, params.resolution, params.resolutionZ));
     raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
 
+    float fov = 45.0f;
+    float aspectRatio = float(windowWidth) / float(windowHeight);
+
     glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 5.0f);
     glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
-
-    glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
-    float fov = 45.0f;
-    float aspectRatio = float(windowWidth) / float(windowHeight);
     glm::mat4 proj = glm::perspective(glm::radians(fov), aspectRatio, 0.1f, 100.0f);
-
+    glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
     glm::mat4 invViewProj = glm::inverse(proj * view);
 
     raymarchingShader->setMat4("invViewProj", invViewProj);
     raymarchingShader->setVec3("cameraPos", cameraPos);
+    raymarchingShader->setIVec2("screenResolution", glm::ivec2(windowWidth, windowHeight));
 
     // Draw fullscreen quad
-    RenderFullScreenQuad(quadVAO, quadVBO);
+    RenderFullScreenQuad(quadVAO, raymarchingShader);
 
     glfwSwapBuffers(window);
   }
 
   // Cleanup
+  glDeleteBuffers(1, &prefixSumBuffer);
+  glDeleteBuffers(1, &compressedBuffer);
+  glDeleteBuffers(1, &quadVBO);
+  glDeleteTextures(1, &sliceTex);
   delete raymarchingShader;
   glDeleteVertexArrays(1, &quadVAO);
-  glDeleteBuffers(1, &quadVBO);
-
+  
   glfwDestroyWindow(window);
-  glfwTerminate();
   // ==========================================================================
   
-  // Cleanup
-  glDeleteBuffers(1, &transitionBuffer);
-  glDeleteBuffers(1, &countBuffer);
-  glDeleteBuffers(1, &overflowBuffer);
-  glDeleteBuffers(1, &prefixSumBuffer);
-  glDeleteBuffers(1, &blockSumsBuffer);
-  glDeleteBuffers(1, &blockOffsetsBuffer);
-  glDeleteBuffers(1, &compressedBuffer);
-  glDeleteTextures(1, &sliceTex);
-
-  delete compressTransitionsShader;
-  delete prefixPass1;
-  delete prefixPass2;
-  delete prefixPass3;
-  
 }
 
-void RenderFullScreenQuad(GLuint &quadVAO, GLuint &quadVBO) {
-  if (quadVAO == 0) {
-      float quadVertices[] = {
-          // positions (NDC)
-          -1.0f, -1.0f,
-           1.0f, -1.0f,
-          -1.0f,  1.0f,
-          -1.0f,  1.0f,
-           1.0f, -1.0f,
-           1.0f,  1.0f,
-      };
-
-      glGenVertexArrays(1, &quadVAO);
-      glGenBuffers(1, &quadVBO);
-      glBindVertexArray(quadVAO);
-      glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-      glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
-      glEnableVertexAttribArray(0); // layout location 0 in vertex shader
-      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-  }
+void RenderFullScreenQuad(GLuint &quadVAO, Shader* raymarchingShader) {
   glBindVertexArray(quadVAO);
+  raymarchingShader->use(); //&&& SOLO PER DEBUG, ELIMINARE!
+
+  // GLint currentProgram;
+  // glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+  // std::cout << "Current shader program ID: " << currentProgram << std::endl;
+
   glDrawArrays(GL_TRIANGLES, 0, 6);
-  glBindVertexArray(0);
 }
 
-// Create a GLFW window and initialize GLAD
+// Create a GLFW window and initialize GLAD (GLFW = GL Framework, GLAD = OpenGL loader)
 GLFWwindow* InitWindow(int width, int height, const char* title) {
-  if (!glfwInit()) {
-      std::cerr << "Failed to initialize GLFW\n";
-      return nullptr;
-  }
+  // if (!glfwInit()) {
+  //     std::cerr << "Failed to initialize GLFW\n";
+  //     return nullptr;
+  // }
+  if (!glfwInit()) throw std::runtime_error("Failed to initialize GLFW");
 
   // OpenGL 4.6 Core Profile
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4); // OpenGL version 4.6
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // Use Core Profile, i.e. without deprecated features
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // Allow resizing the window
+  glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE); // Make the window visible
 
   GLFWwindow* window = glfwCreateWindow(width, height, title, nullptr, nullptr);
-  if (!window) {
-      std::cerr << "Failed to create GLFW window\n";
-      glfwTerminate();
-      return nullptr;
-  }
+  // if (!window) {
+  //     std::cerr << "Failed to create GLFW window\n";
+  //     glfwTerminate();
+  //     return nullptr;
+  // }
+  if (!window) throw std::runtime_error("Failed to create GLFW window");
 
   glfwMakeContextCurrent(window);
 
   // Load OpenGL function pointers using GLAD
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-      std::cerr << "Failed to initialize GLAD\n";
-      glfwDestroyWindow(window);
-      glfwTerminate();
-      return nullptr;
-  }
+  // if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+  //     std::cerr << "Failed to initialize GLAD\n";
+  //     glfwDestroyWindow(window);
+  //     glfwTerminate();
+  //     return nullptr;
+  // }
+
+  // Load OpenGL function pointers using GLAD
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+  throw std::runtime_error("Failed to initialize GLAD");
 
   // Enable vsync
   glfwSwapInterval(1);

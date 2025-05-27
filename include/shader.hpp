@@ -64,7 +64,13 @@ public:
 
 
     void use() const {
+        //std::cout << "Shader Program ID: " << ID << std::endl;
         glUseProgram(ID);
+
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR) {
+            std::cerr << "OpenGL error after glUseProgram: " << std::hex << err << std::endl;
+        }
     }
 
     void setUInt(const std::string& name, unsigned int value) const {
@@ -109,29 +115,60 @@ public:
 
 
 private:
+    // static unsigned int compile(GLenum type, const char* code) {
+    //     unsigned int shader = glCreateShader(type);
+    //     glShaderSource(shader, 1, &code, nullptr);
+    //     glCompileShader(shader);
+
+    //     int success;
+    //     char infoLog[512];
+    //     glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    //     if (!success) {
+    //         glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+    //         throw std::runtime_error(std::string("Shader compilation error:\n") + infoLog);
+    //     }
+
+    //     return shader;
+    // }
     static unsigned int compile(GLenum type, const char* code) {
         unsigned int shader = glCreateShader(type);
         glShaderSource(shader, 1, &code, nullptr);
         glCompileShader(shader);
-
+    
         int success;
-        char infoLog[512];
+        char infoLog[1024];
         glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
         if (!success) {
-            glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-            throw std::runtime_error(std::string("Shader compilation error:\n") + infoLog);
+            glGetShaderInfoLog(shader, 1024, nullptr, infoLog);
+            std::string typeStr = (type == GL_VERTEX_SHADER ? "VERTEX" :
+                                   type == GL_FRAGMENT_SHADER ? "FRAGMENT" :
+                                   type == GL_COMPUTE_SHADER ? "COMPUTE" : "UNKNOWN");
+            std::cerr << "ERROR::SHADER_COMPILATION_ERROR of type: " << typeStr << "\n"
+                      << infoLog << "\n -- --------------------------------------------------- -- " << std::endl;
+            throw std::runtime_error("Shader compilation failed.");
         }
-
+    
         return shader;
     }
 
+    // static void checkLinkErrors(unsigned int program) {
+    //     int success;
+    //     char infoLog[512];
+    //     glGetProgramiv(program, GL_LINK_STATUS, &success);
+    //     if (!success) {
+    //         glGetProgramInfoLog(program, 512, nullptr, infoLog);
+    //         throw std::runtime_error(std::string("Shader linking error:\n") + infoLog);
+    //     }
+    // }
     static void checkLinkErrors(unsigned int program) {
         int success;
-        char infoLog[512];
+        char infoLog[1024];
         glGetProgramiv(program, GL_LINK_STATUS, &success);
         if (!success) {
-            glGetProgramInfoLog(program, 512, nullptr, infoLog);
-            throw std::runtime_error(std::string("Shader linking error:\n") + infoLog);
+            glGetProgramInfoLog(program, 1024, nullptr, infoLog);
+            std::cerr << "ERROR::PROGRAM_LINKING_ERROR:\n"
+                      << infoLog << "\n -- --------------------------------------------------- -- " << std::endl;
+            throw std::runtime_error("Shader linking failed.");
         }
     }
 };
