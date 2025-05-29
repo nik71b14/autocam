@@ -389,10 +389,12 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> voxelizeZ(
   // --- 3. Compute total compressed count
   GLuint totalCompressedCount = lastPrefixValue + lastCountValue;
 
+  #ifdef DEBUG_GPU
   std::cout << "Last prefix sum (GPU): " << lastPrefixValue << "\n";
   std::cout << "Last count (GPU): " << lastCountValue << "\n";
   std::cout << "Total compressed count: " << totalCompressedCount << "\n";
-
+  #endif
+  
   // --- 4. Allocate compressed output buffer
   GLuint compressedBuffer;
   glGenBuffers(1, &compressedBuffer);
@@ -413,7 +415,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> voxelizeZ(
   GLint64 compressedSize = 0;
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
   glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &compressedSize);
-  std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB\n";
+  std::cout << "Compressed buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB\n";
 
   // Download compressedBuffer and prefixSumBuffer to CPU for further processing or visualization
   std::vector<GLuint> compressedData(totalCompressedCount);
