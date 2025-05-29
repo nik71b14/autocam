@@ -31,6 +31,9 @@
 #include "voxelizerZ.hpp"
 #include "voxelizerZUtils.hpp"
 
+#include "visualizerZ.hpp"
+#include "voxelViewer.hpp"
+
 // Constants ----------------------------------------------------------------
 const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
@@ -70,6 +73,23 @@ int main(int argc, char** argv) {
         zSpan,
         params
       );
+
+    VoxelViewer viewer(
+        "test/cross_compressedBuffer.bin",
+        "test/cross_prefixSumBuffer.bin",
+        200,
+        200,
+        32
+      );
+    viewer.run();
+
+    // visualizeZ(
+    //     "test/cross_compressedBuffer.bin",
+    //     "test/cross_prefixSumBuffer.bin",
+    //     200,
+    //     200,
+    //     32
+    //   );
     
   } catch (const std::exception& e) {
     std::cerr << "[Error] " << e.what() << std::endl;

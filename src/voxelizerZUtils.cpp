@@ -1,7 +1,7 @@
+#include <glad/glad.h> // This before GLFW to avoid conflicts
 #include "voxelizerZUtils.hpp"
 #include "voxelizerZ.hpp"
 #include <vector>
-#include <glad/glad.h>
 
 size_t estimateMemoryUsageBytes(const VoxelizationParams& params) {
     size_t totalPixels = size_t(params.resolution) * size_t(params.resolution);

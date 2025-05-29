@@ -1,5 +1,4 @@
-#ifndef VOXELIZERZ_HPP
-#define VOXELIZERZ_HPP
+#pragma once
 
 #include "shader.hpp"
 #include "GLUtils.hpp"
@@ -12,4 +11,3 @@ void voxelizeZ(
   const VoxelizationParams& params
 );
 
-#endif // VOXELIZERZ_HPP

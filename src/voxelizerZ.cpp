@@ -1,15 +1,18 @@
 #include "voxelizerZ.hpp"
 
+#include <glad/glad.h> // This before GLFW to avoid conflicts
 #include <iostream>
 #include <vector>
 #include <GLFW/glfw3.h>
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "shader.hpp"
 #include "GLUtils.hpp"
 #include <thread>
 #include "voxelizerZUtils.hpp"
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 
 #define DEBUG_GPU
 

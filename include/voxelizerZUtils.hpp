@@ -1,5 +1,3 @@
-// voxelizerZUtils.hpp
-
 #pragma once
 
 #include <cstddef>
