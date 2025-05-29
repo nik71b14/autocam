@@ -1,5 +1,11 @@
--> Visualizzazione dei dati voxelizzati (es.: marching cube ecc.)
+-> Trasformare voxelizeZ in una classe e chiamarla Voxelize
+-> Visualizzatore con rotazione e zoom dinamico con mouse
+-> Risoluzioni arbitrarie e differenti in xy
 -> Estendere anche a risoluzioni diverse da potenze di 2
+-> Se ho un overflow riguardo al massimo numero di transizioni in Z, creare un loop che le aumenta
+-> Scelta colore nel Visualizzatore
+-> Posizionamento e visualizzazione di oggetti multipli
+-> Sottrazione di due oggetti
 
 -> Gestire la situazione per diverse schede video con varie caratteristiche: istanziare SSBO multipli o splittare l'immagine in più parti e voxelizzare a sezioni
 -> La voxelizzazione per parti forse è la cosa più comoda, poi devo riassemblare i blocchi ecc.

@@ -1,8 +1,6 @@
 #include <iostream>
 #include <vector>
 #include <stdexcept>
-#include <filesystem>
-#include <thread>
 
 // Parses the OpenGL specification and generates code (usually .c and .h files)
 // When your program starts, you call gladLoadGL() (or gladLoadGLLoader() for GLFW/Vulkan)
@@ -30,8 +28,6 @@
 #include "GLUtils.hpp"
 #include "voxelizerZ.hpp"
 #include "voxelizerZUtils.hpp"
-
-#include "visualizerZ.hpp"
 #include "voxelViewer.hpp"
 
 // Constants ----------------------------------------------------------------
@@ -39,10 +35,6 @@ const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
 //const char* STL_PATH = "models/cube.stl";
 //const char* STL_PATH = "models/single_face_xy.stl";
-
-// Global variables -----------------------------------------------------------
-// MeshBuffers meshBuffers;
-GLuint fbo, colorTex;
 
 int main(int argc, char** argv) {
 
@@ -67,7 +59,7 @@ int main(int argc, char** argv) {
     std::cout << "Number of vertices: " << vertices.size() / 3 << std::endl;
     std::cout << "Number of faces: " << indices.size() / 3 << std::endl;
 
-    voxelizeZ(
+    auto [compressedData, prefixSumData] = voxelizeZ(
         vertices,
         indices,
         zSpan,
@@ -75,21 +67,22 @@ int main(int argc, char** argv) {
       );
 
     VoxelViewer viewer(
-        "test/cross_compressedBuffer.bin",
-        "test/cross_prefixSumBuffer.bin",
-        200,
-        200,
-        32
-      );
+      compressedData,
+      prefixSumData,
+      params.resolution,
+      params.resolutionZ,
+      params.maxTransitionsPerZColumn
+    );
     viewer.run();
 
-    // visualizeZ(
+    // VoxelViewer viewer(
     //     "test/cross_compressedBuffer.bin",
     //     "test/cross_prefixSumBuffer.bin",
     //     200,
     //     200,
     //     32
     //   );
+    // viewer.run();
     
   } catch (const std::exception& e) {
     std::cerr << "[Error] " << e.what() << std::endl;
