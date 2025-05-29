@@ -6,13 +6,9 @@
 #include "voxelizerZUtils.hpp"
 
 void voxelizeZ(
-  const MeshBuffers& mesh,
-  int triangleCount,
+  const std::vector<float>& vertices,
+  const std::vector<unsigned int>& indices,
   float zSpan,
-  Shader* drawShader,
-  Shader* computeShader,
-  GLuint fbo,
-  GLuint sliceTex, 
   const VoxelizationParams& params
 );
 

@@ -38,12 +38,8 @@ const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/single_face_xy.stl";
 
 // Global variables -----------------------------------------------------------
-MeshBuffers meshBuffers;
-GLFWwindow* window;
-GLuint fbo, colorTex, depthRbo;
-Shader* drawShader;
-Shader* transitionShaderZ;
-
+// MeshBuffers meshBuffers;
+GLuint fbo, colorTex;
 
 int main(int argc, char** argv) {
 
@@ -56,20 +52,9 @@ int main(int argc, char** argv) {
     params.resolutionZ = 1024; // Default Z resolution
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
 
-    setupGL(&window, params.resolution, params.resolution, "STL Viewer", !params.preview);
-    if (!window) throw std::runtime_error("Failed to create GLFW window");
-
-    // Get system information
-    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
-    std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-    queryGPULimits();
-
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
     //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
     std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
-
-    std::size_t vram = getAvailableVRAM();
-    std::cout << "Estimated available VRAM for 2D textures: " << (vram / (1024 * 1024)) << " MB\n";
 
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
@@ -79,44 +64,13 @@ int main(int argc, char** argv) {
     std::cout << "Number of vertices: " << vertices.size() / 3 << std::endl;
     std::cout << "Number of faces: " << indices.size() / 3 << std::endl;
 
-    meshBuffers = uploadMesh(vertices, indices);
-
-    drawShader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
-    transitionShaderZ = new Shader("shaders/transitions_z.comp");
-
-    GLuint sliceTex, fbo;
-
-    // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
-    glGenTextures(1, &sliceTex);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
-    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolution, params.resolution, params.slicesPerBlock + 1);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    // Create framebuffer
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
     voxelizeZ(
-        meshBuffers,
-        indices.size(),
+        vertices,
+        indices,
         zSpan,
-        drawShader,
-        transitionShaderZ,
-        fbo,
-        sliceTex,
         params
-    );
-
-    // Clean up
-    deleteMeshBuffers(meshBuffers);
-    destroyFramebuffer(fbo, colorTex, depthRbo);
-    delete drawShader;
-    delete transitionShaderZ;
-    glfwDestroyWindow(window);
-    glfwTerminate();
-
+      );
+    
   } catch (const std::exception& e) {
     std::cerr << "[Error] " << e.what() << std::endl;
     return EXIT_FAILURE;

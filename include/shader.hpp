@@ -65,6 +65,10 @@ public:
 
     void use() const {
         //std::cout << "Shader Program ID: " << ID << std::endl;
+        if (ID == 0) {
+            std::cerr << "Shader program ID is 0, cannot use shader." << std::endl;
+            return;
+        }
         glUseProgram(ID);
 
         GLenum err = glGetError();

@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <vector>
+#include <GLFW/glfw3.h>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -10,9 +11,12 @@
 #include <thread>
 #include "voxelizerZUtils.hpp"
 
+#define DEBUG_GPU
+
 //@@@ Forward declarations
 void RenderFullScreenQuad(GLuint &quadVAO, Shader* raymarchingShader);
 GLFWwindow* InitWindow(int width, int height, const char* title);
+bool loadBinaryFile(const std::string& filename, std::vector<unsigned int>& outData);
 
 
 // - Mesh is sliced and rendered into a 3D texture
@@ -24,23 +28,56 @@ GLFWwindow* InitWindow(int width, int height, const char* title);
 // After that, i can pack data into an octree, bit compress it, or visualize in a raymarching shader.
 
 void voxelizeZ(
-  const MeshBuffers& mesh,
-  int triangleCount,
+  const std::vector<float>& vertices,
+  const std::vector<unsigned int>& indices,
   float zSpan,
-  Shader* drawShader,
-  Shader* computeShader,
-  GLuint fbo,
-  GLuint sliceTex,
   const VoxelizationParams& params
 ) {
+
+  GLFWwindow* window;
+  Shader* drawShader;
+  Shader* computeShader;
+  GLuint sliceTex, fbo; //@@@ DESTROY THESE ON EXIT
+  MeshBuffers meshBuffers;
+
+  int triangleCount = indices.size();
+
+  // Initialize OpenGL context and create a window
+  setupGL(&window, params.resolution, params.resolution, "STL Viewer", !params.preview);
+  if (!window) throw std::runtime_error("Failed to create GLFW window");
+
+  // Enable OpenGL debug output
+  #ifdef DEBUG_GPU
+  glEnable(GL_DEBUG_OUTPUT);
+  glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+  glDebugMessageCallback([](GLenum source, GLenum type, GLuint id, GLenum severity,
+                            GLsizei length, const GLchar* message, const void* userParam) {
+      (void)source; (void)type; (void)id; (void)severity; (void)length; (void)userParam; // Suppress unused parameters warning
+      std::cerr << "GL DEBUG: " << message << std::endl;
+  }, nullptr);
+  #endif
+
+  // Load mesh and upload to GPU
+  meshBuffers = uploadMesh(vertices, indices);
+
+  drawShader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
+  computeShader = new Shader("shaders/transitions_z.comp");
+
+  // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
+  glGenTextures(1, &sliceTex);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
+  glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolution, params.resolution, params.slicesPerBlock + 1);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  // Create framebuffer
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
   const int totalBlocks = (params.resolutionZ + params.slicesPerBlock - 1) / params.slicesPerBlock;
   const float deltaZ = zSpan / params.resolutionZ;
   size_t totalPixels = size_t(params.resolution) * size_t(params.resolution);
-
-  // Allocate texture to store slice block (N slices per block)
-  glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
-  glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolution, params.resolution, params.slicesPerBlock + 1);
 
   // Allocate buffers
   GLuint transitionBuffer, countBuffer, overflowBuffer;
@@ -83,6 +120,22 @@ void voxelizeZ(
   glViewport(0, 0, params.resolution, params.resolution);
   glEnable(GL_DEPTH_TEST);
 
+  #ifdef DEBUG_GPU
+  // Check if the shader program compiled and linked successfully
+  GLint linkStatus = 0;
+  glGetProgramiv(drawShader->ID, GL_LINK_STATUS, &linkStatus);
+  if (linkStatus == GL_FALSE) {
+      char log[1024];
+      glGetProgramInfoLog(drawShader->ID, sizeof(log), nullptr, log);
+      std::cerr << "Shader program link error: " << log << std::endl;
+  }
+
+  // Check if the context is current
+  if (glfwGetCurrentContext() != window) {
+    std::cerr << "OpenGL context is not current!" << std::endl;
+  }
+  #endif
+
   auto startTime = std::chrono::high_resolution_clock::now();
 
   for (int block = 0; block < totalBlocks; ++block) {
@@ -103,7 +156,7 @@ void voxelizeZ(
       glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, sliceTex, 0, i);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       if (zStart + i - 1 >= 0) {
-        glBindVertexArray(mesh.vao);
+        glBindVertexArray(meshBuffers.vao);
         glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
       }
     }
@@ -122,6 +175,7 @@ void voxelizeZ(
     // 16 is a good compromise, since e.g. almost any resolution can be divided by 16
     glDispatchCompute(params.resolution / 16, params.resolution / 16, slicesThisBlock);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    
   }
 
   glFinish();
@@ -138,7 +192,7 @@ void voxelizeZ(
                     overflowFlags.size() * sizeof(GLuint),
                     overflowFlags.data());
 
-  for (int i = 0; i < totalPixels; ++i) {
+  for (size_t i = 0; i < totalPixels; ++i) {
       if (overflowFlags[i]) {
           std::cout << "Overflow at pixel column " << i << "\n";
       }
@@ -161,7 +215,7 @@ void voxelizeZ(
   for (uint i = 0; i < counts[colIndex]; ++i) {
       std::cout << "Transition Z: " << hostTransitions[colIndex * params.maxTransitionsPerZColumn + i] << "\n";
   }
-  std::cout << "Total transitions found: " << std::accumulate(counts.begin(), counts.end(), 0) << "\n";  
+  //std::cout << "Total transitions found: " << std::accumulate(counts.begin(), counts.end(), 0) << "\n";  
   #endif
 
   // COMPRESSION OF THE TRANSITIONS BUFFER ====================================
@@ -251,14 +305,6 @@ void voxelizeZ(
   const int WORKGROUP_SIZE = 1024; // Max local workgroup size
   const int numBlocks = (totalPixels + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE; // Number of workgroups needed (rounded up)
 
-  #ifdef DEBUG_GPU
-    glEnable(GL_DEBUG_OUTPUT);
-  glDebugMessageCallback([](GLenum source, GLenum type, GLuint id, GLenum severity,
-                            GLsizei length, const GLchar* message, const void* userParam) {
-      std::cerr << "GL DEBUG: " << message << "\n";
-  }, nullptr);
-  #endif
-
   // 1. Create prefix sum output buffer (same size as countBuffer)
   GLuint prefixSumBuffer;
   glGenBuffers(1, &prefixSumBuffer);
@@ -306,7 +352,7 @@ void voxelizeZ(
   glDispatchCompute(numBlocks, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-  //@@@ DEBUG CHECKS
+  // Final checks
   #ifdef DEBUG_GPU
   // Download result from GPU
   std::vector<GLuint> prefixSumResult(totalPixels);
@@ -374,16 +420,36 @@ void voxelizeZ(
   glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &compressedSize);
   std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB\n";
 
+  // Download compressedBuffer and prefixSumBuffer to CPU for further processing or visualization
+  std::vector<GLuint> compressedData(totalCompressedCount);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalCompressedCount * sizeof(GLuint), compressedData.data());
+  std::vector<GLuint> prefixSumData(totalPixels);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefixSumData.data());
+
   // Cleanup
   glDeleteBuffers(1, &transitionBuffer);
   glDeleteBuffers(1, &countBuffer);
   glDeleteBuffers(1, &overflowBuffer);
   glDeleteBuffers(1, &blockSumsBuffer);
   glDeleteBuffers(1, &blockOffsetsBuffer);
+  delete drawShader;
+  delete computeShader;
   delete compressTransitionsShader;
   delete prefixPass1;
   delete prefixPass2;
   delete prefixPass3;
+
+  glDeleteBuffers(1, &meshBuffers.vbo);
+  glDeleteBuffers(1, &meshBuffers.ebo);
+  glDeleteVertexArrays(1, &meshBuffers.vao);
+  meshBuffers = {}; // resetta i valori
+  glDeleteTextures(1, &sliceTex);
+  glDeleteFramebuffers(1, &fbo);
+  glfwTerminate();
+
+
 
   // ==========================================================================
 
@@ -438,10 +504,13 @@ void voxelizeZ(
   const int windowWidth = 800;
   const int windowHeight = 600;
 
-  GLFWwindow* window = InitWindow(windowWidth, windowHeight, "Voxel Transition Viewer");
-  if (!window) exit(EXIT_FAILURE);
+  GLFWwindow* window2 = InitWindow(windowWidth, windowHeight, "Voxel Transition Viewer");
+  if (!window2) {
+    glfwTerminate();
+    throw std::runtime_error("Failed to create GLFW window for voxel transition viewer");
+  }
 
-  // Call this after creating the window (particularly after the functions GLFWwindow* window = glfwCreateWindow(...) and glfwMakeContextCurrent(window) have been called)
+  // Call this after creating the window (particularly after the functions GLFWwindow* window2 = glfwCreateWindow(...) and glfwMakeContextCurrent(window2) have been called)
   raymarchingShader = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
   raymarchingShader->use();
   
@@ -470,64 +539,75 @@ void voxelizeZ(
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
   }
 
-  // &&&&& WITH THESE DUMMY BUFFERS, EVERYTHING SEEMS TO WORK ======================================================
-  // Create dummy buffers for compressedBuffer and prefixSumBuffer
-  GLuint compressedBuffer1;
+  //&&&&&& TEST WITH DUMMY DATA
+  /*
+  std::vector<unsigned int> compressedData1;
+  std::vector<unsigned int> prefixSumData1;
 
-  // Allocate and initialize compressedBuffer with zeros
+  bool success1 = loadBinaryFile("test/cross_compressedBuffer.bin", compressedData1);
+  bool success2 = loadBinaryFile("test/cross_prefixSumBuffer.bin", prefixSumData1);
+
+  if (success1 && success2) {
+      std::cout << "Successfully loaded buffers." << std::endl;
+      std::cout << "Compressed buffer size: " << compressedData1.size() << std::endl;
+      std::cout << "Prefix sum buffer size: " << prefixSumData1.size() << std::endl;
+  }
+
+  // Create two SSBO buffers and load them with the data from compressedData and prefixSumData
+  GLuint compressedBuffer1, prefixSumBuffer1;
   glGenBuffers(1, &compressedBuffer1);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer1);
-  std::vector<GLuint> zeroData(1024, 0); // Example size: 1024 elements initialized to zero
-  glBufferData(GL_SHADER_STORAGE_BUFFER, zeroData.size() * sizeof(GLuint), zeroData.data(), GL_DYNAMIC_COPY);
-
-  // Allocate and initialize prefixSumBuffer with zeros
-  GLuint prefixSumBuffer1;
   glGenBuffers(1, &prefixSumBuffer1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer1);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData1.size() * sizeof(GLuint), compressedData1.data(), GL_DYNAMIC_COPY); // Allocate and upload compressed data
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer1);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, zeroData.size() * sizeof(GLuint), zeroData.data(), GL_DYNAMIC_COPY);
-    // &&&&& WITH THESE DUMMY BUFFERS, EVERYTHING SEEMS TO WORK ======================================================
+  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData1.size() * sizeof(GLuint), prefixSumData1.data(), GL_DYNAMIC_COPY); // Allocate and upload prefix sum data
+  */
+  //&&&&&&
+
+  // ------------------------------------------------------
+  // Create two SSBO buffers and load them with the data from compressedData and prefixSumData
+  
+  GLuint compressedBuffer1, prefixSumBuffer1;
+  glGenBuffers(1, &compressedBuffer1);
+  glGenBuffers(1, &prefixSumBuffer1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer1);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY); // Allocate and upload compressed data
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer1);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData.size() * sizeof(GLuint), prefixSumData.data(), GL_DYNAMIC_COPY); // Allocate and upload prefix sum data
+
+  // Output the size of the two generated buffers
+  std::cout << "Compressed buffer size (elements): " << compressedData.size() << std::endl;
+  std::cout << "Prefix sum buffer size (elements): " << prefixSumData.size() << std::endl;
+  
+  // ------------------------------------------------------
 
 
-  //&&&&&&&& HERE THE ERROR 502 HAPPENS &&&&&&&&&&
-  // Bind the buffers
+  // Bind the buffers to the shader storage binding points
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, compressedBuffer1);  // TransitionBuffer
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer1);   // PrefixSumBuffer
-  //&&&&&&&& HERE THE ERROR 502 HAPPENS &&&&&&&&&&
-
 
   // Render loop
-  while (!glfwWindowShouldClose(window)) {
+  while (!glfwWindowShouldClose(window2)) {
     glfwPollEvents();
 
     // Check if the current program (shader) is set correctly
-    /*
-    GLint currentProgram = -1;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
-    std::cout << "Current program after use(): " << currentProgram << std::endl;
-    */
+    // GLint currentProgram = -1;
+    // glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    // std::cout << "Current program after use(): " << currentProgram << std::endl;
+    
 
     // Clear screen
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // // Bind buffers
-    // glActiveTexture(GL_TEXTURE0);
-    // glBindTexture(GL_TEXTURE_BUFFER, 0);
-    // glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, compressedBuffer);
-    // raymarchingShader->setBufferBase(0, compressedBuffer);
-
-    // glActiveTexture(GL_TEXTURE1);
-    // glBindTexture(GL_TEXTURE_BUFFER, 0);
-    // glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, prefixSumBuffer);
-    // raymarchingShader->setBufferBase(1, prefixSumBuffer);
-
     // Set uniforms
-    raymarchingShader->setIVec3("resolution", glm::ivec3(params.resolution, params.resolution, params.resolutionZ));
+    raymarchingShader->setIVec3("resolution", glm::ivec3(params.resolution, params.resolution, params.resolutionZ)); //&&&&&&&&
+    //raymarchingShader->setIVec3("resolution", glm::ivec3(200, 200, 200));
     raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
 
     float fov = 45.0f;
     float aspectRatio = float(windowWidth) / float(windowHeight);
 
-    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 5.0f);
+    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 2.0f);
     glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
     glm::mat4 proj = glm::perspective(glm::radians(fov), aspectRatio, 0.1f, 100.0f);
@@ -541,7 +621,7 @@ void voxelizeZ(
     // Draw fullscreen quad
     RenderFullScreenQuad(quadVAO, raymarchingShader);
 
-    glfwSwapBuffers(window);
+    glfwSwapBuffers(window2);
   }
 
   // Cleanup
@@ -552,7 +632,7 @@ void voxelizeZ(
   delete raymarchingShader;
   glDeleteVertexArrays(1, &quadVAO);
   
-  glfwDestroyWindow(window);
+  glfwDestroyWindow(window2);
   // ==========================================================================
   
 }
@@ -612,4 +692,31 @@ GLFWwindow* InitWindow(int width, int height, const char* title) {
   glViewport(0, 0, width, height);
 
   return window;
+}
+
+bool loadBinaryFile(const std::string& filename, std::vector<unsigned int>& outData) {
+  std::ifstream file(filename, std::ios::binary);
+  if (!file) {
+      std::cerr << "Error: Cannot open file " << filename << std::endl;
+      return false;
+  }
+
+  file.seekg(0, std::ios::end);
+  std::streamsize fileSize = file.tellg();
+  if (fileSize % sizeof(unsigned int) != 0) {
+      std::cerr << "Error: File size of " << filename << " is not a multiple of sizeof(unsigned int)." << std::endl;
+      return false;
+  }
+
+  file.seekg(0, std::ios::beg);
+  size_t numElements = fileSize / sizeof(unsigned int);
+  outData.resize(numElements);
+
+  file.read(reinterpret_cast<char*>(outData.data()), fileSize);
+  if (!file) {
+      std::cerr << "Error: Only read " << file.gcount() << " bytes from " << filename << std::endl;
+      return false;
+  }
+
+  return true;
 }

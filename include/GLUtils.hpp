@@ -35,14 +35,9 @@ struct MeshBuffers {
 // Restituisce gli handle in un struct MeshBuffers.
 MeshBuffers uploadMesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices);
 
-// Libera le risorse GPU associate ai buffer passati.
-void deleteMeshBuffers(MeshBuffers& buffers);
-
 void setupGL(GLFWwindow** window, int width, int height, const std::string& title = "OpenGL Window", bool hideWindow=false);
 
 void createFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo, int resolution);
-
-void destroyFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo);
 
 std::size_t getAvailableVRAM(std::size_t maxTestSize = 16384);
 

@@ -285,14 +285,6 @@ MeshBuffers uploadMesh(const std::vector<float>& vertices, const std::vector<uns
     return buffers;
 }
 
-void deleteMeshBuffers(MeshBuffers& buffers) {
-    glDeleteBuffers(1, &buffers.vbo);
-    glDeleteBuffers(1, &buffers.ebo);
-    glDeleteVertexArrays(1, &buffers.vao);
-
-    buffers = {}; // resetta i valori
-}
-
 void setupGL(GLFWwindow** window, int width, int height, const std::string& title, bool hideWindow) {
     if (!glfwInit())
         throw std::runtime_error("Failed to initialize GLFW");
@@ -336,23 +328,6 @@ void createFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo, int reso
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0); // Optional: unbind after creation
-}
-
-void destroyFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo) {
-    if (depthRbo) {
-        glDeleteRenderbuffers(1, &depthRbo);
-        depthRbo = 0;
-    }
-
-    if (colorTex) {
-        glDeleteTextures(1, &colorTex);
-        colorTex = 0;
-    }
-
-    if (fbo) {
-        glDeleteFramebuffers(1, &fbo);
-        fbo = 0;
-    }
 }
 
 std::size_t getAvailableVRAM(std::size_t maxTestSize) {
