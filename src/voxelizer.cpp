@@ -14,15 +14,17 @@ Voxelizer::Voxelizer() {}
 Voxelizer::Voxelizer(const VoxelizationParams& params)
     : params(params) {}
 
-Voxelizer::Voxelizer(const std::vector<float>& vertices, const std::vector<unsigned int>& indices, const VoxelizationParams& params)
-    : vertices(vertices), indices(indices), params(params) {}
-
-void Voxelizer::setVertices(const std::vector<float>& newVertices) {
-    vertices = newVertices;
+Voxelizer::Voxelizer(const Mesh& mesh, const VoxelizationParams& params): mesh(mesh), params(params) {
+    vertices = mesh.vertices;
+    indices = mesh.indices;
+    normalizeMesh(); // Normalize the mesh vertices
 }
 
-void Voxelizer::setIndices(const std::vector<unsigned int>& newIndices) {
-    indices = newIndices;
+void Voxelizer::setMesh(const Mesh& newMesh) {
+    mesh = newMesh;
+    vertices = newMesh.vertices;
+    indices = newMesh.indices;
+    normalizeMesh(); // Normalize the mesh vertices
 }
 
 void Voxelizer::setParams(const VoxelizationParams& newParams) {
@@ -59,6 +61,43 @@ void Voxelizer::run() {
 
     compressedData = std::move(data);
     prefixSumData = std::move(prefix);
+}
+
+void Voxelizer::normalizeMesh() {
+  if (vertices.empty()) {
+      throw std::runtime_error("Cannot normalize: vertices are empty.");
+  }
+
+  glm::vec3 minExtents(FLT_MAX);
+  glm::vec3 maxExtents(-FLT_MAX);
+
+  // Calculate bounding box
+  for (size_t i = 0; i < vertices.size(); i += 3) {
+      glm::vec3 v(vertices[i], vertices[i + 1], vertices[i + 2]);
+      minExtents = glm::min(minExtents, v);
+      maxExtents = glm::max(maxExtents, v);
+  }
+
+  std::cout << "Min Extents: (" << minExtents.x << ", " << minExtents.y << ", " << minExtents.z << ")\n";
+  std::cout << "Max Extents: (" << maxExtents.x << ", " << maxExtents.y << ", " << maxExtents.z << ")\n";
+
+  glm::vec3 size = maxExtents - minExtents;
+  this->scale = 1.0f / std::max(size.x, size.y);
+  glm::vec3 center = (maxExtents + minExtents) * 0.5f;
+
+  std::cout << "Size: (" << size.x << ", " << size.y << ", " << size.z << ")\n";
+  std::cout << "Scale factor: " << scale << "\n";
+  std::cout << "Center: (" << center.x << ", " << center.y << ", " << center.z << ")\n";
+
+  // Normalize all vertices in-place
+  for (size_t i = 0; i < vertices.size(); i += 3) {
+      glm::vec3 v(vertices[i], vertices[i + 1], vertices[i + 2]);
+      v = (v - center) * scale;
+      vertices[i]     = v.x;
+      vertices[i + 1] = v.y;
+      vertices[i + 2] = v.z;
+  }
+
 }
 
 std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(

@@ -1,7 +1,7 @@
--> Trasformare voxelizeZ in una classe e chiamarla Voxelize
--> Visualizzatore con rotazione e zoom dinamico con mouse
 -> Risoluzioni arbitrarie e differenti in xy
+
 -> Estendere anche a risoluzioni diverse da potenze di 2
+-> Visualizzatore con rotazione e zoom dinamico con mouse
 -> Se ho un overflow riguardo al massimo numero di transizioni in Z, creare un loop che le aumenta
 -> Scelta colore nel Visualizzatore
 -> Posizionamento e visualizzazione di oggetti multipli

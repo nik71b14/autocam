@@ -4,6 +4,7 @@
 #include "voxelViewer.hpp"
 #include "voxelizer.hpp"
 #include "voxelizerUtils.hpp"
+#include <assimp/scene.h>
 
 #define DEBUG_OUTPUT
 
@@ -26,20 +27,18 @@ int main(int argc, char** argv) {
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
     //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
 
-    std::vector<float> vertices;
-    std::vector<unsigned int> indices;
-    loadMesh(stlPath, vertices, indices);
+    Mesh mesh = loadMesh(stlPath);
+    Voxelizer voxelizer(mesh, params);
+    voxelizer.run();
+    auto [compressedData, prefixSumData] = voxelizer.getResults();
 
     #ifdef DEBUG_OUTPUT
     std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
     std::cout << "Loaded mesh: " << stlPath << std::endl;
-    std::cout << "Number of vertices: " << vertices.size() / 3 << std::endl;
-    std::cout << "Number of faces: " << indices.size() / 3 << std::endl;
+    std::cout << "Number of vertices: " << mesh.vertices.size() / 3 << std::endl;
+    std::cout << "Number of faces: " << mesh.indices.size() / 3 << std::endl;
+    std::cout << "Computed scale: " << voxelizer.getScale() << std::endl;
     #endif
-
-    Voxelizer voxelizer(vertices, indices, params);
-    voxelizer.run();
-    auto [compressedData, prefixSumData] = voxelizer.getResults();
 
     VoxelViewer viewer(
       compressedData,
