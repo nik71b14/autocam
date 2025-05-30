@@ -1,28 +1,67 @@
-#include "voxelizerZ.hpp"
+#include "voxelizer.hpp"
 
 #include <glad/glad.h>
-#include <iostream>
-#include <vector>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 #include "shader.hpp"
 #include "GLUtils.hpp"
-#include <thread>
-#include "voxelizerZUtils.hpp"
+#include <GLFW/glfw3.h>
+#include <iostream>
+#include <chrono>
 #include <stdexcept>
 
-//#define DEBUG_GPU
+// Default constructor
+Voxelizer::Voxelizer() {}
 
-// - Mesh is sliced and rendered into a 3D texture
-// - Adjacent slices are compared in a compute shader
-// - Transitions are detected (red ↔ black)
-// - Per-column transition Z-values are stored in a GPU buffer
-// - Count of transitions per XY location is tracked
+Voxelizer::Voxelizer(const VoxelizationParams& params)
+    : params(params) {}
 
-// After that, i can pack data into an octree, bit compress it, or visualize in a raymarching shader.
+Voxelizer::Voxelizer(const std::vector<float>& vertices, const std::vector<unsigned int>& indices, const VoxelizationParams& params)
+    : vertices(vertices), indices(indices), params(params) {}
 
-std::pair<std::vector<GLuint>, std::vector<GLuint>> voxelizeZ(
+void Voxelizer::setVertices(const std::vector<float>& newVertices) {
+    vertices = newVertices;
+}
+
+void Voxelizer::setIndices(const std::vector<unsigned int>& newIndices) {
+    indices = newIndices;
+}
+
+void Voxelizer::setParams(const VoxelizationParams& newParams) {
+    params = newParams;
+}
+
+std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::getResults() const {
+    return { compressedData, prefixSumData };
+}
+
+void Voxelizer::clearResults() {
+    compressedData.clear();
+    prefixSumData.clear();
+}
+
+float Voxelizer::computeZSpan() const {
+    float zMin = std::numeric_limits<float>::max();
+    float zMax = std::numeric_limits<float>::lowest();
+
+    for (size_t i = 2; i < vertices.size(); i += 3) {
+        float z = vertices[i];
+        zMin = std::min(zMin, z);
+        zMax = std::max(zMax, z);
+    }
+    return 1.01f * (zMax - zMin);
+}
+
+void Voxelizer::run() {
+    clearResults();
+    if (vertices.empty() || indices.empty()) throw std::runtime_error("Vertices or indices not set.");
+
+    float zSpan = computeZSpan();
+    auto [data, prefix] = this->voxelizerZ(vertices, indices, zSpan, params);
+
+    compressedData = std::move(data);
+    prefixSumData = std::move(prefix);
+}
+
+std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   const std::vector<float>& vertices,
   const std::vector<unsigned int>& indices,
   float zSpan,
