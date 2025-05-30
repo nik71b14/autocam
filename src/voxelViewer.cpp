@@ -66,7 +66,8 @@ void VoxelViewer::setupShaderAndBuffers() {
 
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_BLEND);
-  glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+  //glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
   float quadVertices[] = {
       -1.0f, -1.0f,  1.0f, -1.0f,  -1.0f,  1.0f,
@@ -96,6 +97,11 @@ void VoxelViewer::setupShaderAndBuffers() {
 
 void VoxelViewer::run() {
 
+  raymarchingShader->use();
+  raymarchingShader->setIVec3("resolution", 
+      glm::ivec3(params.resolutionX, params.resolutionY, params.resolutionZ));
+  raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
+
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
 
@@ -109,26 +115,39 @@ void VoxelViewer::run() {
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    raymarchingShader->use();
-    raymarchingShader->setIVec3("resolution", 
-        glm::ivec3(params.resolutionX, params.resolutionY, params.resolutionZ));
-    raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
-
     // Calculate aspect ratio from current window size
-    float aspect = (float)width / (float)height;
-    
+    float windowAspect = (float)width / (float)height;
+
+    // Calculate object dimensions based on voxelization parameters
+    float voxelScale = 1.0f / std::max(params.resolutionX, params.resolutionY); // or Z if 3D
+    float objectWidth = params.resolutionX * voxelScale;
+    float objectHeight = params.resolutionY * voxelScale;
+    float objectAspect = objectWidth / objectHeight;
+
+    // Fit object in view while preserving aspect ratio
+    float viewWidth, viewHeight;
+
+    if (windowAspect > objectAspect) {
+      // Window is wider than object → expand horizontally
+      viewHeight = objectHeight;
+      viewWidth = objectHeight * windowAspect;
+    } else {
+        // Window is taller than object → expand vertically
+        viewWidth = objectWidth;
+        viewHeight = objectWidth / windowAspect;
+    }
+
     // Set up projection matrix
     glm::mat4 proj;
     if (this->ortho) {
         // Use symmetric frustum that matches window aspect ratio
-        float viewSize = 1.0f;  // Base size
         proj = glm::ortho(
-            -viewSize * aspect / 2, viewSize * aspect / 2,  // left, right
-            -viewSize / 2, viewSize / 2,                    // bottom, top
-            0.1f, 100.0f
+          -viewWidth / 2.0f, viewWidth / 2.0f,
+          -viewHeight / 2.0f, viewHeight / 2.0f,
+          0.1f, 100.0f
         );
     } else {
-        proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+        proj = glm::perspective(glm::radians(45.0f), windowAspect, 0.1f, 100.0f);
     }
     
     // Camera setup
@@ -147,48 +166,6 @@ void VoxelViewer::run() {
     glfwSwapBuffers(window);
   }
 
-  /*
-  while (!glfwWindowShouldClose(window)) {
-    glfwPollEvents();
-
-    //glDisable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    raymarchingShader->use();
-    raymarchingShader->setIVec3("resolution", glm::ivec3(this->params.resolutionX, this->params.resolutionY, this->params.resolutionZ));
-    raymarchingShader->setInt("maxTransitions", this->params.maxTransitionsPerZColumn);
-
-    // Use either perspective or orthographic projection as needed7
-    float aspect = (float)params.resolutionX / (float)params.resolutionY;
-    glm::mat4 proj;
-    if (this->ortho) {
-      // Use symmetric frustum that matches aspect ratio
-      float viewHeight = 1.0f;
-      float viewWidth = viewHeight * aspect;
-      proj = glm::ortho(
-          -viewWidth/2, viewWidth/2,  // left, right
-          -viewHeight/2, viewHeight/2, // bottom, top
-          0.1f, 100.0f
-      );
-    } else {
-        proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-    }
-    glm::vec3 cameraPos(0, 0, 2.0); // Position the camera at (0, 0, 2.0) - this is relevant for perspective projection, not for orthographic
-    glm::vec3 pointToLookAt = glm::vec3(0, 0, 0); // Look at the origin
-    glm::vec3 upVector(0, 1, 0); // Up vector for the camera
-    glm::mat4 view = glm::lookAt(cameraPos, pointToLookAt, upVector);
-    glm::mat4 invViewProj = glm::inverse(proj * view);
-
-    raymarchingShader->setMat4("invViewProj", invViewProj);
-    raymarchingShader->setVec3("cameraPos", glm::vec3(0,0,2));
-    raymarchingShader->setIVec2("screenResolution", glm::ivec2(params.resolutionX, params.resolutionY));
-
-    renderFullScreenQuad();
-    glfwSwapBuffers(window);
-  }
-  */
 }
 
 void VoxelViewer::renderFullScreenQuad() {

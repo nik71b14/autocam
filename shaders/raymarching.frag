@@ -36,7 +36,14 @@ bool isInsideVoxel(int x, int y, int z) {
 }
 
 void main() {
+
+    // fragColor = vec4(0.0, 1.0, 0.0, 1.0);
+    // return;
+
+    // Calculate normalized device coordinates (NDC) from fragment coordinates, i.e. in the range [-1, 1] both for x and y
     vec2 uv = (gl_FragCoord.xy / vec2(screenResolution)) * 2.0 - 1.0;
+    // ec2 uv = vec2((gl_FragCoord.x / float(screenResolution.x)) * 2.0 - 1.0, (gl_FragCoord.y / float(screenResolution.y)) * 2.0 - 1.0);
+
     vec4 nearClip = vec4(uv, -1.0, 1.0);
     vec4 farClip  = vec4(uv,  1.0, 1.0);
 
