@@ -1,4 +1,3 @@
--> Risoluzioni arbitrarie e differenti in xy
 -> richiedere un unico parametro di risoluzione: un valore float riferito alle dimensioni reali dell'oggetto, senza unità di misura specifica (units agnostic)
 -> Passare MAX_TRANSITIONS_PER_PIXEL allo shader in maniera dinamica
 

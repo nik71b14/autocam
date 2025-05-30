@@ -49,7 +49,7 @@ void VoxelViewer::initGL() {
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
 
-    window = glfwCreateWindow(800, 600, "Voxel Transition Viewer", nullptr, nullptr);
+    window = glfwCreateWindow(params.resolutionX, params.resolutionY, "Voxel Transition Viewer", nullptr, nullptr);
     if (!window) throw std::runtime_error("Failed to create GLFW window");
 
     glfwMakeContextCurrent(window);
@@ -57,7 +57,7 @@ void VoxelViewer::initGL() {
         throw std::runtime_error("Failed to initialize GLAD");
 
     glfwSwapInterval(1);
-    glViewport(0, 0, 800, 600);
+    glViewport(0, 0, params.resolutionX, params.resolutionY);
 }
 
 void VoxelViewer::setupShaderAndBuffers() {
@@ -95,6 +95,9 @@ void VoxelViewer::setupShaderAndBuffers() {
 }
 
 void VoxelViewer::run() {
+
+    std::cout << "Resolution: " << params.resolutionX << "x" << params.resolutionY << std::endl;
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -103,14 +106,14 @@ void VoxelViewer::run() {
         raymarchingShader->setIVec3("resolution", glm::ivec3(this->params.resolutionX, this->params.resolutionY, this->params.resolutionZ));
         raymarchingShader->setInt("maxTransitions", this->params.maxTransitionsPerZColumn);
 
-        float aspect = 800.0f / 600.0f;
+        float aspect = (float)params.resolutionX / (float)params.resolutionY; //800.0f / 600.0f;
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
         glm::mat4 view = glm::lookAt(glm::vec3(0,0,2), glm::vec3(0), glm::vec3(0,1,0));
         glm::mat4 invViewProj = glm::inverse(proj * view);
 
         raymarchingShader->setMat4("invViewProj", invViewProj);
         raymarchingShader->setVec3("cameraPos", glm::vec3(0,0,2));
-        raymarchingShader->setIVec2("screenResolution", glm::ivec2(800, 600));
+        raymarchingShader->setIVec2("screenResolution", glm::ivec2(params.resolutionX, params.resolutionY));
 
         renderFullScreenQuad();
         glfwSwapBuffers(window);

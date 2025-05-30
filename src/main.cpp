@@ -21,17 +21,12 @@ int main(int argc, char** argv) {
 
     VoxelizationParams params;
     params.resolution = 0.1; // E.g. mm
-    params.resolutionZ = 1000; // Default Z resolution
-    params.resolutionX = 1000;
-    params.resolutionY = 1000;
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
-
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
     //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
 
     Mesh mesh = loadMesh(stlPath);
     Voxelizer voxelizer(mesh, params);
-    // voxelizer.run();
     voxelizer.run();
     auto [compressedData, prefixSumData] = voxelizer.getResults();
 
@@ -41,7 +36,16 @@ int main(int argc, char** argv) {
     std::cout << "Number of vertices: " << mesh.vertices.size() / 3 << std::endl;
     std::cout << "Number of faces: " << mesh.indices.size() / 3 << std::endl;
     std::cout << "Computed scale: " << voxelizer.getScale() << std::endl;
+    glm::ivec3 res = voxelizer.getResolution();
+    std::cout << "Voxelization resolution: [" 
+          << res.x << " (X) x " 
+          << res.y << " (Y) x " 
+          << res.z << " (Z)]" << std::endl;
     #endif
+
+    params.resolutionX = res.x;
+    params.resolutionY = res.y;
+    params.resolutionZ = res.z;
 
     VoxelViewer viewer(
       compressedData,

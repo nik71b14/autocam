@@ -17,6 +17,11 @@ Voxelizer::Voxelizer(const VoxelizationParams& params)
 Voxelizer::Voxelizer(const Mesh& mesh, const VoxelizationParams& params): mesh(mesh), params(params) {
     vertices = mesh.vertices;
     indices = mesh.indices;
+
+    glm::ivec3 res = this->calculateResolution(vertices); // Calculate resolution based on mesh vertices
+    this->params.resolutionX = res.x;
+    this->params.resolutionY = res.y;
+    this->params.resolutionZ = res.z; // Set resolution based on calculated values
     normalizeMesh(); // Normalize the mesh vertices
 }
 
@@ -24,6 +29,12 @@ void Voxelizer::setMesh(const Mesh& newMesh) {
     mesh = newMesh;
     vertices = newMesh.vertices;
     indices = newMesh.indices;
+
+    // glm::ivec3 res = this->calculateResolution(vertices); // Calculate resolution based on mesh vertices
+    // std::cout << "Calculated resolution: " << res.x << "x" << res.y << "x" << res.z << std::endl;
+    // this->params.resolutionX = res.x;
+    // this->params.resolutionY = res.y;
+    // this->params.resolutionZ = res.z; // Set resolution based on calculated values
     normalizeMesh(); // Normalize the mesh vertices
 }
 
@@ -50,6 +61,29 @@ float Voxelizer::computeZSpan() const {
         zMax = std::max(zMax, z);
     }
     return 1.01f * (zMax - zMin);
+}
+
+glm::ivec3 Voxelizer::calculateResolution(const std::vector<float>& vertices) {
+  if (vertices.empty() || vertices.size() % 3 != 0) {
+      throw std::runtime_error("Invalid vertex data.");
+  }
+
+  glm::vec3 minCorner(std::numeric_limits<float>::max());
+  glm::vec3 maxCorner(std::numeric_limits<float>::lowest());
+
+  for (size_t i = 0; i < vertices.size(); i += 3) {
+      glm::vec3 v(vertices[i], vertices[i + 1], vertices[i + 2]);
+      minCorner = glm::min(minCorner, v);
+      maxCorner = glm::max(maxCorner, v);
+  }
+
+  glm::vec3 modelSize = maxCorner - minCorner;
+
+  int resX = std::max(1, static_cast<int>(std::ceil(modelSize.x / params.resolution)));
+  int resY = std::max(1, static_cast<int>(std::ceil(modelSize.y / params.resolution)));
+  int resZ = std::max(1, static_cast<int>(std::ceil(modelSize.z / params.resolution)));
+
+  return glm::ivec3(resX, resY, resZ);
 }
 
 void Voxelizer::run() {
