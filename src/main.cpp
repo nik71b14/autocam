@@ -36,11 +36,13 @@ int main(int argc, char** argv) {
     std::cout << "Number of vertices: " << mesh.vertices.size() / 3 << std::endl;
     std::cout << "Number of faces: " << mesh.indices.size() / 3 << std::endl;
     std::cout << "Computed scale: " << voxelizer.getScale() << std::endl;
-    glm::ivec3 res = voxelizer.getResolution();
-    std::cout << "Voxelization resolution: [" 
+    glm::ivec3 res = voxelizer.getResolutionPx();
+    std::cout << "Voxelization resolution: " 
           << res.x << " (X) x " 
           << res.y << " (Y) x " 
-          << res.z << " (Z)]" << std::endl;
+          << res.z << " (Z) [px]" << std::endl;
+    std::cout << "Voxelization resolution: "
+          << voxelizer.getResolution() << " [object units]" << std::endl;
     #endif
 
     params.resolutionX = res.x;
@@ -52,6 +54,7 @@ int main(int argc, char** argv) {
       prefixSumData,
       params
     );
+    viewer.setOrthographic(true); // Set orthographic projection
     viewer.run();
 
     // VoxelViewer viewer(

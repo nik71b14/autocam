@@ -36,8 +36,11 @@ public:
     void run();
     std::pair<std::vector<GLuint>, std::vector<GLuint>> getResults() const;
     float getScale() const { return scale; };
-    glm::ivec3 getResolution() const {
+    glm::ivec3 getResolutionPx() const {
         return glm::ivec3(params.resolutionX, params.resolutionY, params.resolutionZ);
+    }
+    float getResolution() const {
+        return params.resolution;
     }
 
 private:
@@ -51,7 +54,7 @@ private:
     std::vector<GLuint> prefixSumData;
 
     void normalizeMesh();
-    glm::ivec3 calculateResolution(const std::vector<float>& vertices);
+    glm::ivec3 calculateResolutionPx(const std::vector<float>& vertices);
 
     std::pair<std::vector<GLuint>, std::vector<GLuint>> voxelizerZ(
       const std::vector<float>& vertices,

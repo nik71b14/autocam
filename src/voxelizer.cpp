@@ -8,6 +8,10 @@
 #include <chrono>
 #include <stdexcept>
 
+#define MIN_RESOLUTION_XYZ 256 // Minimum resolution for each axis, used for very small objects
+//#define DEBUG_OUTPUT // Enable debug output for detailed information
+//#define DEBUG_GPU // Enable OpenGL debug output
+
 // Default constructor
 Voxelizer::Voxelizer() {}
 
@@ -18,7 +22,7 @@ Voxelizer::Voxelizer(const Mesh& mesh, const VoxelizationParams& params): mesh(m
     vertices = mesh.vertices;
     indices = mesh.indices;
 
-    glm::ivec3 res = this->calculateResolution(vertices); // Calculate resolution based on mesh vertices
+    glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
     this->params.resolutionX = res.x;
     this->params.resolutionY = res.y;
     this->params.resolutionZ = res.z; // Set resolution based on calculated values
@@ -30,11 +34,10 @@ void Voxelizer::setMesh(const Mesh& newMesh) {
     vertices = newMesh.vertices;
     indices = newMesh.indices;
 
-    // glm::ivec3 res = this->calculateResolution(vertices); // Calculate resolution based on mesh vertices
-    // std::cout << "Calculated resolution: " << res.x << "x" << res.y << "x" << res.z << std::endl;
-    // this->params.resolutionX = res.x;
-    // this->params.resolutionY = res.y;
-    // this->params.resolutionZ = res.z; // Set resolution based on calculated values
+    glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
+    this->params.resolutionX = res.x;
+    this->params.resolutionY = res.y;
+    this->params.resolutionZ = res.z; // Set resolution based on calculated values
     normalizeMesh(); // Normalize the mesh vertices
 }
 
@@ -60,10 +63,12 @@ float Voxelizer::computeZSpan() const {
         zMin = std::min(zMin, z);
         zMax = std::max(zMax, z);
     }
-    return 1.01f * (zMax - zMin);
+    // return 1.01f * (zMax - zMin);
+    return (zMax - zMin);
+
 }
 
-glm::ivec3 Voxelizer::calculateResolution(const std::vector<float>& vertices) {
+glm::ivec3 Voxelizer::calculateResolutionPx(const std::vector<float>& vertices) {
   if (vertices.empty() || vertices.size() % 3 != 0) {
       throw std::runtime_error("Invalid vertex data.");
   }
@@ -82,6 +87,16 @@ glm::ivec3 Voxelizer::calculateResolution(const std::vector<float>& vertices) {
   int resX = std::max(1, static_cast<int>(std::ceil(modelSize.x / params.resolution)));
   int resY = std::max(1, static_cast<int>(std::ceil(modelSize.y / params.resolution)));
   int resZ = std::max(1, static_cast<int>(std::ceil(modelSize.z / params.resolution)));
+
+  // Ensure resolution has a minimum size of 512x512x512, for objects that are very small
+  int minRes = std::min({resX, resY, resZ});
+  if (minRes < MIN_RESOLUTION_XYZ) {
+    float factor = static_cast<float>(MIN_RESOLUTION_XYZ) / minRes;
+    resX = static_cast<int>(std::ceil(resX * factor));
+    resY = static_cast<int>(std::ceil(resY * factor));
+    resZ = static_cast<int>(std::ceil(resZ * factor));
+    params.resolution /= factor; // Adjust resolution to match the new resolution in terms of pixels
+  }
 
   return glm::ivec3(resX, resY, resZ);
 }
@@ -112,16 +127,20 @@ void Voxelizer::normalizeMesh() {
       maxExtents = glm::max(maxExtents, v);
   }
 
+  #ifdef DEBUG_OUTPUT
   std::cout << "Min Extents: (" << minExtents.x << ", " << minExtents.y << ", " << minExtents.z << ")\n";
   std::cout << "Max Extents: (" << maxExtents.x << ", " << maxExtents.y << ", " << maxExtents.z << ")\n";
+  #endif
 
   glm::vec3 size = maxExtents - minExtents;
   this->scale = 1.0f / std::max(size.x, size.y);
   glm::vec3 center = (maxExtents + minExtents) * 0.5f;
 
+  #ifdef DEBUG_OUTPUT
   std::cout << "Size: (" << size.x << ", " << size.y << ", " << size.z << ")\n";
   std::cout << "Scale factor: " << scale << "\n";
   std::cout << "Center: (" << center.x << ", " << center.y << ", " << center.z << ")\n";
+  #endif
 
   // Normalize all vertices in-place
   for (size_t i = 0; i < vertices.size(); i += 3) {
@@ -220,7 +239,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
                   zeroFlags.size() * sizeof(GLuint),
                   zeroFlags.data());
 
-  glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
+  // glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
+  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, zSpan);
   glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -273,8 +293,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
     computeShader->use();
     computeShader->setInt("zStart", zStart);
     computeShader->setInt("sliceCount", slicesThisBlock);
-    computeShader->setInt("resolutionX", params.resolutionX); //&&&&&&&&&&&&
-    computeShader->setInt("resolutionY", params.resolutionY); //&&&&&&&&&&&&
+    computeShader->setInt("resolutionX", params.resolutionX);
+    computeShader->setInt("resolutionY", params.resolutionY);
     computeShader->setInt("resolutionZ", params.resolutionZ);
 
     glBindImageTexture(0, sliceTex, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA8);
@@ -350,58 +370,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   
   //  Each column’s compressed transitions are located starting from prefixSum[i] with countBuffer[i] entries in compressedBuffer.
   
-  // MIXED GPU/CPU APPROACH
-  /*
-  std::vector<GLuint> counts(totalPixels); // CPU side buffer to read back counts of transitions per pixel column
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer); // Work on countBuffer
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), counts.data()); // Read back counts of transitions per pixel column
-
-  std::vector<GLuint> prefix(totalPixels, 0);
-  for (size_t i = 1; i < totalPixels; ++i) {
-      prefix[i] = prefix[i - 1] + counts[i - 1];
-  }
-
-  // Upload to GPU
-  GLuint prefixSumBuffer;
-  glGenBuffers(1, &prefixSumBuffer);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer); // 1. Bind before allocating or uploading
-  glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // 2. Allocate storage
-  glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefix.data()); // 3. Upload data
-
-  Shader* compressTransitionsShader = new Shader("shaders/compress_transitions.comp");
-  GLuint compressedBuffer;
-
-  // Read total compressed size (last prefix sum + count)
-  // I need to add to the last prefix sum the count of transitions in the last pixel column!
-
-  std::cout << "Last prefix sum: " << prefix.back() << "\n";
-  std::cout << "Last value in counts: " << counts.back() << "\n";
-  GLuint totalCompressedCount = prefix.back() + counts.back();
-
-  std::cout << "Total compressed count: " << totalCompressedCount << "\n";
-
-  // Allocate compressed transition buffer
-  glGenBuffers(1, &compressedBuffer);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, totalCompressedCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
-
-  // Run compression shader
-  compressTransitionsShader->use(); // Bind `compress_transitions.comp`
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, transitionBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, countBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, prefixSumBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, compressedBuffer);
-
-  glDispatchCompute((totalPixels + 255) / 256, 1, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-  //@@@ Check size of compressed buffer
-  GLint64 compressedSize = 0;
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
-  glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &compressedSize);
-  std::cout << "Compressed GPU buffer size: " << (compressedSize / (1024.0 * 1024.0)) << " MB" << std::endl;
-  */
-
   // FULL GPU APPROACH
 
   // -----> PREFIX SUM ALGORITHM <-----

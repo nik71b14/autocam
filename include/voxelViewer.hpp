@@ -24,12 +24,16 @@ public:
   // Destructor
   ~VoxelViewer();
 
+  // Set whether to use orthographic projection
+  void setOrthographic(bool useOrtho) { ortho = useOrtho; }
+
   // Run render loop
   void run();
 
 private:
   // Members
   VoxelizationParams params;
+  bool ortho = false; // Use perspective projection by default
 
   std::vector<unsigned int> compressedData;
   std::vector<unsigned int> prefixSumData;
