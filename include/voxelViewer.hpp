@@ -46,6 +46,22 @@ private:
 
   Shader* raymarchingShader = nullptr;
 
+  // Mouse interaction
+  glm::vec2 lastMousePos;
+  bool leftMousePressed = false;
+  bool rightMousePressed = false;
+  bool middleMousePressed = false;
+  void onMouseMove(double xpos, double ypos);
+  void onMouseButton(int button, int action, int mods);
+  void onScroll(double xoffset, double yoffset);
+
+  float pitch = 0.0f;
+  float yaw = 0.0f;
+  float distance = 2.0f;
+  glm::vec3 target = glm::vec3(0.0f);
+  glm::vec2 panOffset = glm::vec2(0.0f);
+
+
   // Helpers
   void initGL();
   void setupShaderAndBuffers();

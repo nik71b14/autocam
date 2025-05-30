@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
       prefixSumData,
       params
     );
-    viewer.setOrthographic(true); // Set orthographic projection
+    viewer.setOrthographic(false); // Set orthographic projection
     viewer.run();
 
     // VoxelViewer viewer(

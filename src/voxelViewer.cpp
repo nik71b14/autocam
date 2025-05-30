@@ -56,9 +56,56 @@ void VoxelViewer::initGL() {
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
       throw std::runtime_error("Failed to initialize GLAD");
 
+  // Mouse callbacks
+  glfwSetWindowUserPointer(window, this);
+  glfwSetCursorPosCallback(window, [](GLFWwindow* win, double xpos, double ypos) {
+      static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onMouseMove(xpos, ypos);
+  });
+  glfwSetMouseButtonCallback(window, [](GLFWwindow* win, int button, int action, int mods) {
+      static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onMouseButton(button, action, mods);
+  });
+  glfwSetScrollCallback(window, [](GLFWwindow* win, double xoffset, double yoffset) {
+      static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onScroll(xoffset, yoffset);
+  });
+  
+
   glfwSwapInterval(1);
   glViewport(0, 0, params.resolutionX, params.resolutionY);
 }
+
+void VoxelViewer::onMouseMove(double xpos, double ypos) {
+  glm::vec2 mousePos(xpos, ypos);
+  glm::vec2 delta = mousePos - lastMousePos;
+
+  if (leftMousePressed) {
+    yaw += delta.x * 0.3f;
+    pitch -= delta.y * 0.3f;
+    pitch = glm::clamp(pitch, -89.0f, 89.0f);
+  } else if (rightMousePressed) {
+    panOffset += delta * 0.005f;
+  }
+
+  lastMousePos = mousePos;
+}
+
+void VoxelViewer::onMouseButton(int button, int action, int mods) {
+  (void)mods; // Ignore modifiers for now
+  if (button == GLFW_MOUSE_BUTTON_LEFT) leftMousePressed = (action == GLFW_PRESS);
+  if (button == GLFW_MOUSE_BUTTON_RIGHT) rightMousePressed = (action == GLFW_PRESS);
+  if (button == GLFW_MOUSE_BUTTON_MIDDLE) middleMousePressed = (action == GLFW_PRESS);
+
+  double xpos, ypos;
+  glfwGetCursorPos(window, &xpos, &ypos);
+  lastMousePos = glm::vec2(xpos, ypos);
+}
+
+void VoxelViewer::onScroll(double xoffset, double yoffset) {
+  (void)xoffset; // Ignore horizontal scroll for now
+  distance *= (1.0f - yoffset * 0.1f);
+  distance = glm::clamp(distance, 0.1f, 10.0f);
+  // std::cout << "Current distance: " << distance << std::endl;
+}
+
 
 void VoxelViewer::setupShaderAndBuffers() {
   raymarchingShader = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
@@ -151,11 +198,21 @@ void VoxelViewer::run() {
     }
     
     // Camera setup
-    glm::vec3 cameraPos(0, 0, 2.0);
-    glm::vec3 pointToLookAt(0, 0, 0);
-    glm::vec3 upVector(0, 1, 0);
-    glm::mat4 view = glm::lookAt(cameraPos, pointToLookAt, upVector);
-    
+    // glm::vec3 cameraPos(0, 0, 2.0);
+    // glm::vec3 pointToLookAt(0, 0, 0);
+    // glm::vec3 upVector(0, 1, 0);
+    // glm::mat4 view = glm::lookAt(cameraPos, pointToLookAt, upVector);
+
+    // Calculate camera position based on pitch, yaw, distance and target (mouse interaction)
+    glm::vec3 dir;
+    dir.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    dir.y = sin(glm::radians(pitch));
+    dir.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+
+    glm::vec3 cameraPos = target + glm::vec3(panOffset, 0.0f) + (-dir * distance);
+    glm::mat4 view = glm::lookAt(cameraPos, target + glm::vec3(panOffset, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // Calculate inverse view-projection matrix
     glm::mat4 invViewProj = glm::inverse(proj * view);
 
     raymarchingShader->setMat4("invViewProj", invViewProj);

@@ -1,9 +1,6 @@
--> richiedere un unico parametro di risoluzione: un valore float riferito alle dimensioni reali dell'oggetto, senza unità di misura specifica (units agnostic)
+-> Verificare perché alcuni modelli vengono voxelizzati male utilizzando la visualizzazione delle slices durante la voxelizzazione
+
 -> Passare MAX_TRANSITIONS_PER_PIXEL allo shader in maniera dinamica
-
-
--> Estendere anche a risoluzioni diverse da potenze di 2
--> Visualizzatore con rotazione e zoom dinamico con mouse
 -> Se ho un overflow riguardo al massimo numero di transizioni in Z, creare un loop che le aumenta
 -> Scelta colore nel Visualizzatore
 -> Posizionamento e visualizzazione di oggetti multipli
