@@ -8,6 +8,7 @@
 
 // Parameters for voxelization
 struct VoxelizationParams {
+  float resolution = 0.1; // Resolution referred to the units of the model (agnostic with reference to which units are used)
   int resolutionX = 1024;
   int resolutionY = 1024;
   int resolutionZ = 1024;

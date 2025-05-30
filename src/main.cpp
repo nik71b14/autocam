@@ -20,6 +20,7 @@ int main(int argc, char** argv) {
   try {
 
     VoxelizationParams params;
+    params.resolution = 0.1; // E.g. mm
     params.resolutionZ = 1000; // Default Z resolution
     params.resolutionX = 1000;
     params.resolutionY = 1000;
