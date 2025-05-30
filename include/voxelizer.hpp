@@ -8,8 +8,10 @@
 
 // Parameters for voxelization
 struct VoxelizationParams {
-  int resolution = 512;
-  int resolutionZ = 512; // Default Z resolution
+  int resolutionX = 1024;
+  int resolutionY = 1024;
+  int resolutionZ = 1024;
+
   int slicesPerBlock = 32;
   size_t maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
   int maxTransitionsPerZColumn = 32;
@@ -45,6 +47,7 @@ private:
     std::vector<GLuint> prefixSumData;
 
     void normalizeMesh();
+
     std::pair<std::vector<GLuint>, std::vector<GLuint>> voxelizerZ(
       const std::vector<float>& vertices,
       const std::vector<unsigned int>& indices,

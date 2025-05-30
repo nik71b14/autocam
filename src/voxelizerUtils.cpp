@@ -2,9 +2,9 @@
 #include "voxelizerUtils.hpp"
 
 size_t estimateMemoryUsageBytes(const VoxelizationParams& params) {
-    size_t totalPixels = size_t(params.resolution) * size_t(params.resolution);
+    size_t totalPixels = size_t(params.resolutionX) * size_t(params.resolutionY);
 
-    size_t sliceTexBytes = params.resolution * params.resolution * (params.slicesPerBlock + 1) * 4; // RGBA8 = 4 bytes
+    size_t sliceTexBytes = params.resolutionX * params.resolutionY * (params.slicesPerBlock + 1) * 4; // RGBA8 = 4 bytes
     size_t transitionBufferBytes = totalPixels * params.maxTransitionsPerZColumn * sizeof(GLuint);
     size_t countBufferBytes = totalPixels * sizeof(GLuint);
     size_t overflowBufferBytes = totalPixels * sizeof(GLuint);

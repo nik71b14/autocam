@@ -53,14 +53,14 @@ float Voxelizer::computeZSpan() const {
 }
 
 void Voxelizer::run() {
-    clearResults();
-    if (vertices.empty() || indices.empty()) throw std::runtime_error("Vertices or indices not set.");
+  clearResults();
+  if (vertices.empty() || indices.empty()) throw std::runtime_error("Vertices or indices not set.");
 
-    float zSpan = computeZSpan();
-    auto [data, prefix] = this->voxelizerZ(vertices, indices, zSpan, params);
+  float zSpan = computeZSpan();
+  auto [data, prefix] = this->voxelizerZ(vertices, indices, zSpan, params);
 
-    compressedData = std::move(data);
-    prefixSumData = std::move(prefix);
+  compressedData = std::move(data);
+  prefixSumData = std::move(prefix);
 }
 
 void Voxelizer::normalizeMesh() {
@@ -116,7 +116,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   int triangleCount = indices.size();
 
   // Initialize OpenGL context and create a window
-  setupGL(&window, params.resolution, params.resolution, "STL Viewer", !params.preview);
+  setupGL(&window, params.resolutionX, params.resolutionY, "STL Viewer", !params.preview);
   if (!window) throw std::runtime_error("Failed to create GLFW window");
 
   // Enable OpenGL debug output
@@ -134,12 +134,12 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   meshBuffers = uploadMesh(vertices, indices);
 
   drawShader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
-  computeShader = new Shader("shaders/transitions_z.comp");
+  computeShader = new Shader("shaders/transitions_xyz.comp");
 
   // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
   glGenTextures(1, &sliceTex);
   glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
-  glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolution, params.resolution, params.slicesPerBlock + 1);
+  glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolutionX, params.resolutionY, params.slicesPerBlock + 1);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -150,7 +150,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
 
   const int totalBlocks = (params.resolutionZ + params.slicesPerBlock - 1) / params.slicesPerBlock;
   const float deltaZ = zSpan / params.resolutionZ;
-  size_t totalPixels = size_t(params.resolution) * size_t(params.resolution);
+  size_t totalPixels = size_t(params.resolutionX) * size_t(params.resolutionY);
 
   // Allocate buffers
   GLuint transitionBuffer, countBuffer, overflowBuffer;
@@ -190,7 +190,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-  glViewport(0, 0, params.resolution, params.resolution);
+  glViewport(0, 0, params.resolutionX, params.resolutionY);
   glEnable(GL_DEPTH_TEST);
 
   #ifdef DEBUG_GPU
@@ -239,14 +239,23 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
     computeShader->use();
     computeShader->setInt("zStart", zStart);
     computeShader->setInt("sliceCount", slicesThisBlock);
-    computeShader->setInt("resolution", params.resolution);
+    computeShader->setInt("resolutionX", params.resolutionX); //&&&&&&&&&&&&
+    computeShader->setInt("resolutionY", params.resolutionY); //&&&&&&&&&&&&
     computeShader->setInt("resolutionZ", params.resolutionZ);
 
     glBindImageTexture(0, sliceTex, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA8);
     // e.g. if resolution is 1024, this will launch 64 x 64 x slicesThisBlock workgroups
     // Then the compute shader will launch 16 threads per workgroup in xy, thus getting "resolution" threads in xy
     // 16 is a good compromise, since e.g. almost any resolution can be divided by 16
-    glDispatchCompute(params.resolution / 16, params.resolution / 16, slicesThisBlock);
+    //glDispatchCompute(params.resolutionX / 16, params.resolutionY / 16, slicesThisBlock);
+
+    // This accomodates the case where resolutionX and resolutionY are not equal and not divisible by 16
+    glDispatchCompute(
+      (params.resolutionX + 15) / 16,
+      (params.resolutionY + 15) / 16,
+      slicesThisBlock
+    );
+  
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     
   }
@@ -284,7 +293,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, hostTransitions.size() * sizeof(GLuint), hostTransitions.data());
 
   //Example: print Z transitions for pixel (x=300, y=290)
-  int colIndex = 290 * params.resolution + 300;
+  int colIndex = 290 * params.resolutionX + 300;
   for (uint i = 0; i < counts[colIndex]; ++i) {
       std::cout << "Transition Z: " << hostTransitions[colIndex * params.maxTransitionsPerZColumn + i] << "\n";
   }

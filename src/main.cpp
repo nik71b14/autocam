@@ -20,8 +20,9 @@ int main(int argc, char** argv) {
   try {
 
     VoxelizationParams params;
-    params.resolution = 1024;
-    params.resolutionZ = 1024; // Default Z resolution
+    params.resolutionZ = 1000; // Default Z resolution
+    params.resolutionX = 1000;
+    params.resolutionY = 1000;
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
 
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
@@ -29,6 +30,7 @@ int main(int argc, char** argv) {
 
     Mesh mesh = loadMesh(stlPath);
     Voxelizer voxelizer(mesh, params);
+    // voxelizer.run();
     voxelizer.run();
     auto [compressedData, prefixSumData] = voxelizer.getResults();
 
@@ -43,9 +45,7 @@ int main(int argc, char** argv) {
     VoxelViewer viewer(
       compressedData,
       prefixSumData,
-      params.resolution,
-      params.resolutionZ,
-      params.maxTransitionsPerZColumn
+      params
     );
     viewer.run();
 

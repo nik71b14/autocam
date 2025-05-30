@@ -7,24 +7,25 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include "voxelizer.hpp"
 
-VoxelViewer::VoxelViewer(const std::string& compressedFile,
-                                             const std::string& prefixSumFile,
-                                             int resXY, int resZ, int maxTransitions)
-    : resolutionXY(resXY), resolutionZ(resZ), maxTransitionsPerZColumn(maxTransitions) {
-    if (!loadBinaryFile(compressedFile, compressedData) ||
-        !loadBinaryFile(prefixSumFile, prefixSumData)) {
-        throw std::runtime_error("Failed to load one or both input files");
-    }
-    initGL();
-    setupShaderAndBuffers();
+VoxelViewer::VoxelViewer(
+  const std::string& compressedFile,
+  const std::string& prefixSumFile,
+  VoxelizationParams params
+): params(params){
+  if (!loadBinaryFile(compressedFile, compressedData) ||
+      !loadBinaryFile(prefixSumFile, prefixSumData)) {
+      throw std::runtime_error("Failed to load one or both input files");
+  }
+  initGL();
+  setupShaderAndBuffers();
 }
 
-VoxelViewer::VoxelViewer(const std::vector<unsigned int>& compressed,
-                                             const std::vector<unsigned int>& prefixSum,
-                                             int resXY, int resZ, int maxTransitions)
-    : resolutionXY(resXY), resolutionZ(resZ), maxTransitionsPerZColumn(maxTransitions),
-      compressedData(compressed), prefixSumData(prefixSum) {
+VoxelViewer::VoxelViewer(
+  const std::vector<unsigned int>& compressed,
+  const std::vector<unsigned int>& prefixSum,
+  VoxelizationParams params): params(params), compressedData(compressed), prefixSumData(prefixSum){
     initGL();
     setupShaderAndBuffers();
 }
@@ -99,8 +100,8 @@ void VoxelViewer::run() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         raymarchingShader->use();
-        raymarchingShader->setIVec3("resolution", glm::ivec3(resolutionXY, resolutionXY, resolutionZ));
-        raymarchingShader->setInt("maxTransitions", maxTransitionsPerZColumn);
+        raymarchingShader->setIVec3("resolution", glm::ivec3(this->params.resolutionX, this->params.resolutionY, this->params.resolutionZ));
+        raymarchingShader->setInt("maxTransitions", this->params.maxTransitionsPerZColumn);
 
         float aspect = 800.0f / 600.0f;
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
