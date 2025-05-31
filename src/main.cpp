@@ -20,10 +20,12 @@ int main(int argc, char** argv) {
   try {
 
     VoxelizationParams params;
-    params.resolution = 0.1; // E.g. mm
+    params.resolution = 0.05; // E.g. mm
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
+    //params.slicesPerBlock = 8;
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
     //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
+    //params.preview = true; // Enable preview during voxelization
 
     Mesh mesh = loadMesh(stlPath);
     Voxelizer voxelizer(mesh, params);

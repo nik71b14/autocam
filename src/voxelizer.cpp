@@ -7,6 +7,7 @@
 #include <iostream>
 #include <chrono>
 #include <stdexcept>
+#include <thread>
 
 #define MIN_RESOLUTION_XYZ 256 // Minimum resolution for each axis, used for very small objects
 //#define DEBUG_OUTPUT // Enable debug output for detailed information
@@ -199,6 +200,10 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // Create framebuffer
   glGenFramebuffers(1, &fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+  // Attach the 0th layer of the 2D array texture
+  glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, sliceTex, 0, 0); //&&&
+
   glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
   const int totalBlocks = (params.resolutionZ + params.slicesPerBlock - 1) / params.slicesPerBlock;
@@ -239,13 +244,25 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
                   zeroFlags.size() * sizeof(GLuint),
                   zeroFlags.data());
 
-  // glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
-  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, zSpan);
+  //glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
+  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, 10*zSpan); // Changed here from 1*zSpan to 10*zSpan
   glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glViewport(0, 0, params.resolutionX, params.resolutionY);
   glEnable(GL_DEPTH_TEST);
+
+  // Attach a depth renderbuffer to the framebuffer, which is needed for depth testing
+  GLuint depthRbo;
+  glGenRenderbuffers(1, &depthRbo);
+  glBindRenderbuffer(GL_RENDERBUFFER, depthRbo);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, params.resolutionX, params.resolutionY);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRbo);
+
+  GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  if (status != GL_FRAMEBUFFER_COMPLETE) {
+    std::cerr << "Framebuffer not complete! Error code: 0x" << std::hex << status << std::endl;
+  }
 
   #ifdef DEBUG_GPU
   // Check if the shader program compiled and linked successfully
@@ -269,10 +286,13 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
     int zStart = block * params.slicesPerBlock;
     int slicesThisBlock = std::min(params.slicesPerBlock, params.resolutionZ - zStart);
 
-    // Render SLICES_PER_BLOCK+1 slices, overlapping one with previous block
+    
+    // Render SLICES_PER_BLOCK + 1 slices, overlapping one with previous block
     for (int i = 0; i <= slicesThisBlock; ++i) {
       float z = zSpan / 2.0f - (zStart + i - 1) * deltaZ; // slice 0 is black for i = 0
       glm::vec4 clipPlane(0, 0, -1, z);
+
+      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, sliceTex, 0, i);
 
       drawShader->use();
       drawShader->setMat4("projection", projection);
@@ -280,12 +300,37 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
       drawShader->setMat4("model", glm::mat4(1.0f));
       drawShader->setVec4("clippingPlane", clipPlane);
 
-      glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, sliceTex, 0, i);
+      //glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, sliceTex, 0, i); // bind texture layer for this slice
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       if (zStart + i - 1 >= 0) {
         glBindVertexArray(meshBuffers.vao);
         glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
       }
+
+      // Visualize the slice
+      /*
+      if (params.preview) {
+        glEnable(GL_DEPTH_TEST);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0); // Bind default framebuffer
+        glViewport(0, 0, params.resolutionX, params.resolutionY);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        drawShader->use();
+        drawShader->setMat4("projection", projection);
+        drawShader->setMat4("view", view);
+        drawShader->setMat4("model", glm::mat4(1.0f));
+        drawShader->setVec4("clippingPlane", clipPlane);
+
+        glBindVertexArray(meshBuffers.vao);
+        glDrawElements(GL_TRIANGLES, triangleCount, GL_UNSIGNED_INT, 0);
+
+        glfwSwapBuffers(window);
+
+        // Introduce a delay to slow down the slicing process
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      */
     }
 
     glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
