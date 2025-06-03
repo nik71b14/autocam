@@ -1,0 +1,37 @@
+#version 460
+
+#define WORKGROUP_SIZE 1024
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(std430, binding = 2) buffer BlockSums {
+    uint blockSums[];  // Previous level's unadjusted sums
+};
+
+layout(std430, binding = 3) readonly buffer BlockOffsets {
+    uint blockOffsets[];  // This level's scanned offsets
+};
+
+layout(std430, binding = 4) buffer ErrorBuffer {
+    uint errorFlag;
+};
+
+uniform uint numElements;
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+
+    if (gid >= numElements) return; //@@@ EVENTUALLY SET ERROR FLAG HERE
+    
+    // Bounds check on blockSums
+    if (gid >= blockSums.length())
+        return;
+
+    // Bounds check on blockOffsets
+    if (gid >= blockOffsets.length()) {
+        atomicMax(errorFlag, 2); // Error: offset missing for this block
+        return;
+    }
+
+    // Adjust the blockSums using the prefix of blockOffsets
+    blockSums[gid] += blockOffsets[gid];
+}

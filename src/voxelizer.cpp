@@ -733,15 +733,19 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   //const size_t MAX_ELEMENTS = WORKGROUP_SIZE * WORKGROUP_SIZE * WORKGROUP_SIZE; // = 1024 × 1024 × 1024 ≈ 1.07e9 elements
 
   // 1. Generate dummy input data
-  const int TOTAL_ELEMENTS = 9000000;
+  const int TOTAL_ELEMENTS = (1024 * 1024);
+
+  // Create and fill with 1s for testing
+  std::vector<GLuint> _counts(TOTAL_ELEMENTS, 1);
+
   // Fill with random integer values between 0 and 10 for testing
-  std::vector<GLuint> _counts(TOTAL_ELEMENTS);
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<GLuint> dist(0, 10);
-  for (auto& val : _counts) {
-      val = dist(gen);
-  }
+  // std::vector<GLuint> _counts(TOTAL_ELEMENTS);
+  // std::random_device rd;
+  // std::mt19937 gen(rd());
+  // std::uniform_int_distribution<GLuint> dist(0, 10);
+  // for (auto& val : _counts) {
+  //     val = dist(gen);
+  // }
 
   // 2. Create OpenGL buffers
   GLuint _countBuffer, prefixSumBuffer, blockSumsBuffer, blockOffsetsBuffer, errorFlagBuffer;
@@ -769,10 +773,10 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_COPY);
 
   // 3. Load or compile shaders
-  Shader* prefixPass1      = new Shader("prefix_pass1.comp");
-  Shader* prefixPass2      = new Shader("prefix_pass2.comp");
-  Shader* prefixPass3      = new Shader("prefix_pass3.comp");
-  Shader* pass3BlockLevel  = new Shader("prefix_pass3_blocklevel.comp");
+  Shader* prefixPass1      = new Shader("shaders/prefix_pass1.comp");
+  Shader* prefixPass2      = new Shader("shaders/prefix_pass2.comp");
+  Shader* prefixPass3      = new Shader("shaders/prefix_pass3.comp");
+  Shader* pass3BlockLevel  = new Shader("shaders/prefix_pass3_blocklevel.comp");
 
   // 4. Run prefix sum
   prefixSumMultiLevel1B(
@@ -795,22 +799,26 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixResults.size() * sizeof(GLuint), prefixResults.data());
 
-  // Find the maximum value in prefixResults for normalization
-  int numSamples = std::min(10, static_cast<int>(prefixResults.size()));
-  if (numSamples > 0) {
-    GLuint maxPrefix = *std::max_element(prefixResults.begin(), prefixResults.end());
-    int maxBarLength = 40;
-    double normFactor = (maxPrefix > 0) ? static_cast<double>(maxPrefix) / maxBarLength : 1.0;
-
-    std::cout << "Prefix sum graphical representation (max bar length = 40):\n";
+  if (!prefixResults.empty()) {
+    GLuint maxVal = *std::max_element(prefixResults.begin(), prefixResults.end());
+    int maxStars = 40;
+    double norm = (maxVal > 0) ? static_cast<double>(maxVal) / maxStars : 1.0;
+    int numSamples = 10;
+    std::cout << "Prefix sum graphical representation (max 40 '*'):\n";
     for (int i = 0; i < numSamples; ++i) {
-        size_t idx = (prefixResults.size() - 1) * i / (numSamples - 1);
-        int barLen = static_cast<int>(prefixResults[idx] / normFactor);
-        if (barLen > maxBarLength) barLen = maxBarLength;
-        for (int j = 0; j < barLen; ++j) std::cout << "*";
-        std::cout << " (" << prefixResults[idx] << ")\n";
+      size_t idx = (i == numSamples - 1) ? prefixResults.size() - 1 : (prefixResults.size() - 1) * i / (numSamples - 1);
+      int stars = static_cast<int>(prefixResults[idx] / norm);
+      if (stars > maxStars) stars = maxStars;
+      std::cout << "[" << idx << "] ";
+      for (int j = 0; j < stars; ++j) std::cout << "*";
+      std::cout << " (" << prefixResults[idx] << ")\n";
     }
   }
+  if (!prefixResults.empty()) {
+    size_t lastIdx = prefixResults.size() - 2;
+    std::cout << "Last element at index " << lastIdx << ": " << prefixResults[lastIdx] << std::endl;
+  }
+
 
 
   // 7. Cleanup

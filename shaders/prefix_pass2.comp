@@ -1,0 +1,56 @@
+#version 460
+
+#define WORKGROUP_SIZE 1024
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(std430, binding = 2) readonly buffer BlockSums {
+    uint blockSums[];
+};
+
+layout(std430, binding = 3) writeonly buffer BlockOffsets {
+    uint blockOffsets[];
+};
+
+layout(std430, binding = 4) buffer ErrorFlag {
+    uint errorFlag;
+};
+
+uniform uint numBlocks; // Required to avoid relying on .length()
+uniform uint numElements;
+
+shared uint temp[WORKGROUP_SIZE];
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    uint group = gl_WorkGroupID.x;
+
+    // Optional: if too many threads launched, avoid OOB (@@@ EVENTUALLY SET ERROR FLAG HERE)
+    if (gid >= numBlocks || gid >= numElements) return;
+
+    // Load input into shared memory
+    temp[lid] = blockSums[gid];
+
+    memoryBarrierShared();
+    barrier();
+
+    // Inclusive scan (Kogge-Stone style)
+    for (uint offset = 1; offset < WORKGROUP_SIZE; offset *= 2) {
+        uint val = 0;
+        if (lid >= offset)
+            val = temp[lid - offset];
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Convert to exclusive scan
+    uint scanned = (lid > 0) ? temp[lid - 1] : 0;
+    blockOffsets[gid] = scanned;
+
+    // Optional: error detection (overflow, NAN, etc.)
+    // Uncomment if you want to detect bad values:
+    // if (temp[lid] < scanned) {
+    //     atomicOr(errorFlag, 1);
+    // }
+}

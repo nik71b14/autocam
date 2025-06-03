@@ -14,6 +14,9 @@ layout(std430, binding = 2) writeonly buffer BlockSums {
     uint blockSums[];
 };
 
+uniform uint numBlocks;
+uniform uint numElements;
+
 shared uint temp[WORKGROUP_SIZE];
 
 void main() {
@@ -21,7 +24,13 @@ void main() {
     uint lid = gl_LocalInvocationID.x;
     uint group = gl_WorkGroupID.x;
 
-    // Load counts into shared memory (or zero if out of bounds)
+    // Check if the global ID is within bounds
+    if (gid < numElements)
+        temp[lid] = counts[gid];
+    else
+        temp[lid] = 0;
+
+    // Load input to shared memory with zero padding
     temp[lid] = (gid < counts.length()) ? counts[gid] : 0;
 
     memoryBarrierShared();
@@ -37,13 +46,13 @@ void main() {
         barrier();
     }
 
-    // Write block sum (last thread)
-    if (lid == WORKGROUP_SIZE - 1 && group < blockSums.length())
+    // Write block sum (last thread of group)
+    if (lid == WORKGROUP_SIZE - 1 && group < numBlocks)
         blockSums[group] = temp[lid];
 
-    // Convert to exclusive scan
+    // Exclusive scan result
     uint scanned = (lid > 0) ? temp[lid - 1] : 0;
 
-    if (gid < counts.length())
+    if (gid < prefix.length())
         prefix[gid] = scanned;
 }
