@@ -3,6 +3,8 @@
 #include <glad/glad.h>
 #include "shader.hpp"
 
+int div_ceil(int x, int y);
+
 void prefixSumMultiLevel1M(
     GLuint countBuffer,          // input buffer with original counts
     GLuint prefixSumBuffer,      // output prefix sum buffer (size = totalPixels + 1)

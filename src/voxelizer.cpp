@@ -730,30 +730,38 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // UP TO ABOUT 1024^3 VALUES, WHICH IS ABOUT 1 BILLION ENTRIES
   
   const int WORKGROUP_SIZE = 1024;
-  const int totalElements = 1024 * 1024; // 1M elements
+  //const size_t MAX_ELEMENTS = WORKGROUP_SIZE * WORKGROUP_SIZE * WORKGROUP_SIZE; // = 1024 × 1024 × 1024 ≈ 1.07e9 elements
 
   // 1. Generate dummy input data
-  std::vector<GLuint> inputCounts(totalElements, 1); // e.g. all 1s
+  const int TOTAL_ELEMENTS = 9000000;
+  // Fill with random integer values between 0 and 10 for testing
+  std::vector<GLuint> _counts(TOTAL_ELEMENTS);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<GLuint> dist(0, 10);
+  for (auto& val : _counts) {
+      val = dist(gen);
+  }
 
   // 2. Create OpenGL buffers
   GLuint _countBuffer, prefixSumBuffer, blockSumsBuffer, blockOffsetsBuffer, errorFlagBuffer;
 
-  glGenBuffers(1, &countBuffer);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, inputCounts.size() * sizeof(GLuint), inputCounts.data(), GL_STATIC_DRAW);
+  glGenBuffers(1, &_countBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, _countBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, _counts.size() * sizeof(GLuint), _counts.data(), GL_STATIC_DRAW);
 
   glGenBuffers(1, &prefixSumBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-  // Output buffer has totalElements + 1 entries
-  glBufferData(GL_SHADER_STORAGE_BUFFER, (inputCounts.size() + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  // Output buffer has TOTAL_ELEMENTS + 1 entries
+  glBufferData(GL_SHADER_STORAGE_BUFFER, (_counts.size() + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
 
   glGenBuffers(1, &blockSumsBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockSumsBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, div_ceil(totalElements, WORKGROUP_SIZE) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, div_ceil(TOTAL_ELEMENTS, WORKGROUP_SIZE) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
 
   glGenBuffers(1, &blockOffsetsBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockOffsetsBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, div_ceil(totalElements, WORKGROUP_SIZE) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, div_ceil(TOTAL_ELEMENTS, WORKGROUP_SIZE) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
 
   glGenBuffers(1, &errorFlagBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorFlagBuffer);
@@ -777,18 +785,44 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
       prefixPass2,
       prefixPass3,
       pass3BlockLevel,
-      totalElements
+      TOTAL_ELEMENTS
   );
 
-  // 5. Read back results (optional)
-  std::vector<GLuint> prefixResults(totalElements + 1);
+  // 6. Read back results for verification
+  std::vector<GLuint> prefixResults(TOTAL_ELEMENTS + 1);
+  //std::vector<GLuint> prefixResults(totalPixels + 1);
+  
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixResults.size() * sizeof(GLuint), prefixResults.data());
 
-  // Check a few results
-  for (int i = 0; i < 10; ++i) {
-      std::cout << "Prefix[" << i << "] = " << prefixResults[i] << std::endl;
+  // Find the maximum value in prefixResults for normalization
+  int numSamples = std::min(10, static_cast<int>(prefixResults.size()));
+  if (numSamples > 0) {
+    GLuint maxPrefix = *std::max_element(prefixResults.begin(), prefixResults.end());
+    int maxBarLength = 40;
+    double normFactor = (maxPrefix > 0) ? static_cast<double>(maxPrefix) / maxBarLength : 1.0;
+
+    std::cout << "Prefix sum graphical representation (max bar length = 40):\n";
+    for (int i = 0; i < numSamples; ++i) {
+        size_t idx = (prefixResults.size() - 1) * i / (numSamples - 1);
+        int barLen = static_cast<int>(prefixResults[idx] / normFactor);
+        if (barLen > maxBarLength) barLen = maxBarLength;
+        for (int j = 0; j < barLen; ++j) std::cout << "*";
+        std::cout << " (" << prefixResults[idx] << ")\n";
+    }
   }
+
+
+  // 7. Cleanup
+  glDeleteBuffers(1, &countBuffer);
+  glDeleteBuffers(1, &prefixSumBuffer);
+  glDeleteBuffers(1, &blockSumsBuffer);
+  glDeleteBuffers(1, &blockOffsetsBuffer);
+  glDeleteBuffers(1, &errorFlagBuffer);
+  delete prefixPass1;
+  delete prefixPass2;
+  delete prefixPass3;
+  delete pass3BlockLevel;
 
 
   // ****************************************************************************************************************************

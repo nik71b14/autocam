@@ -1,0 +1,49 @@
+#version 460
+#define WORKGROUP_SIZE 1024
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(std430, binding = 0) readonly buffer Counts {
+    uint counts[];
+};
+
+layout(std430, binding = 1) writeonly buffer PrefixSums {
+    uint prefix[];
+};
+
+layout(std430, binding = 2) writeonly buffer BlockSums {
+    uint blockSums[];
+};
+
+shared uint temp[WORKGROUP_SIZE];
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    uint group = gl_WorkGroupID.x;
+
+    // Load counts into shared memory (or zero if out of bounds)
+    temp[lid] = (gid < counts.length()) ? counts[gid] : 0;
+
+    memoryBarrierShared();
+    barrier();
+
+    // Inclusive scan (Kogge-Stone)
+    for (uint offset = 1; offset < WORKGROUP_SIZE; offset *= 2) {
+        uint val = 0;
+        if (lid >= offset)
+            val = temp[lid - offset];
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Write block sum (last thread)
+    if (lid == WORKGROUP_SIZE - 1 && group < blockSums.length())
+        blockSums[group] = temp[lid];
+
+    // Convert to exclusive scan
+    uint scanned = (lid > 0) ? temp[lid - 1] : 0;
+
+    if (gid < counts.length())
+        prefix[gid] = scanned;
+}
