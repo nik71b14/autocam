@@ -1,0 +1,27 @@
+#version 460
+
+layout(local_size_x = 1024) in;
+
+layout(std430, binding = 2) buffer BlockSums {  // Previous level's blockSums
+    uint blockSums[];
+};
+
+layout(std430, binding = 3) readonly buffer BlockOffsets {  // This level's scanned offsets
+    uint blockOffsets[];
+};
+
+layout(std430, binding = 4) buffer ErrorBuffer {
+    uint errorFlag;
+};
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+
+    if (gid < blockSums.length()) {
+        if (gid < blockOffsets.length()) {
+            blockSums[gid] += blockOffsets[gid];
+        } else {
+            atomicMax(errorFlag, 2); // Error: offset missing
+        }
+    }
+}

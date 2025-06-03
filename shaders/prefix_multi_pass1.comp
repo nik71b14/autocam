@@ -1,0 +1,52 @@
+#version 460
+
+// You can change this to match your C++ side (e.g., 1024)
+layout(local_size_x = 1024) in;
+
+layout(std430, binding = 0) readonly buffer Counts {
+    uint counts[];
+};
+
+layout(std430, binding = 1) writeonly buffer PrefixSums {
+    uint prefix[];
+};
+
+layout(std430, binding = 2) writeonly buffer BlockSums {
+    uint blockSums[];
+};
+
+shared uint temp[gl_WorkGroupSize.x]; // dynamic size from layout
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    uint group = gl_WorkGroupID.x;
+    uint localSize = gl_WorkGroupSize.x;
+
+    // Load to shared memory
+    temp[lid] = (gid < counts.length()) ? counts[gid] : 0;
+    memoryBarrierShared();
+    barrier();
+
+    // Up-sweep (Blelloch-style)
+    for (uint offset = 1; offset < localSize; offset *= 2) {
+        uint val = 0;
+        if (lid >= offset)
+            val = temp[lid - offset];
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Save final block sum (last element in shared memory)
+    if (lid == localSize - 1 && group < blockSums.length())
+        blockSums[group] = temp[lid];
+
+    // Convert to exclusive scan
+    uint scanned = 0;
+    if (lid > 0)
+        scanned = temp[lid - 1];
+
+    if (gid < counts.length())
+        prefix[gid] = scanned;
+}

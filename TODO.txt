@@ -1,4 +1,4 @@
--> Verificare perché alcuni modelli vengono voxelizzati male utilizzando la visualizzazione delle slices durante la voxelizzazione
+-> Verificare perché con risoluzioni un po' più alte si blocca tutto (problema heap/stack?)
 
 -> Passare MAX_TRANSITIONS_PER_PIXEL allo shader in maniera dinamica
 -> Se ho un overflow riguardo al massimo numero di transizioni in Z, creare un loop che le aumenta

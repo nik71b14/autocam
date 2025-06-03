@@ -8,10 +8,15 @@
 #include <chrono>
 #include <stdexcept>
 #include <thread>
+#include <numeric>
+#include <random>
+
+#include "prefixSum.hpp"
 
 #define MIN_RESOLUTION_XYZ 256 // Minimum resolution for each axis, used for very small objects
-//#define DEBUG_OUTPUT // Enable debug output for detailed information
-//#define DEBUG_GPU // Enable OpenGL debug output
+#define DEBUG_OUTPUT // Enable debug output for detailed information
+#define DEBUG_GPU // Enable OpenGL debug output
+#define GPU_LIMITS // Enable GPU limits output
 
 // Default constructor
 Voxelizer::Voxelizer() {}
@@ -173,6 +178,10 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   setupGL(&window, params.resolutionX, params.resolutionY, "STL Viewer", !params.preview);
   if (!window) throw std::runtime_error("Failed to create GLFW window");
 
+  #ifdef DEBUG_GPU
+  queryGPULimits();
+  #endif
+
   // Enable OpenGL debug output
   #ifdef DEBUG_GPU
   glEnable(GL_DEBUG_OUTPUT);
@@ -189,6 +198,22 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
 
   drawShader = new Shader("shaders/vertex.glsl", "shaders/fragment.glsl");
   computeShader = new Shader("shaders/transitions_xyz.comp");
+
+  #ifdef GPU_LIMITS
+  // ##########################################################################
+  // Check not to exceed CPU limits for texture
+  GLint maxTexSize, maxTexLayers;
+  glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexSize);             // max width/height for 2D/3D
+  // glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &maxTexSize);       // for GL_TEXTURE_3D
+  glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxTexLayers);   // for GL_TEXTURE_2D_ARRAY
+
+  if (params.resolutionX > maxTexSize ||
+    params.resolutionY > maxTexSize ||
+    params.slicesPerBlock + 1 > maxTexLayers) {
+    std::cerr << "ERROR: Texture dimensions exceed GPU limits!" << std::endl;
+  }
+  // ##########################################################################
+  #endif
 
   // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
   glGenTextures(1, &sliceTex);
@@ -245,7 +270,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
                   zeroFlags.data());
 
   //glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
-  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, 10*zSpan); // Changed here from 1*zSpan to 10*zSpan
+  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, 100*zSpan); // Changed here from 1*zSpan to 10*zSpan
   glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -292,6 +317,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
       float z = zSpan / 2.0f - (zStart + i - 1) * deltaZ; // slice 0 is black for i = 0
       glm::vec4 clipPlane(0, 0, -1, z);
 
+      glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Rebind the custom FBO
       glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, sliceTex, 0, i);
 
       drawShader->use();
@@ -308,9 +334,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
       }
 
       // Visualize the slice
-      /*
       if (params.preview) {
-        glEnable(GL_DEPTH_TEST);
+        //glEnable(GL_DEPTH_TEST);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0); // Bind default framebuffer
         glViewport(0, 0, params.resolutionX, params.resolutionY);
@@ -328,9 +353,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
         glfwSwapBuffers(window);
 
         // Introduce a delay to slow down the slicing process
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        //std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
-      */
     }
 
     glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
@@ -356,7 +380,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
     );
   
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    
   }
 
   glFinish();
@@ -364,7 +387,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   auto endTime = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsedTime = endTime - startTime;
   std::cout << "Voxelization complete. Execution time: " << elapsedTime.count() << " seconds\n";
-  
+
   // Read back the overflow buffer to check for overflow
   #ifdef DEBUG_GPU
   std::vector<GLuint> overflowFlags(totalPixels);
@@ -391,13 +414,58 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, hostTransitions.size() * sizeof(GLuint), hostTransitions.data());
 
-  //Example: print Z transitions for pixel (x=300, y=290)
-  int colIndex = 290 * params.resolutionX + 300;
-  for (uint i = 0; i < counts[colIndex]; ++i) {
-      std::cout << "Transition Z: " << hostTransitions[colIndex * params.maxTransitionsPerZColumn + i] << "\n";
+  // Plot a transition map as seen from above, where each pixel column is represented by a character # if it has at least one transition, or . if it has no transitions.
+  const int maxCols = 50;
+  const int maxRows = 50;
+  int strideX = std::max(1, params.resolutionX / maxCols);
+  int strideY = std::max(1, params.resolutionY / maxRows);
+
+  std::cout << "XY transition map (# = has transition):\n";
+  for (int row = 0; row < maxRows; ++row) {
+    int y = row * strideY;
+    if (y >= params.resolutionY) break;
+    for (int col = 0; col < maxCols; ++col) {
+      int x = col * strideX;
+      if (x >= params.resolutionX) break;
+      int idx = y * params.resolutionX + x;
+      bool hasTransition = false;
+      for (uint t = 0; t < counts[idx]; ++t) {
+        if (hostTransitions[idx * params.maxTransitionsPerZColumn + t] != 0) {
+          hasTransition = true;
+          break;
+        }
+      }
+      std::cout << (hasTransition ? '#' : '.');
+    }
+    std::cout << '\n';
   }
-  //std::cout << "Total transitions found: " << std::accumulate(counts.begin(), counts.end(), 0) << "\n";  
+
+  std::cout << "XY transition count map (0=., 1=+, 2=*, 3=#, >=4=@):\n";
+  for (int row = 0; row < maxRows; ++row) {
+    int y = row * strideY;
+    if (y >= params.resolutionY) break;
+    for (int col = 0; col < maxCols; ++col) {
+      int x = col * strideX;
+      if (x >= params.resolutionX) break;
+      int idx = y * params.resolutionX + x;
+      GLuint count = counts[idx];
+      char c = '.';
+      if (count == 1) c = '+';
+      else if (count == 2) c = '*';
+      else if (count == 3) c = '#';
+      else if (count >= 4) c = '@';
+      std::cout << c;
+    }
+    std::cout << '\n';
+  }
+
   #endif
+
+
+  // °°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
+  // EVERYTHING OK UP TO HERE
+  // °°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
+
 
   // COMPRESSION OF THE TRANSITIONS BUFFER ====================================
   
@@ -430,16 +498,23 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   //
   // Result: prefix = [0, 3, 4, 8, 8], which is what i we need (prefix is the offset in the compressed buffer where each pixel's transitions start).
 
+  /*
+  // ALL THIS WORKS UP TO numBlocks = 1024, WHICH IS THE MAXIMUM NUMBER OF WORKGROUPS ALLOWED IN OPENGL *************************
   // Use a Blelloch scan with two passes
   const int WORKGROUP_SIZE = 1024; // Max local workgroup size
   const int numBlocks = (totalPixels + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE; // Number of workgroups needed (rounded up)
+
+  if (numBlocks > 1024) {
+    std::cerr << "ERROR: blockSums too large (" << numBlocks << ") for local shared memory. Max 1024 entries allowed." << std::endl;
+    exit(EXIT_FAILURE);
+  }
 
   // 1. Create prefix sum output buffer (same size as countBuffer)
   GLuint prefixSumBuffer;
   glGenBuffers(1, &prefixSumBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3
-  //glBufferData(GL_SHADER_STORAGE_BUFFER, (totalPixels + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3 (totalPixels + 1 to handle exclusive prefix sum)
+  //glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3
+  glBufferData(GL_SHADER_STORAGE_BUFFER, (totalPixels + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3 (totalPixels + 1 to handle exclusive prefix sum) //$$$$$
 
   // 2. Create blockSums buffer (one entry per block)
   GLuint blockSumsBuffer;
@@ -500,6 +575,228 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
     std::cout << " (" << prefixSumResult[i] << ")\n";
   }
   #endif
+  // ****************************************************************************************************************************
+  */
+
+  // ALGORITHM FOR ARBITRARY NUMBER OF WORKGROUPS (e.g. 2048, 4096, etc.) *******************************************************
+
+  // Steps for multi-level prefix sum (Blelloch scan):
+
+  // 1. Pass 1 - Local scan:
+  //    - Split the input (countBuffer) into workgroups of up to 1024 threads each.
+  //    - For each workgroup:
+  //      • Perform a Blelloch scan in shared memory.
+  //      • Store the local scan result in prefixSumBuffer.
+  //      • Store the last value (total sum of that block) in blockSums.
+
+  // 2. Pass 2 - Recursive scan on blockSums:
+  //    - If blockSums has more than 1024 entries, repeat the same strategy recursively:
+  //      • Launch additional workgroups as needed.
+  //      • Write results to a new buffer (e.g., blockOffsetsLevel1, etc.).
+  //      • Continue recursively until the number of entries is ≤ 1024.
+  //    - Do not rely on a single workgroup; dispatch multiple if needed.
+
+  // 3. Pass 3 - Add offsets:
+  //    - Add block offsets back to each block in prefixSumBuffer.
+
+  // The recursive, multi-level prefix sum algorithm will be managed CPU side for improved flexibility and performance.
+
+  // Level 0: scan 1024 threads per workgroup → ~1000 workgroups → 1000 blockSums
+  // Level 1: scan the 1000 blockSums → ~1 workgroup → top-level sum
+  // Level 2: propagate offsets back down
+
+  /*
+  // UP TO ABOUT 1024^2 VALUES, WHICH IS ABOUT 1 MILLION ENTRIES
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
+  GLint64 countBufferSize = 0;
+  glGetBufferParameteri64v(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &countBufferSize);
+  std::cout << "countBuffer size (bytes): " << countBufferSize << std::endl;
+  std::cout << "countBuffer elements: " << (countBufferSize / sizeof(GLuint)) << std::endl;
+  std::cout << "totalPixels: " << totalPixels << std::endl;
+
+  const int WORKGROUP_SIZE = 1024; // Max local workgroup size
+  const size_t MAX_ELEMENTS = WORKGROUP_SIZE * WORKGROUP_SIZE * WORKGROUP_SIZE; // = 1024 × 1024 × 1024 ≈ 1.07e9 elements
+
+  // === Example input data ===
+  const int TOTAL_ELEMENTS = 900000;
+  // Fill with random integer values between 0 and 10 for testing
+  std::vector<GLuint> _counts(TOTAL_ELEMENTS);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<GLuint> dist(0, 10);
+  for (auto& val : _counts) {
+      val = dist(gen);
+  }
+
+  // -> totalPixels * sizeof(GLuint)
+
+
+  // === Allocate OpenGL Buffers ===
+  GLuint _countBuffer;
+  GLuint prefixSumBuffer, blockSumsBuffer, blockOffsetsBuffer, errorFlagBuffer;
+
+  // Input buffer
+  glGenBuffers(1, &_countBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, _countBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, _counts.size() * sizeof(GLuint), _counts.data(), GL_STATIC_DRAW);
+
+  // Output prefix sum buffer (+1 because inclusive scan usually requires one extra entry)
+  glGenBuffers(1, &prefixSumBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, (_counts.size() + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  //glBufferData(GL_SHADER_STORAGE_BUFFER, (totalPixels + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+  // First level block sums
+  int firstLevelBlocks = (TOTAL_ELEMENTS + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+  //int firstLevelBlocks = (totalPixels + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+
+  // Check
+  std::cout << "First level blocks: " << firstLevelBlocks << std::endl;
+  int secondLevelBlocks = (firstLevelBlocks + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+  if (secondLevelBlocks > 1) {
+      std::cerr << "⚠️  Need second level prefix scan for block sums!" << std::endl;
+  }
+
+  glGenBuffers(1, &blockSumsBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockSumsBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, firstLevelBlocks * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+  // First level block offsets
+  glGenBuffers(1, &blockOffsetsBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockOffsetsBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, firstLevelBlocks * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+  // Optional: Error flag buffer (if your pass2 shader uses it)
+  glGenBuffers(1, &errorFlagBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorFlagBuffer);
+  GLuint zeroErrorFlag = 0;
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), &zeroErrorFlag, GL_DYNAMIC_COPY);
+
+  // === Load Shaders ===
+  Shader* prefixPass1 = new Shader("shaders/prefix_multi_pass1.comp");
+  Shader* prefixPass2 = new Shader("shaders/prefix_multi_pass2.comp");
+  Shader* prefixPass3 = new Shader("shaders/prefix_multi_pass3.comp");
+  Shader* prefixPass3BlockLevel = new Shader("shaders/prefix_multi_pass3_block.comp");
+
+  // === Dispatch Multi-level Prefix Sum ===
+  prefixSumMultiLevel1M(
+      _countBuffer,
+      //countBuffer,
+      prefixSumBuffer,
+      blockSumsBuffer,
+      blockOffsetsBuffer,
+      errorFlagBuffer,
+      prefixPass1,
+      prefixPass2,
+      prefixPass3,
+      prefixPass3BlockLevel,
+      TOTAL_ELEMENTS
+      //totalPixels
+  );
+
+  // === Read back results for verification ===
+  std::vector<GLuint> prefixResults(TOTAL_ELEMENTS + 1);
+  //std::vector<GLuint> prefixResults(totalPixels + 1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixResults.size() * sizeof(GLuint), prefixResults.data());
+
+  // Find the maximum value in prefixResults for normalization
+  // Determine number of samples (10 or less)
+  int numSamples = std::min(10, static_cast<int>(prefixResults.size()));
+  if (numSamples > 0) {
+    GLuint maxPrefix = *std::max_element(prefixResults.begin(), prefixResults.end());
+    int maxBarLength = 40;
+    double normFactor = (maxPrefix > 0) ? static_cast<double>(maxPrefix) / maxBarLength : 1.0;
+
+    std::cout << "Prefix sum graphical representation (max bar length = 40):\n";
+    for (int i = 0; i < numSamples; ++i) {
+        size_t idx = (prefixResults.size() - 1) * i / (numSamples - 1);
+        int barLen = static_cast<int>(prefixResults[idx] / normFactor);
+        if (barLen > maxBarLength) barLen = maxBarLength;
+        for (int j = 0; j < barLen; ++j) std::cout << "*";
+        std::cout << " (" << prefixResults[idx] << ")\n";
+    }
+  }
+  // === End of verification ===
+
+  // Cleanup
+  glDeleteBuffers(1, &countBuffer);
+  glDeleteBuffers(1, &prefixSumBuffer);
+  glDeleteBuffers(1, &blockSumsBuffer);
+  glDeleteBuffers(1, &blockOffsetsBuffer);
+  glDeleteBuffers(1, &errorFlagBuffer);
+  */
+
+  // UP TO ABOUT 1024^3 VALUES, WHICH IS ABOUT 1 BILLION ENTRIES
+  
+  const int WORKGROUP_SIZE = 1024;
+  const int totalElements = 1024 * 1024; // 1M elements
+
+  // 1. Generate dummy input data
+  std::vector<GLuint> inputCounts(totalElements, 1); // e.g. all 1s
+
+  // 2. Create OpenGL buffers
+  GLuint _countBuffer, prefixSumBuffer, blockSumsBuffer, blockOffsetsBuffer, errorFlagBuffer;
+
+  glGenBuffers(1, &countBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, inputCounts.size() * sizeof(GLuint), inputCounts.data(), GL_STATIC_DRAW);
+
+  glGenBuffers(1, &prefixSumBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  // Output buffer has totalElements + 1 entries
+  glBufferData(GL_SHADER_STORAGE_BUFFER, (inputCounts.size() + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+  glGenBuffers(1, &blockSumsBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockSumsBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, div_ceil(totalElements, WORKGROUP_SIZE) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+  glGenBuffers(1, &blockOffsetsBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockOffsetsBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, div_ceil(totalElements, WORKGROUP_SIZE) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+  glGenBuffers(1, &errorFlagBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorFlagBuffer);
+  GLuint zero = 0;
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_COPY);
+
+  // 3. Load or compile shaders
+  Shader* prefixPass1      = new Shader("prefix_pass1.comp");
+  Shader* prefixPass2      = new Shader("prefix_pass2.comp");
+  Shader* prefixPass3      = new Shader("prefix_pass3.comp");
+  Shader* pass3BlockLevel  = new Shader("prefix_pass3_blocklevel.comp");
+
+  // 4. Run prefix sum
+  prefixSumMultiLevel1B(
+      _countBuffer,
+      prefixSumBuffer,
+      blockSumsBuffer,
+      blockOffsetsBuffer,
+      errorFlagBuffer,
+      prefixPass1,
+      prefixPass2,
+      prefixPass3,
+      pass3BlockLevel,
+      totalElements
+  );
+
+  // 5. Read back results (optional)
+  std::vector<GLuint> prefixResults(totalElements + 1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixResults.size() * sizeof(GLuint), prefixResults.data());
+
+  // Check a few results
+  for (int i = 0; i < 10; ++i) {
+      std::cout << "Prefix[" << i << "] = " << prefixResults[i] << std::endl;
+  }
+
+
+  // ****************************************************************************************************************************
+
+
+  // #########################################################################
+  exit(0); // Exit the program after voxelization is complete
+  // #########################################################################
 
   // -----> COMPRESSION <-----
 

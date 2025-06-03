@@ -1,0 +1,53 @@
+#version 460
+
+layout(local_size_x = 1024) in;
+
+layout(std430, binding = 2) readonly buffer BlockSums {
+    uint blockSums[];
+};
+
+layout(std430, binding = 3) writeonly buffer BlockOffsets {
+    uint blockOffsets[];
+};
+
+layout(std430, binding = 4) buffer ErrorFlag {
+    uint errorFlag;
+};
+
+shared uint temp[gl_WorkGroupSize.x];
+
+void main() {
+    uint tid = gl_LocalInvocationID.x;
+    uint gid = gl_GlobalInvocationID.x;
+    uint size = gl_WorkGroupSize.x;
+
+    // Bounds check
+    if (tid >= size) {
+        if (tid == 0) {
+            errorFlag = 1; // signal invalid local invocation
+        }
+        return;
+    }
+
+    // Load into shared memory with bounds check
+    temp[tid] = (gid < blockSums.length()) ? blockSums[gid] : 0;
+    memoryBarrierShared();
+    barrier();
+
+    // Inclusive scan (up-sweep Blelloch)
+    for (uint offset = 1; offset < size; offset *= 2) {
+        uint val = 0;
+        if (tid >= offset)
+            val = temp[tid - offset];
+        barrier();
+        temp[tid] += val;
+        barrier();
+    }
+
+    // Convert to exclusive scan
+    uint scanned = (tid > 0) ? temp[tid - 1] : 0;
+
+    if (gid < blockSums.length()) {
+        blockOffsets[gid] = scanned;
+    }
+}

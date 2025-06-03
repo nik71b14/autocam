@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
   try {
 
     VoxelizationParams params;
-    params.resolution = 0.05; // E.g. mm
+    params.resolution = 0.02; // E.g. mm
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
     //params.slicesPerBlock = 8;
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
@@ -28,37 +28,45 @@ int main(int argc, char** argv) {
     //params.preview = true; // Enable preview during voxelization
 
     Mesh mesh = loadMesh(stlPath);
-    Voxelizer voxelizer(mesh, params);
-    voxelizer.run();
-    auto [compressedData, prefixSumData] = voxelizer.getResults();
+
+    Voxelizer* voxelizer = new Voxelizer(mesh, params);
+    voxelizer->run();
+    auto [compressedData, prefixSumData] = voxelizer->getResults();
+
+    // Voxelizer voxelizer(mesh, params);
+    // voxelizer.run();
+    // auto [compressedData, prefixSumData] = voxelizer.getResults();
 
     #ifdef DEBUG_OUTPUT
     std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
     std::cout << "Loaded mesh: " << stlPath << std::endl;
     std::cout << "Number of vertices: " << mesh.vertices.size() / 3 << std::endl;
     std::cout << "Number of faces: " << mesh.indices.size() / 3 << std::endl;
-    std::cout << "Computed scale: " << voxelizer.getScale() << std::endl;
-    glm::ivec3 res = voxelizer.getResolutionPx();
+    std::cout << "Computed scale: " << voxelizer->getScale() << std::endl;
+    glm::ivec3 res = voxelizer->getResolutionPx();
     std::cout << "Voxelization resolution: " 
           << res.x << " (X) x " 
           << res.y << " (Y) x " 
           << res.z << " (Z) [px]" << std::endl;
     std::cout << "Voxelization resolution: "
-          << voxelizer.getResolution() << " [object units]" << std::endl;
+          << voxelizer->getResolution() << " [object units]" << std::endl;
     #endif
+
+    delete voxelizer;
 
     params.resolutionX = res.x;
     params.resolutionY = res.y;
     params.resolutionZ = res.z;
 
+    
     VoxelViewer viewer(
       compressedData,
       prefixSumData,
       params
     );
     viewer.setOrthographic(false); // Set orthographic projection
-    viewer.run();
-
+    viewer.run(); 
+    
     // VoxelViewer viewer(
     //     "test/cross_compressedBuffer.bin",
     //     "test/cross_prefixSumBuffer.bin",
