@@ -24,14 +24,8 @@ void main() {
     uint lid = gl_LocalInvocationID.x;
     uint group = gl_WorkGroupID.x;
 
-    // Check if the global ID is within bounds
-    if (gid < numElements)
-        temp[lid] = counts[gid];
-    else
-        temp[lid] = 0;
-
-    // Load input to shared memory with zero padding
-    temp[lid] = (gid < counts.length()) ? counts[gid] : 0;
+    // Always initialize shared memory
+    temp[lid] = (gid < numElements) ? counts[gid] : 0;
 
     memoryBarrierShared();
     barrier();
@@ -46,13 +40,25 @@ void main() {
         barrier();
     }
 
-    // Write block sum (last thread of group)
-    if (lid == WORKGROUP_SIZE - 1 && group < numBlocks)
-        blockSums[group] = temp[lid];
+    // Write block sum using first thread of next block
+    // or last thread if it's the last block
+    if (lid == 0) {
+        uint blockSum = temp[WORKGROUP_SIZE - 1];
+        
+        // For partial blocks: find actual last element
+        uint lastInBlock = min((group + 1) * WORKGROUP_SIZE - 1, numElements - 1);
+        uint lastLid = lastInBlock - group * WORKGROUP_SIZE;
+        
+        if (lastLid < WORKGROUP_SIZE - 1) {
+            blockSum = temp[lastLid];
+        }
+        
+        blockSums[group] = blockSum;
+    }
 
     // Exclusive scan result
     uint scanned = (lid > 0) ? temp[lid - 1] : 0;
 
-    if (gid < prefix.length())
+    if (gid < numElements)
         prefix[gid] = scanned;
 }

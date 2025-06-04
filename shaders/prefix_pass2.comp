@@ -1,4 +1,156 @@
 #version 460
+#define WORKGROUP_SIZE 1024
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(std430, binding = 2) readonly buffer BlockSums {
+    uint blockSums[];
+};
+
+layout(std430, binding = 3) writeonly buffer BlockOffsets {
+    uint blockOffsets[];
+};
+
+layout(std430, binding = 4) buffer ErrorFlag {
+    uint errorFlag;
+};
+
+uniform uint numBlocks;
+
+shared uint temp[WORKGROUP_SIZE];
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    
+    if (gid >= numBlocks) return;
+
+    // Load to shared memory
+    temp[lid] = blockSums[gid];
+    barrier();
+
+    // Inclusive scan
+    for (uint offset = 1; offset < WORKGROUP_SIZE; offset *= 2) {
+        uint val = (lid >= offset) ? temp[lid - offset] : 0;
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Convert to exclusive scan
+    uint exclusive = (lid > 0) ? temp[lid - 1] : 0;
+
+    if (gid < numBlocks) {
+        blockOffsets[gid] = exclusive;
+    }
+}
+
+
+/* #version 460
+#define WORKGROUP_SIZE 1024
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(std430, binding = 2) readonly buffer BlockSums {
+    uint blockSums[];
+};
+
+layout(std430, binding = 3) writeonly buffer BlockOffsets {
+    uint blockOffsets[];
+};
+
+layout(std430, binding = 4) buffer ErrorFlag {
+    uint errorFlag;
+};
+
+uniform uint numBlocks;  // Total blocks to process
+
+shared uint temp[WORKGROUP_SIZE];
+shared uint blockSum;    // Sum of previous workgroup
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    uint group = gl_WorkGroupID.x;
+    
+    if (gid >= numBlocks) return;
+
+    // Initialize shared memory
+    temp[lid] = blockSums[gid];
+    
+    // First thread loads previous workgroup's sum
+    if (lid == 0) {
+        blockSum = (group == 0) ? 0 : blockSums[group * WORKGROUP_SIZE - 1];
+    }
+    
+    barrier();
+    memoryBarrierShared();
+
+    // Inclusive scan
+    for (uint offset = 1; offset < WORKGROUP_SIZE; offset *= 2) {
+        uint val = (lid >= offset) ? temp[lid - offset] : 0;
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Convert to exclusive scan and add previous workgroup sum
+    uint exclusive = (lid > 0) ? temp[lid - 1] : 0;
+    exclusive += blockSum;  // Add cross-workgroup offset
+    
+    if (gid < numBlocks) {
+        blockOffsets[gid] = exclusive;
+    }
+    
+    // Store last element for next workgroup
+    if (lid == WORKGROUP_SIZE - 1) {
+        blockSum = temp[lid];
+    }
+} */
+
+/* // shaders/prefix_pass2.comp
+#version 460
+#define WORKGROUP_SIZE 1024
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(std430, binding = 2) readonly buffer BlockSums {
+    uint blockSums[];
+};
+
+layout(std430, binding = 3) writeonly buffer BlockOffsets {
+    uint blockOffsets[];
+};
+
+layout(std430, binding = 4) buffer ErrorFlag {
+    uint errorFlag;
+};
+
+uniform uint numBlocks;  // Remove numElements
+
+shared uint temp[WORKGROUP_SIZE];
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    
+    if (gid >= numBlocks) return;
+
+    temp[lid] = blockSums[gid];
+    barrier();
+    memoryBarrierShared();
+
+    // Inclusive scan
+    for (uint offset = 1; offset < WORKGROUP_SIZE; offset *= 2) {
+        uint val = (lid >= offset) ? temp[lid - offset] : 0;
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Convert to exclusive scan
+    uint exclusive = (lid > 0) ? temp[lid - 1] : 0;
+    blockOffsets[gid] = exclusive;
+} */
+
+/* #version 460
 
 #define WORKGROUP_SIZE 1024
 layout(local_size_x = WORKGROUP_SIZE) in;
@@ -25,32 +177,25 @@ void main() {
     uint lid = gl_LocalInvocationID.x;
     uint group = gl_WorkGroupID.x;
 
-    // Optional: if too many threads launched, avoid OOB (@@@ EVENTUALLY SET ERROR FLAG HERE)
-    if (gid >= numBlocks || gid >= numElements) return;
+    if (gid >= numElements) return;
 
-    // Load input into shared memory
-    temp[lid] = blockSums[gid];
+    // ✅ Safe load
+    temp[lid] = (gid < numBlocks) ? blockSums[gid] : 0;
 
     memoryBarrierShared();
     barrier();
 
-    // Inclusive scan (Kogge-Stone style)
+    // Inclusive scan (Kogge-Stone)
     for (uint offset = 1; offset < WORKGROUP_SIZE; offset *= 2) {
         uint val = 0;
-        if (lid >= offset)
-            val = temp[lid - offset];
+        if (lid >= offset) val = temp[lid - offset];
         barrier();
         temp[lid] += val;
         barrier();
     }
 
-    // Convert to exclusive scan
-    uint scanned = (lid > 0) ? temp[lid - 1] : 0;
-    blockOffsets[gid] = scanned;
-
-    // Optional: error detection (overflow, NAN, etc.)
-    // Uncomment if you want to detect bad values:
-    // if (temp[lid] < scanned) {
-    //     atomicOr(errorFlag, 1);
-    // }
-}
+    // ✅ Write back only valid values
+    if (gid < numBlocks) {
+        blockOffsets[gid] = temp[lid];
+    }
+} */

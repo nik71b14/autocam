@@ -733,7 +733,12 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   //const size_t MAX_ELEMENTS = WORKGROUP_SIZE * WORKGROUP_SIZE * WORKGROUP_SIZE; // = 1024 × 1024 × 1024 ≈ 1.07e9 elements
 
   // 1. Generate dummy input data
-  const int TOTAL_ELEMENTS = (1024 * 1024);
+  // const int TOTAL_ELEMENTS = 1 * (1024 * 1024) + 100;
+  // const int TOTAL_ELEMENTS = (1024 * 1024);
+  //const int TOTAL_ELEMENTS = 1'000'000;
+  const int TOTAL_ELEMENTS = 2'000'000;
+
+
 
   // Create and fill with 1s for testing
   std::vector<GLuint> _counts(TOTAL_ELEMENTS, 1);
@@ -776,7 +781,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   Shader* prefixPass1      = new Shader("shaders/prefix_pass1.comp");
   Shader* prefixPass2      = new Shader("shaders/prefix_pass2.comp");
   Shader* prefixPass3      = new Shader("shaders/prefix_pass3.comp");
-  Shader* pass3BlockLevel  = new Shader("shaders/prefix_pass3_blocklevel.comp");
 
   // 4. Run prefix sum
   prefixSumMultiLevel1B(
@@ -788,7 +792,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
       prefixPass1,
       prefixPass2,
       prefixPass3,
-      pass3BlockLevel,
       TOTAL_ELEMENTS
   );
 
@@ -830,8 +833,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   delete prefixPass1;
   delete prefixPass2;
   delete prefixPass3;
-  delete pass3BlockLevel;
-
 
   // ****************************************************************************************************************************
 
