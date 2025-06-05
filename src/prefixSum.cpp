@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <iomanip>
 
+//#define DEBUG_PREFIX_SUM
+
 void printBufferContents(GLuint buffer, size_t wg_size, size_t numElements, const std::string& message) {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
     GLuint* data = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint) * numElements, GL_MAP_READ_BIT);
@@ -170,12 +172,15 @@ void prefixSumMultiLevel1B(
     Shader* prefixPass1,
     Shader* prefixPass2,
     Shader* prefixPass3,
-    size_t totalElements
+    size_t totalElements,
+    int WORKGROUP_SIZE = 1024
 ) {
-    const int WORKGROUP_SIZE = 1024;
+    //const int WORKGROUP_SIZE = 1024;
     GLuint numBlocks = div_ceil(totalElements, WORKGROUP_SIZE);
-    std::cout << "numBlocks = " << numBlocks << std::endl;
 
+    #ifdef DEBUG_PREFIX_SUM
+    std::cout << "numBlocks = " << numBlocks << std::endl;
+    #endif
 
     std::vector<size_t> levelSizes = { totalElements };
     std::vector<GLuint> levelBlockSumsBuffers = { 0, blockSumsBuffer };
@@ -216,8 +221,10 @@ void prefixSumMultiLevel1B(
     glDispatchCompute(numBlocks, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+    #ifdef DEBUG_PREFIX_SUM
     printBufferContents(prefixSumBuffer, WORKGROUP_SIZE, totalElements + 1, "Level 0 prefix sum after pass1");
-    
+    #endif
+
     // LEVELS ≥ 1: only if we have more than WORKGROUP_SIZE elements
     for (int lvl = 1; lvl < numLevels; ++lvl) {
         int levelSize = levelSizes[lvl];
@@ -226,15 +233,12 @@ void prefixSumMultiLevel1B(
         GLuint inSums  = levelBlockSumsBuffers[lvl];
         GLuint outOffs = levelBlockOffsetsBuffers[lvl];
 
-        //printBufferContents(inSums, WORKGROUP_SIZE, levelSize, "Level " + std::to_string(lvl - 1) + " block sums before pass2");
-
         // Clear error flag
         GLuint zero = 0;
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorFlagBuffer);
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &zero);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-        // ==== PASS 2 ====
         prefixPass2->use();
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, inSums);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs);
@@ -246,48 +250,25 @@ void prefixSumMultiLevel1B(
 
         glDispatchCompute(dispatchCount, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        //printBufferContents(outOffs, WORKGROUP_SIZE, levelSize, "Level " + std::to_string(lvl) + " prefix sums after pass2");
-
-        // // ==== PASS 3 ====
-        // int lowerLevelSize = levelSizes[lvl - 1];
-        // int lowerNumBlocks = div_ceil(lowerLevelSize, WORKGROUP_SIZE);
-
-        // prefixPass3->use();
-
-        // if (lvl == 1) {
-        //     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
-        // } else {
-        //     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, levelBlockSumsBuffers[lvl - 1]);
-        // }
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs);
-
-        // prefixPass3->setUInt("numElements", lowerLevelSize);
-
-        // glDispatchCompute(lowerNumBlocks, 1, 1);
-        // glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        // // Print updated buffer after pass3
-        // if (lvl == 1) {
-        //     printBufferContents(prefixSumBuffer, WORKGROUP_SIZE, totalElements + 1, "prefixSumBuffer after pass3");
-        // } else {
-        //     printBufferContents(levelBlockSumsBuffers[lvl - 1], WORKGROUP_SIZE, lowerLevelSize, "Level " + std::to_string(lvl - 1) + " block sums after pass3");
-        // }
     }
 
+    #ifdef DEBUG_PREFIX_SUM
     //Output all levelBlockOffsetsBuffers
     for (int i = 1; i < numLevels; ++i) {
         printBufferContents(levelBlockOffsetsBuffers[i], WORKGROUP_SIZE, levelSizes[i], "levelBlockOffsetsBuffers[" + std::to_string(i) + "]");
     }
+    #endif
 
     // Final pass: adjust previous level blockSums with upper-level blockOffsets
     for (int lvl = numLevels - 1; lvl >= 1; lvl--) {
         int lowerLevelSize = levelSizes[lvl - 1];
         int lowerNumBlocks = div_ceil(lowerLevelSize, WORKGROUP_SIZE);
 
+        #ifdef DEBUG_PREFIX_SUM
         if (lvl - 1 >= 1) {
             printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "BEFORE levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
         }
+        #endif
         
         prefixPass3->use();
         if (lvl == 1) {
@@ -301,9 +282,11 @@ void prefixSumMultiLevel1B(
         glDispatchCompute(lowerNumBlocks, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+        #ifdef DEBUG_PREFIX_SUM
         if (lvl - 1 >= 1) {
             printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "AFTER levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
         }
+        #endif
 
     } 
 

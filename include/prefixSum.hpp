@@ -16,5 +16,6 @@ void prefixSumMultiLevel1B(
     Shader* prefixPass1,
     Shader* prefixPass2,
     Shader* prefixPass3,
-    size_t totalElements
+    size_t totalElements,
+    int WORKGROUP_SIZE
 );

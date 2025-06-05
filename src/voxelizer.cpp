@@ -733,16 +733,10 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   //const size_t MAX_ELEMENTS = WORKGROUP_SIZE * WORKGROUP_SIZE * WORKGROUP_SIZE; // = 1024 × 1024 × 1024 ≈ 1.07e9 elements
 
   // 1. Generate dummy input data
-  // const int TOTAL_ELEMENTS = 1 * (1024 * 1024) + 100;
-  // const int TOTAL_ELEMENTS = (1024 * 1024);
-  //const int TOTAL_ELEMENTS = 1'000'000;
-  const int TOTAL_ELEMENTS = 4'000'000;
+  const int TOTAL_ELEMENTS = 100'000'000;
+  std::vector<GLuint> _counts(TOTAL_ELEMENTS, 1); // Create and fill with 1s for testing
 
-
-
-  // Create and fill with 1s for testing
-  std::vector<GLuint> _counts(TOTAL_ELEMENTS, 1);
-
+  // 1. Generate dummy input data
   // Fill with random integer values between 0 and 10 for testing
   // std::vector<GLuint> _counts(TOTAL_ELEMENTS);
   // std::random_device rd;
@@ -778,9 +772,9 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_COPY);
 
   // 3. Load or compile shaders
-  Shader* prefixPass1      = new Shader("shaders/prefix_pass1.comp");
-  Shader* prefixPass2      = new Shader("shaders/prefix_pass2.comp");
-  Shader* prefixPass3      = new Shader("shaders/prefix_pass3.comp");
+  Shader* prefixPass1 = new Shader("shaders/prefix_pass1.comp");
+  Shader* prefixPass2 = new Shader("shaders/prefix_pass2.comp");
+  Shader* prefixPass3 = new Shader("shaders/prefix_pass3.comp");
 
   // 4. Run prefix sum
   prefixSumMultiLevel1B(
@@ -792,7 +786,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
       prefixPass1,
       prefixPass2,
       prefixPass3,
-      TOTAL_ELEMENTS
+      TOTAL_ELEMENTS,
+      WORKGROUP_SIZE
   );
 
   // 6. Read back results for verification
