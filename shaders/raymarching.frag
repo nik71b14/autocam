@@ -15,6 +15,7 @@ uniform int maxTransitions;
 uniform mat4 invViewProj;
 uniform vec3 cameraPos;
 uniform ivec2 screenResolution;
+uniform vec3 color; //&&&
 
 bool isInsideVoxel(int x, int y, int z) {
     int columnIndex = y * resolution.x + x;
@@ -99,9 +100,9 @@ void main() {
         {
             if (isInsideVoxel(ipos.x, ipos.y, ipos.z)) {
                 float depthFactor = float(ipos.z) / float(resolution.z);
-                vec3 lightBlue = vec3(0.5, 0.7, 1.0);
                 vec3 darkBlue = vec3(0.0, 0.1, 0.3);
-                vec3 color = mix(lightBlue, darkBlue, depthFactor);
+                vec3 darkColor = color * 0.35;
+                vec3 color = mix(color, darkColor, depthFactor);
                 fragColor = vec4(color, 1.0);
                 return;
             }

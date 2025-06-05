@@ -218,6 +218,7 @@ void VoxelViewer::run() {
     raymarchingShader->setMat4("invViewProj", invViewProj);
     raymarchingShader->setVec3("cameraPos", cameraPos);
     raymarchingShader->setIVec2("screenResolution", glm::ivec2(width, height));
+    raymarchingShader->setVec3("color", params.color); //&&&
 
     renderFullScreenQuad();
     glfwSwapBuffers(window);

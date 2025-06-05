@@ -14,6 +14,8 @@ struct VoxelizationParams {
   int slicesPerBlock = 32;
   size_t maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
   int maxTransitionsPerZColumn = 32;
+  glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f); // Default color (white)
+
   bool preview = false; // Whether to render a preview during voxelization
 };
 
@@ -33,6 +35,7 @@ public:
     void setParams(const VoxelizationParams& params);
 
     void run();
+    bool save(const std::string& filename);
     std::pair<std::vector<GLuint>, std::vector<GLuint>> getResults() const;
     float getScale() const { return scale; };
     glm::ivec3 getResolutionPx() const {

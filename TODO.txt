@@ -1,14 +1,17 @@
--> Verificare perché con risoluzioni un po' più alte si blocca tutto (problema heap/stack?)
+-> Sottrazione di due oggetti
 
+
+-> GLuint per la dimensione dei due blocchi di dati dataSize e prefixSize è forse poco, passare a size_t???
+    
 -> Passare MAX_TRANSITIONS_PER_PIXEL allo shader in maniera dinamica
 -> Se ho un overflow riguardo al massimo numero di transizioni in Z, creare un loop che le aumenta
--> Scelta colore nel Visualizzatore
+
 -> Posizionamento e visualizzazione di oggetti multipli
--> Sottrazione di due oggetti
 
 -> Gestire la situazione per diverse schede video con varie caratteristiche: istanziare SSBO multipli o splittare l'immagine in più parti e voxelizzare a sezioni
 -> La voxelizzazione per parti forse è la cosa più comoda, poi devo riassemblare i blocchi ecc.
--> Dimensione dei blocchi in direzione Z
+
+-> Rotazione nella visualizzazione ortho non funziona
 
 -> Rotazione dei blocchi che rappresentano l'utensile secondo due assi (l'utensile è assialsimmetrico)
 -> Intersezione di due blocchi con un certo offset del blocco-utensile rispetto al blocco-pezzo, che considero fermo

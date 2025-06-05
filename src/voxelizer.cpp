@@ -10,6 +10,7 @@
 #include <thread>
 #include <numeric>
 #include <random>
+#include <fstream>
 
 #include "prefixSum.hpp"
 
@@ -120,8 +121,8 @@ void Voxelizer::run() {
   float zSpan = computeZSpan();
   auto [data, prefix] = this->voxelizerZ(vertices, indices, zSpan, params);
 
-  compressedData = std::move(data);
-  prefixSumData = std::move(prefix);
+  this->compressedData = std::move(data);
+  this->prefixSumData = std::move(prefix);
 }
 
 void Voxelizer::normalizeMesh() {
@@ -163,6 +164,46 @@ void Voxelizer::normalizeMesh() {
       vertices[i + 2] = v.z;
   }
 
+}
+
+bool Voxelizer::save(const std::string& filename) {
+    if (this->compressedData.empty() || this->prefixSumData.empty()) {
+      std::cerr << "No data to save. Run voxelization first." << std::endl;
+      return false;
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file) {
+      std::cerr << "Failed to open file for writing: " << filename << std::endl;
+      return false;
+    }
+
+    // Save params first
+    file.write(reinterpret_cast<const char*>(&params), sizeof(VoxelizationParams));
+    if (!file) {
+      std::cerr << "Failed to write params to file: " << filename << std::endl;
+      return false;
+    }
+
+    size_t dataSize = compressedData.size() * sizeof(GLuint);
+    size_t prefixSize = prefixSumData.size() * sizeof(GLuint);
+
+    std::cout << "Data size write (compressedData): " << dataSize << " bytes\n";
+    std::cout << "Prefix size write (prefixSumData): " << prefixSize << " bytes\n";
+
+    file.write(reinterpret_cast<const char*>(&dataSize), sizeof(size_t));
+    file.write(reinterpret_cast<const char*>(&prefixSize), sizeof(size_t));
+
+    file.write(reinterpret_cast<const char*>(compressedData.data()), dataSize);
+    file.write(reinterpret_cast<const char*>(prefixSumData.data()), prefixSize);
+
+    if (!file) {
+      throw std::runtime_error("Failed to write data to file: " + filename);
+    }
+
+    file.close();
+
+    return true;
 }
 
 std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
@@ -691,17 +732,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   std::vector<GLuint> prefixResults(totalPixels + 1);
   printBufferGraph(prefixSumBuffer, prefixResults.size(), 10, '*');
 
-
-  // // 7. Cleanup
-  // glDeleteBuffers(1, &countBuffer); //@@@ glDeleteBuffers(1, &_countBuffer);
-  // glDeleteBuffers(1, &prefixSumBuffer);
-  // glDeleteBuffers(1, &blockSumsBuffer);
-  // glDeleteBuffers(1, &blockOffsetsBuffer);
-  // glDeleteBuffers(1, &errorFlagBuffer);
-  // delete prefixPass1;
-  // delete prefixPass2;
-  // delete prefixPass3;
-
   // ****************************************************************************************************************************
 
 
@@ -737,7 +767,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   std::cout << "Total compressed count: " << totalCompressedCount << "\n";
   #endif
   
-  // --- 4. Allocate compressed output buffer
+  // --- 4. Allocate compressed output buffer and set totalCompressedCount
   GLuint compressedBuffer;
   glGenBuffers(1, &compressedBuffer);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
