@@ -3,6 +3,56 @@
 layout(local_size_x = WORKGROUP_SIZE) in;
 
 layout(std430, binding = 2) readonly buffer BlockSums {
+    uint blockSums[]; // input from previous level
+};
+
+layout(std430, binding = 3) writeonly buffer BlockOffsets {
+    uint blockOffsets[]; // exclusive prefix sum of blockSums
+};
+
+layout(std430, binding = 4) writeonly buffer NextLevelBlockSums {
+    uint nextBlockSums[]; // total sum of each workgroup → used for next level
+};
+
+uniform uint numBlocks;
+
+shared uint temp[WORKGROUP_SIZE];
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    uint lid = gl_LocalInvocationID.x;
+    uint groupID = gl_WorkGroupID.x;
+
+    if (gid >= numBlocks) return;
+
+    // Load to shared memory
+    temp[lid] = blockSums[gid];
+    barrier();
+
+    // Inclusive scan
+    for (uint offset = 1; offset < WORKGROUP_SIZE; offset *= 2) {
+        uint val = (lid >= offset) ? temp[lid - offset] : 0;
+        barrier();
+        temp[lid] += val;
+        barrier();
+    }
+
+    // Convert to exclusive
+    uint exclusive = (lid > 0) ? temp[lid - 1] : 0;
+    blockOffsets[gid] = exclusive;
+
+    // Write the final sum of this group into the next level block sums buffer
+    if (lid == WORKGROUP_SIZE - 1 || gid == numBlocks - 1) {
+        nextBlockSums[groupID] = temp[lid]; // final inclusive sum = block total
+    }
+}
+
+
+/* #version 460
+#define WORKGROUP_SIZE 1024
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+layout(std430, binding = 2) readonly buffer BlockSums {
     uint blockSums[];
 };
 
@@ -42,7 +92,7 @@ void main() {
     if (gid < numBlocks) {
         blockOffsets[gid] = exclusive;
     }
-}
+} */
 
 
 /* #version 460

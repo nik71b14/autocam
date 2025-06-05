@@ -6,6 +6,128 @@
 //#include <GL/gl3w.h> // or your GL loader
 #include <cassert>
 #include "shader.hpp"
+#include <algorithm>
+#include <iomanip>
+
+void printBufferContents(GLuint buffer, size_t wg_size, size_t numElements, const std::string& message) {
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
+    GLuint* data = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint) * numElements, GL_MAP_READ_BIT);
+    
+    if (data) {
+        std::cout << message << " (size " << numElements << "):" << std::endl;
+        size_t numBlocksToShow = div_ceil(numElements, wg_size);
+        size_t blocksToPrint = 3;
+
+        // Print first 3 blocks
+        for (size_t block = 0; block < std::min(blocksToPrint, numBlocksToShow); ++block) {
+            size_t start = block * wg_size;
+            size_t end = std::min(start + wg_size, numElements);
+            std::cout << "Block " << block << " (elements " << start << " to " << end - 1 << "): ";
+
+            size_t blockSize = end - start;
+            if (blockSize <= 6) {
+                for (size_t i = start; i < end; ++i) {
+                    if (i > start) std::cout << ", ";
+                    std::cout << data[i];
+                }
+            } else {
+                for (size_t i = 0; i < 3; ++i) {
+                    if (i > 0) std::cout << ", ";
+                    std::cout << data[start + i];
+                }
+                std::cout << ", ..., ";
+                for (size_t i = blockSize - 3; i < blockSize; ++i) {
+                    if (i > blockSize - 3) std::cout << ", ";
+                    std::cout << data[start + i];
+                }
+            }
+            std::cout << std::endl;
+        }
+
+        if (numBlocksToShow > 2 * blocksToPrint) {
+            std::cout << "......" << std::endl;
+        }
+
+        // Print last 3 blocks
+        for (size_t block = (numBlocksToShow > blocksToPrint ? numBlocksToShow - blocksToPrint : blocksToPrint); 
+             block < numBlocksToShow; ++block) {
+
+            size_t idx = block;
+            if (numBlocksToShow > 2 * blocksToPrint)
+                idx = numBlocksToShow - blocksToPrint + (block - (numBlocksToShow - blocksToPrint));
+
+            if (idx < blocksToPrint) continue; // avoid reprinting
+
+            size_t start = idx * wg_size;
+            size_t end = std::min(start + wg_size, numElements);
+            std::cout << "Block " << idx << " (elements " << start << " to " << end - 1 << "): ";
+
+            size_t blockSize = end - start;
+            if (blockSize <= 6) {
+                for (size_t i = start; i < end; ++i) {
+                    if (i > start) std::cout << ", ";
+                    std::cout << data[i];
+                }
+            } else {
+                for (size_t i = 0; i < 3; ++i) {
+                    if (i > 0) std::cout << ", ";
+                    std::cout << data[start + i];
+                }
+                std::cout << ", ..., ";
+                for (size_t i = blockSize - 3; i < blockSize; ++i) {
+                    if (i > blockSize - 3) std::cout << ", ";
+                    std::cout << data[start + i];
+                }
+            }
+            std::cout << std::endl;
+        }
+
+        std::cout << std::endl;
+
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    } else {
+        std::cerr << "Failed to map buffer for reading." << std::endl;
+    }
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+void printBufferGraph(GLuint buffer, size_t bufferSize, int numRowsToPrint, char symbol = '*') {
+    if (bufferSize < 2 || numRowsToPrint < 1) {
+        std::cerr << "Invalid buffer size or number of rows." << std::endl;
+        return;
+    }
+
+    std::vector<GLuint> data(bufferSize);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bufferSize * sizeof(GLuint), data.data());
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Ignore the last element
+    size_t dataSize = bufferSize - 1;
+    if (dataSize == 0) return;
+
+    GLuint maxVal = *std::max_element(data.begin(), data.begin() + dataSize);
+    int maxSymbols = 40;
+    double scale = (maxVal > 0) ? static_cast<double>(maxVal) / maxSymbols : 1.0;
+
+    // Find width for index padding
+    size_t maxIdx = (dataSize > 0) ? dataSize - 1 : 0;
+    int idxWidth = static_cast<int>(std::to_string(maxIdx).size());
+
+    std::cout << "Graphical buffer representation (max " << maxSymbols << " '" << symbol << "' symbols):\n";
+
+    for (int i = 0; i < numRowsToPrint; ++i) {
+        size_t idx = (i == numRowsToPrint - 1) ? dataSize - 1 : (dataSize - 1) * i / (numRowsToPrint - 1);
+        int symbols = static_cast<int>(data[idx] / scale);
+        if (symbols > maxSymbols) symbols = maxSymbols;
+
+        std::cout << "[" << std::setw(idxWidth) << idx << "] ";
+        // Left align: print bar first, then value
+        for (int j = 0; j < symbols; ++j) std::cout << symbol;
+        std::cout << " (" << data[idx] << ")\n";
+    }
+}
+
 
 // TIP (TODO): ----------------------------------------------------------------
 // To avoid dynamic allocations, you can preallocate a pool of buffers for up to 3–4 levels:
@@ -94,105 +216,17 @@ void prefixSumMultiLevel1B(
     glDispatchCompute(numBlocks, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    //@@@ PASS1 CHECK
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-    GLuint* prefixData = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (totalElements + 1) * sizeof(GLuint), GL_MAP_READ_BIT);
-
-    if (prefixData) {
-
-        std::cout << "prefixData from level 0 (size " << (totalElements + 1) << "): ";
-        if (totalElements + 1 >= 6) {
-            std::cout << prefixData[0] << ", " << prefixData[1] << ", " << prefixData[2]
-                      << ", ..., "
-                      << prefixData[totalElements - 2] << ", " << prefixData[totalElements - 1] << ", " << prefixData[totalElements];
-        } else {
-            for (size_t i = 0; i < totalElements + 1; ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << prefixData[i];
-            }
-        }
-        std::cout << std::endl;
-
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    }
-    //@@@ END PASS1 CHECK
+    printBufferContents(prefixSumBuffer, WORKGROUP_SIZE, totalElements + 1, "Level 0 prefix sum after pass1");
     
-
-    // LEVELS ≥ 1: only if we have more than 1024 elements
+    // LEVELS ≥ 1: only if we have more than WORKGROUP_SIZE elements
     for (int lvl = 1; lvl < numLevels; ++lvl) {
         int levelSize = levelSizes[lvl];
         int dispatchCount = div_ceil(levelSize, WORKGROUP_SIZE);
 
-        GLuint inSums  = levelBlockSumsBuffers[lvl]; // Block sums from the previous level, i.e. last element of each block prefix sum
-        GLuint outOffs = levelBlockOffsetsBuffers[lvl]; // 
+        GLuint inSums  = levelBlockSumsBuffers[lvl];
+        GLuint outOffs = levelBlockOffsetsBuffers[lvl];
 
-        //@@@ (show the block sums for this level)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, inSums);
-        GLuint* inSumsData = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint) * levelSize, GL_MAP_READ_BIT);
-        if (inSumsData) {
-            std::cout << "block sums from level " << lvl - 1 << ", size " << levelSize << "):" << std::endl;
-            size_t numBlocksToShow = div_ceil(levelSize, WORKGROUP_SIZE);
-            size_t blocksToPrint = 3;
-            // Print first 3 blocks
-            for (size_t block = 0; block < std::min(blocksToPrint, numBlocksToShow); ++block) {
-            size_t start = block * WORKGROUP_SIZE;
-            size_t end = std::min(start + WORKGROUP_SIZE, (size_t)levelSize);
-            std::cout << "Block " << block << " (elements " << start << " to " << end - 1 << "): ";
-            size_t blockSize = end - start;
-            if (blockSize <= 6) {
-                for (size_t i = start; i < end; ++i) {
-                if (i > start) std::cout << ", ";
-                std::cout << inSumsData[i];
-                }
-            } else {
-                for (size_t i = 0; i < 3; ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << inSumsData[start + i];
-                }
-                std::cout << ", ..., ";
-                for (size_t i = blockSize - 3; i < blockSize; ++i) {
-                if (i > blockSize - 3) std::cout << ", ";
-                std::cout << inSumsData[start + i];
-                }
-            }
-            std::cout << std::endl;
-            }
-            if (numBlocksToShow > 2 * blocksToPrint) {
-            std::cout << "......" << std::endl;
-            }
-            // Print last 3 blocks
-            for (size_t block = (numBlocksToShow > blocksToPrint ? numBlocksToShow - blocksToPrint : blocksToPrint); block < numBlocksToShow; ++block) {
-            size_t idx = block;
-            if (numBlocksToShow > 2 * blocksToPrint)
-                idx = numBlocksToShow - blocksToPrint + (block - (numBlocksToShow - blocksToPrint));
-            if (idx < blocksToPrint) continue; // skip if already printed in first loop
-            size_t start = idx * WORKGROUP_SIZE;
-            size_t end = std::min(start + WORKGROUP_SIZE, (size_t)levelSize);
-            std::cout << "Block " << idx << " (elements " << start << " to " << end - 1 << "): ";
-            size_t blockSize = end - start;
-            if (blockSize <= 6) {
-                for (size_t i = start; i < end; ++i) {
-                if (i > start) std::cout << ", ";
-                std::cout << inSumsData[i];
-                }
-            } else {
-                for (size_t i = 0; i < 3; ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << inSumsData[start + i];
-                }
-                std::cout << ", ..., ";
-                for (size_t i = blockSize - 3; i < blockSize; ++i) {
-                if (i > blockSize - 3) std::cout << ", ";
-                std::cout << inSumsData[start + i];
-                }
-            }
-            std::cout << std::endl;
-            }
-            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-        }
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        //@@@
+        //printBufferContents(inSums, WORKGROUP_SIZE, levelSize, "Level " + std::to_string(lvl - 1) + " block sums before pass2");
 
         // Clear error flag
         GLuint zero = 0;
@@ -200,209 +234,78 @@ void prefixSumMultiLevel1B(
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &zero);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-        // ==== PASS 2: prefix sum of blockSums → blockOffsets ====
+        // ==== PASS 2 ====
         prefixPass2->use();
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, inSums);  // Input block sums from previous level
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs); // Output prefix sums of previous level block sums
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, errorFlagBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, inSums);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs);
+
+        GLuint nextLevelSums = (lvl + 1 < numLevels) ? levelBlockSumsBuffers[lvl + 1] : 0; // or dummy buffer if no next level
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nextLevelSums);
 
         prefixPass2->setUInt("numBlocks", levelSize);
 
         glDispatchCompute(dispatchCount, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-        // !!!!!!!! DEBUG CPU IMPLEMENTATION, REPLACE WITH GPU SHADER !!!!!!!!!!
-        // This update to levelBlockOffsetsBuffers[lvl] was missing!!!!!
-        if (lvl + 1 < numLevels) {
-            // Extract the last value of each block from outOffs and store in levelBlockSumsBuffers[lvl + 1]
-            std::vector<GLuint> nextLevelSums(dispatchCount, 0);
+        //printBufferContents(outOffs, WORKGROUP_SIZE, levelSize, "Level " + std::to_string(lvl) + " prefix sums after pass2");
 
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, outOffs);
-            GLuint* outOffsData = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint) * levelSize, GL_MAP_READ_BIT);
-            if (outOffsData) {
-                for (int b = 0; b < dispatchCount; ++b) {
-                    size_t lastIdx = std::min<size_t>((b + 1) * WORKGROUP_SIZE, static_cast<size_t>(levelSize)) - 1;
-                    nextLevelSums[b] = outOffsData[lastIdx];
-                }
-                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            }
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        // // ==== PASS 3 ====
+        // int lowerLevelSize = levelSizes[lvl - 1];
+        // int lowerNumBlocks = div_ceil(lowerLevelSize, WORKGROUP_SIZE);
 
-            // Write to next level block sums buffer
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, levelBlockSumsBuffers[lvl + 1]);
-            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, dispatchCount * sizeof(GLuint), nextLevelSums.data());
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        }
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-        // Optional: error checking
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorFlagBuffer);
-        GLuint* ptr = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), GL_MAP_READ_BIT);
-        if (ptr && *ptr != 0)
-            std::cerr << "Error in prefixPass2 at level " << lvl << ": errorFlag = " << *ptr << std::endl;
-        if (ptr) glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-        //@@@ PASS2 CHECK (shows the block offsets)
-        // Expected outOffs: [0, 1024, 2048, ..., xxx] for 1025 values
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, outOffs);
-        GLuint* outOffsData = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint) * levelSize, GL_MAP_READ_BIT);
-        if (outOffsData) {
-            std::cout << "lvl " << lvl << " outOffs from pass2 (size " << levelSize << "):" << std::endl;
-            size_t numBlocksToShow = div_ceil(levelSize, WORKGROUP_SIZE);
-            size_t blocksToPrint = 3;
-            // Print first 3 blocks
-            for (size_t block = 0; block < std::min(blocksToPrint, numBlocksToShow); ++block) {
-            size_t start = block * WORKGROUP_SIZE;
-            size_t end = std::min(start + WORKGROUP_SIZE, (size_t)levelSize);
-            std::cout << "Block " << block << " (elements " << start << " to " << end - 1 << "): ";
-            size_t blockSize = end - start;
-            if (blockSize <= 6) {
-                for (size_t i = start; i < end; ++i) {
-                if (i > start) std::cout << ", ";
-                std::cout << outOffsData[i];
-                }
-            } else {
-                for (size_t i = 0; i < 3; ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << outOffsData[start + i];
-                }
-                std::cout << ", ..., ";
-                for (size_t i = blockSize - 3; i < blockSize; ++i) {
-                if (i > blockSize - 3) std::cout << ", ";
-                std::cout << outOffsData[start + i];
-                }
-            }
-            std::cout << std::endl;
-            }
-            if (numBlocksToShow > 2 * blocksToPrint) {
-            std::cout << "......" << std::endl;
-            }
-            // Print last 3 blocks
-            for (size_t block = (numBlocksToShow > blocksToPrint ? numBlocksToShow - blocksToPrint : blocksToPrint); block < numBlocksToShow; ++block) {
-            size_t idx = block;
-            if (numBlocksToShow > 2 * blocksToPrint)
-                idx = numBlocksToShow - blocksToPrint + (block - (numBlocksToShow - blocksToPrint));
-            if (idx < blocksToPrint) continue; // skip if already printed in first loop
-            size_t start = idx * WORKGROUP_SIZE;
-            size_t end = std::min(start + WORKGROUP_SIZE, (size_t)levelSize);
-            std::cout << "Block " << idx << " (elements " << start << " to " << end - 1 << "): ";
-            size_t blockSize = end - start;
-            if (blockSize <= 6) {
-                for (size_t i = start; i < end; ++i) {
-                if (i > start) std::cout << ", ";
-                std::cout << outOffsData[i];
-                }
-            } else {
-                for (size_t i = 0; i < 3; ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << outOffsData[start + i];
-                }
-                std::cout << ", ..., ";
-                for (size_t i = blockSize - 3; i < blockSize; ++i) {
-                if (i > blockSize - 3) std::cout << ", ";
-                std::cout << outOffsData[start + i];
-                }
-            }
-            std::cout << std::endl;
-            }
-            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-        }
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        //@@@ END PASS2 CHECK
-
-        // ==== PASS 3: add blockOffsets to lower level ====
-        // Apply to full prefix sum output
         // prefixPass3->use();
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer); // This contains the prefix sums from pass1
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs); // This contains the block offsets from pass2
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, errorFlagBuffer);
-        // prefixPass3->setUInt("numElements", totalElements);
 
+        // if (lvl == 1) {
+        //     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+        // } else {
+        //     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, levelBlockSumsBuffers[lvl - 1]);
+        // }
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs);
+
+        // prefixPass3->setUInt("numElements", lowerLevelSize);
+
+        // glDispatchCompute(lowerNumBlocks, 1, 1);
+        // glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+        // // Print updated buffer after pass3
+        // if (lvl == 1) {
+        //     printBufferContents(prefixSumBuffer, WORKGROUP_SIZE, totalElements + 1, "prefixSumBuffer after pass3");
+        // } else {
+        //     printBufferContents(levelBlockSumsBuffers[lvl - 1], WORKGROUP_SIZE, lowerLevelSize, "Level " + std::to_string(lvl - 1) + " block sums after pass3");
+        // }
+    }
+
+    //Output all levelBlockOffsetsBuffers
+    for (int i = 1; i < numLevels; ++i) {
+        printBufferContents(levelBlockOffsetsBuffers[i], WORKGROUP_SIZE, levelSizes[i], "levelBlockOffsetsBuffers[" + std::to_string(i) + "]");
+    }
+
+    // Final pass: adjust previous level blockSums with upper-level blockOffsets
+    for (int lvl = numLevels - 1; lvl >= 1; lvl--) {
         int lowerLevelSize = levelSizes[lvl - 1];
         int lowerNumBlocks = div_ceil(lowerLevelSize, WORKGROUP_SIZE);
 
+        if (lvl - 1 >= 1) {
+            printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "BEFORE levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
+        }
+        
         prefixPass3->use();
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs); // outOffs is blockOffsets for current level
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, errorFlagBuffer);
-        prefixPass3->setUInt("numElements", lowerLevelSize); // not totalElements!
+        if (lvl == 1) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+        } else {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, levelBlockOffsetsBuffers[lvl - 1]);
+        }
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, levelBlockOffsetsBuffers[lvl]);
+        prefixPass3->setUInt("numElements", lowerLevelSize);
 
         glDispatchCompute(lowerNumBlocks, 1, 1);
-        // glDispatchCompute(numBlocks, 1, 1);
-
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-        //@@@ PASS3 CHECK (shows the final prefix sum)
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-        GLuint* prefixData = (GLuint*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (totalElements + 1) * sizeof(GLuint), GL_MAP_READ_BIT);
-        if (prefixData) {
-            std::cout << "prefixSumBuffer after pass3 (size " << (totalElements + 1) << "):" << std::endl;
-            size_t numBlocksToShow = numBlocks;
-            size_t blocksToPrint = 3;
-            // Print first 3 blocks
-            for (size_t block = 0; block < std::min(blocksToPrint, numBlocksToShow); ++block) {
-                size_t start = block * WORKGROUP_SIZE;
-                size_t end = std::min(start + WORKGROUP_SIZE, totalElements);
-                std::cout << "Block " << block << " (elements " << start << " to " << end - 1 << "): ";
-                size_t blockSize = end - start;
-                if (blockSize <= 6) {
-                    for (size_t i = start; i < end; ++i) {
-                        if (i > start) std::cout << ", ";
-                        std::cout << prefixData[i];
-                    }
-                } else {
-                    // Show first 3 and last 3 elements
-                    for (size_t i = 0; i < 3; ++i) {
-                        if (i > 0) std::cout << ", ";
-                        std::cout << prefixData[start + i];
-                    }
-                    std::cout << ", ..., ";
-                    for (size_t i = blockSize - 3; i < blockSize; ++i) {
-                        if (i > blockSize - 3) std::cout << ", ";
-                        std::cout << prefixData[start + i];
-                    }
-                }
-                std::cout << std::endl;
-            }
-            if (numBlocksToShow > 2 * blocksToPrint) {
-                std::cout << "......" << std::endl;
-            }
-            // Print last 3 blocks
-            for (size_t block = (numBlocksToShow > blocksToPrint ? numBlocksToShow - blocksToPrint : blocksToPrint); block < numBlocksToShow; ++block) {
-                size_t idx = block;
-                if (numBlocksToShow > 2 * blocksToPrint)
-                    idx = numBlocksToShow - blocksToPrint + (block - (numBlocksToShow - blocksToPrint));
-                if (idx < blocksToPrint) continue; // skip if already printed in first loop
-                size_t start = idx * WORKGROUP_SIZE;
-                size_t end = std::min(start + WORKGROUP_SIZE, totalElements);
-                std::cout << "Block " << idx << " (elements " << start << " to " << end - 1 << "): ";
-                size_t blockSize = end - start;
-                if (blockSize <= 6) {
-                    for (size_t i = start; i < end; ++i) {
-                        if (i > start) std::cout << ", ";
-                        std::cout << prefixData[i];
-                    }
-                } else {
-                    for (size_t i = 0; i < 3; ++i) {
-                        if (i > 0) std::cout << ", ";
-                        std::cout << prefixData[start + i];
-                    }
-                    std::cout << ", ..., ";
-                    for (size_t i = blockSize - 3; i < blockSize; ++i) {
-                        if (i > blockSize - 3) std::cout << ", ";
-                        std::cout << prefixData[start + i];
-                    }
-                }
-                std::cout << std::endl;
-            }
-            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        if (lvl - 1 >= 1) {
+            printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "AFTER levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
         }
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        //@@@ END PASS3 CHECK
 
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    }
+    } 
 
     // Cleanup temporary buffers
     for (int i = 2; i < numLevels; ++i) {

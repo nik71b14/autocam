@@ -3,6 +3,8 @@
 #include <glad/glad.h>
 #include "shader.hpp"
 
+void printBufferContents(GLuint buffer, size_t wg_size, size_t numElements, const std::string& message);
+void printBufferGraph(GLuint buffer, size_t bufferSize, int numRowsToPrint, char symbol);
 int div_ceil(int x, int y);
 
 void prefixSumMultiLevel1B(

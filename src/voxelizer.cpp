@@ -736,7 +736,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // const int TOTAL_ELEMENTS = 1 * (1024 * 1024) + 100;
   // const int TOTAL_ELEMENTS = (1024 * 1024);
   //const int TOTAL_ELEMENTS = 1'000'000;
-  const int TOTAL_ELEMENTS = 2'000'000;
+  const int TOTAL_ELEMENTS = 4'000'000;
 
 
 
@@ -797,31 +797,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
 
   // 6. Read back results for verification
   std::vector<GLuint> prefixResults(TOTAL_ELEMENTS + 1);
-  //std::vector<GLuint> prefixResults(totalPixels + 1);
-  
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixResults.size() * sizeof(GLuint), prefixResults.data());
-
-  if (!prefixResults.empty()) {
-    GLuint maxVal = *std::max_element(prefixResults.begin(), prefixResults.end());
-    int maxStars = 40;
-    double norm = (maxVal > 0) ? static_cast<double>(maxVal) / maxStars : 1.0;
-    int numSamples = 10;
-    std::cout << "Prefix sum graphical representation (max 40 '*'):\n";
-    for (int i = 0; i < numSamples; ++i) {
-      size_t idx = (i == numSamples - 1) ? prefixResults.size() - 1 : (prefixResults.size() - 1) * i / (numSamples - 1);
-      int stars = static_cast<int>(prefixResults[idx] / norm);
-      if (stars > maxStars) stars = maxStars;
-      std::cout << "[" << idx << "] ";
-      for (int j = 0; j < stars; ++j) std::cout << "*";
-      std::cout << " (" << prefixResults[idx] << ")\n";
-    }
-  }
-  if (!prefixResults.empty()) {
-    size_t lastIdx = prefixResults.size() - 2;
-    std::cout << "Last element at index " << lastIdx << ": " << prefixResults[lastIdx] << std::endl;
-  }
-
+  printBufferGraph(prefixSumBuffer, prefixResults.size(), 10, '*');
 
 
   // 7. Cleanup
