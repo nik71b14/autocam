@@ -61,9 +61,13 @@ int main(int argc, char** argv) {
 
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
+    // Loads object 1
     if (!ops->load("test/voxelized_obj_1.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
-
+    }
+    // Loads object 2
+    if (!ops->load("test/voxelized_obj_1.bin")) {
+      std::cerr << "Failed to load voxelized object." << std::endl;
     }
     ops->clear();
     delete ops;

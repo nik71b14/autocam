@@ -1,7 +1,7 @@
 #include "boolOps.hpp"
 #include "voxelizer.hpp"
 
-#define DEBUG_OUTPUT
+//#define DEBUG_OUTPUT
 
 bool BoolOps::load(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary);
@@ -64,25 +64,18 @@ bool BoolOps::load(const std::string& filename) {
     }
 
     #ifdef DEBUG_OUTPUT
-    std::cout << "VoxelizationParams:" << std::endl;
-    std::cout << "  resolutionXYZ: (" 
-          << obj.params.resolutionXYZ.x << ", "
-          << obj.params.resolutionXYZ.y << ", "
-          << obj.params.resolutionXYZ.z << ")" << std::endl;
-    std::cout << "  resolution: " << obj.params.resolution << std::endl;
-
-    std::cout << "dataSize: " << dataSize << std::endl;
-    std::cout << "prefixSize: " << prefixSize << std::endl;
-
     std::cout << "fileSize: " << fileSize << std::endl;
-    std::cout << "sizeof(VoxelizationParams): " << sizeof(VoxelizationParams) << std::endl;
+    std::cout << "VoxelizationParams:" << std::endl;
+    std::cout << "  resolutionXYZ: (" << obj.params.resolutionXYZ.x << ", " << obj.params.resolutionXYZ.y << ", " << obj.params.resolutionXYZ.z << ")" << std::endl;
+    std::cout << "  resolution: " << obj.params.resolution << std::endl;
+    std::cout << "  dataSize: " << dataSize << std::endl;
+    std::cout << "  prefixSize: " << prefixSize << std::endl;
     #endif
 
     this->objects.push_back(std::move(obj));
 
-    #ifdef DEBUG_OUTPUT
-    std::cout << "Object successfully loaded from file: " << filename << std::endl;
-    #endif
+    size_t objIndex = this->objects.size() - 1;
+    std::cout << "Object successfully loaded from file: " << filename << " at index " << objIndex << std::endl;
 
     return true;
 }

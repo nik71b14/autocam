@@ -29,6 +29,9 @@ public:
   // Optional: clear loaded objects
   void clear() { objects.clear(); }
 
+  // Subtract two voxel objects
+  VoxelObject subtract(const VoxelObject& obj1, const VoxelObject& obj2);
+
 private:
   std::vector<VoxelObject> objects;
 };
