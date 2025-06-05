@@ -79,3 +79,7 @@ bool BoolOps::load(const std::string& filename) {
 
     return true;
 }
+
+bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2) {
+  
+}
