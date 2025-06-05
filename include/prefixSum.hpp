@@ -5,7 +5,11 @@
 
 void printBufferContents(GLuint buffer, size_t wg_size, size_t numElements, const std::string& message);
 void printBufferGraph(GLuint buffer, size_t bufferSize, int numRowsToPrint, char symbol);
-int div_ceil(int x, int y);
+// int div_ceil(int x, int y);
+
+inline int div_ceil(int x, int y) {
+    return (x + y - 1) / y;
+}
 
 void prefixSumMultiLevel1B(
     GLuint countBuffer,

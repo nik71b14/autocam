@@ -6,7 +6,7 @@
 #include "voxelizerUtils.hpp"
 #include <assimp/scene.h>
 
-#define DEBUG_OUTPUT
+//#define DEBUG_OUTPUT
 
 const char* STL_PATH = "models/model3_bin.stl";
 //const char* STL_PATH = "models/cone.stl";
@@ -20,11 +20,10 @@ int main(int argc, char** argv) {
   try {
 
     VoxelizationParams params;
-    params.resolution = 0.02; // E.g. mm
+    params.resolution = 0.02; // e.g. mm
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
-    //params.slicesPerBlock = 8;
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
-    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionZ, params.maxMemoryBudgetBytes);
+    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
     //params.preview = true; // Enable preview during voxelization
 
     Mesh mesh = loadMesh(stlPath);
@@ -54,11 +53,7 @@ int main(int argc, char** argv) {
 
     delete voxelizer;
 
-    params.resolutionX = res.x;
-    params.resolutionY = res.y;
-    params.resolutionZ = res.z;
-
-    
+    //params.resolutionXYZ = voxelizer->getResolutionPx(); // Not needed since params.resolutionXYZ is already set in the VoxelizationParams constructor
     VoxelViewer viewer(
       compressedData,
       prefixSumData,

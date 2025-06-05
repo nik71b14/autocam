@@ -15,7 +15,7 @@
 
 #define MIN_RESOLUTION_XYZ 256 // Minimum resolution for each axis, used for very small objects
 #define DEBUG_OUTPUT // Enable debug output for detailed information
-#define DEBUG_GPU // Enable OpenGL debug output
+//#define DEBUG_GPU // Enable OpenGL debug output
 #define GPU_LIMITS // Enable GPU limits output
 #define WORKGROUP_SIZE 1'024
 
@@ -25,14 +25,13 @@ Voxelizer::Voxelizer() {}
 Voxelizer::Voxelizer(const VoxelizationParams& params)
     : params(params) {}
 
-Voxelizer::Voxelizer(const Mesh& mesh, const VoxelizationParams& params): mesh(mesh), params(params) {
+Voxelizer::Voxelizer(const Mesh& mesh, VoxelizationParams& params): mesh(mesh), params(params) {
     vertices = mesh.vertices;
     indices = mesh.indices;
 
     glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
-    this->params.resolutionX = res.x;
-    this->params.resolutionY = res.y;
-    this->params.resolutionZ = res.z; // Set resolution based on calculated values
+    params.resolutionXYZ = res; // Modify params passed in constructor by reference
+    this->params.resolutionXYZ = res; // Modify class member params.resolutionXYZ
     normalizeMesh(); // Normalize the mesh vertices
 }
 
@@ -42,9 +41,8 @@ void Voxelizer::setMesh(const Mesh& newMesh) {
     indices = newMesh.indices;
 
     glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
-    this->params.resolutionX = res.x;
-    this->params.resolutionY = res.y;
-    this->params.resolutionZ = res.z; // Set resolution based on calculated values
+    params.resolutionXYZ = res; // Modify params passed in constructor by reference
+    this->params.resolutionXYZ = res; // Modify class member params.resolutionXYZ
     normalizeMesh(); // Normalize the mesh vertices
 }
 
@@ -183,7 +181,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   int triangleCount = indices.size();
 
   // Initialize OpenGL context and create a window
-  setupGL(&window, params.resolutionX, params.resolutionY, "STL Viewer", !params.preview);
+  setupGL(&window, params.resolutionXYZ.x, params.resolutionXYZ.y, "STL Viewer", !params.preview);
   if (!window) throw std::runtime_error("Failed to create GLFW window");
 
   #ifdef DEBUG_GPU
@@ -215,8 +213,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &maxTexSize);       // for GL_TEXTURE_3D
   glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxTexLayers);   // for GL_TEXTURE_2D_ARRAY
 
-  if (params.resolutionX > maxTexSize ||
-    params.resolutionY > maxTexSize ||
+  if (params.resolutionXYZ.x > maxTexSize ||
+    params.resolutionXYZ.y > maxTexSize ||
     params.slicesPerBlock + 1 > maxTexLayers) {
     std::cerr << "ERROR: Texture dimensions exceed GPU limits!" << std::endl;
   }
@@ -226,7 +224,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // Create 2D array texture to hold Z slices @@@MOVE TO createFramebufferZ
   glGenTextures(1, &sliceTex);
   glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
-  glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolutionX, params.resolutionY, params.slicesPerBlock + 1);
+  glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolutionXYZ.x, params.resolutionXYZ.y, params.slicesPerBlock + 1);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -239,9 +237,9 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
 
   glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-  const int totalBlocks = (params.resolutionZ + params.slicesPerBlock - 1) / params.slicesPerBlock;
-  const float deltaZ = zSpan / params.resolutionZ;
-  size_t totalPixels = size_t(params.resolutionX) * size_t(params.resolutionY);
+  const int totalBlocks = (params.resolutionXYZ.z + params.slicesPerBlock - 1) / params.slicesPerBlock;
+  const float deltaZ = zSpan / params.resolutionXYZ.z;
+  size_t totalPixels = size_t(params.resolutionXYZ.x) * size_t(params.resolutionXYZ.y);
 
   // Allocate buffers
   GLuint transitionBuffer, countBuffer, overflowBuffer;
@@ -252,7 +250,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
 
   // Transition buffer: store Z transitions for each pixel --------------------
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionBuffer);
-  //glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * resolutionZ * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); //@@@ Too big for resolutions over 512x512x512
+  //glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * resolutionXYZ.z * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); //@@@ Too big for resolutions over 512x512x512
   glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * params.maxTransitionsPerZColumn * sizeof(GLuint),  nullptr, GL_DYNAMIC_COPY);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, transitionBuffer);
 
@@ -282,14 +280,14 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-  glViewport(0, 0, params.resolutionX, params.resolutionY);
+  glViewport(0, 0, params.resolutionXYZ.x, params.resolutionXYZ.y);
   glEnable(GL_DEPTH_TEST);
 
   // Attach a depth renderbuffer to the framebuffer, which is needed for depth testing
   GLuint depthRbo;
   glGenRenderbuffers(1, &depthRbo);
   glBindRenderbuffer(GL_RENDERBUFFER, depthRbo);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, params.resolutionX, params.resolutionY);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, params.resolutionXYZ.x, params.resolutionXYZ.y);
   glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRbo);
 
   GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -317,7 +315,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
 
   for (int block = 0; block < totalBlocks; ++block) {
     int zStart = block * params.slicesPerBlock;
-    int slicesThisBlock = std::min(params.slicesPerBlock, params.resolutionZ - zStart);
+    int slicesThisBlock = std::min(params.slicesPerBlock, params.resolutionXYZ.z - zStart);
 
     
     // Render SLICES_PER_BLOCK + 1 slices, overlapping one with previous block
@@ -346,7 +344,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
         //glEnable(GL_DEPTH_TEST);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0); // Bind default framebuffer
-        glViewport(0, 0, params.resolutionX, params.resolutionY);
+        glViewport(0, 0, params.resolutionXYZ.x, params.resolutionXYZ.y);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         drawShader->use();
@@ -370,20 +368,20 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
     computeShader->use();
     computeShader->setInt("zStart", zStart);
     computeShader->setInt("sliceCount", slicesThisBlock);
-    computeShader->setInt("resolutionX", params.resolutionX);
-    computeShader->setInt("resolutionY", params.resolutionY);
-    computeShader->setInt("resolutionZ", params.resolutionZ);
+    computeShader->setInt("resolutionX", params.resolutionXYZ.x);
+    computeShader->setInt("resolutionY", params.resolutionXYZ.y);
+    computeShader->setInt("resolutionZ", params.resolutionXYZ.z);
 
     glBindImageTexture(0, sliceTex, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA8);
     // e.g. if resolution is 1024, this will launch 64 x 64 x slicesThisBlock workgroups
     // Then the compute shader will launch 16 threads per workgroup in xy, thus getting "resolution" threads in xy
     // 16 is a good compromise, since e.g. almost any resolution can be divided by 16
-    //glDispatchCompute(params.resolutionX / 16, params.resolutionY / 16, slicesThisBlock);
+    //glDispatchCompute(params.resolutionXYZ.x / 16, params.resolutionXYZ.y / 16, slicesThisBlock);
 
-    // This accomodates the case where resolutionX and resolutionY are not equal and not divisible by 16
+    // This accomodates the case where resolutionXYZ.x and resolutionXYZ.y are not equal and not divisible by 16
     glDispatchCompute(
-      (params.resolutionX + 15) / 16,
-      (params.resolutionY + 15) / 16,
+      (params.resolutionXYZ.x + 15) / 16,
+      (params.resolutionXYZ.y + 15) / 16,
       slicesThisBlock
     );
   
@@ -425,17 +423,17 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // Plot a transition map as seen from above, where each pixel column is represented by a character # if it has at least one transition, or . if it has no transitions.
   const int maxCols = 50;
   const int maxRows = 50;
-  int strideX = std::max(1, params.resolutionX / maxCols);
-  int strideY = std::max(1, params.resolutionY / maxRows);
+  int strideX = std::max(1, params.resolutionXYZ.x / maxCols);
+  int strideY = std::max(1, params.resolutionXYZ.y / maxRows);
 
   std::cout << "XY transition map (# = has transition):\n";
   for (int row = 0; row < maxRows; ++row) {
     int y = row * strideY;
-    if (y >= params.resolutionY) break;
+    if (y >= params.XYZ.y) break;
     for (int col = 0; col < maxCols; ++col) {
       int x = col * strideX;
-      if (x >= params.resolutionX) break;
-      int idx = y * params.resolutionX + x;
+      if (x >= params.resolutionXYZ.x) break;
+      int idx = y * params.resolutionXYZ.x + x;
       bool hasTransition = false;
       for (uint t = 0; t < counts[idx]; ++t) {
         if (hostTransitions[idx * params.maxTransitionsPerZColumn + t] != 0) {
@@ -451,11 +449,11 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   std::cout << "XY transition count map (0=., 1=+, 2=*, 3=#, >=4=@):\n";
   for (int row = 0; row < maxRows; ++row) {
     int y = row * strideY;
-    if (y >= params.resolutionY) break;
+    if (y >= params.resolutionXYZ.y) break;
     for (int col = 0; col < maxCols; ++col) {
       int x = col * strideX;
-      if (x >= params.resolutionX) break;
-      int idx = y * params.resolutionX + x;
+      if (x >= params.resolutionXYZ.x) break;
+      int idx = y * params.resolutionXYZ.x + x;
       GLuint count = counts[idx];
       char c = '.';
       if (count == 1) c = '+';
@@ -473,7 +471,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // ---------------------------> I HAVE A PROBLEM UP TO HERE IF THE NUMBER OF POINTS IS TOO HIGH
 
   // #########################################################################
-  exit(0); // Exit the program after voxelization is complete
+  //exit(0); // Exit the program after voxelization is complete
   // #########################################################################
 
   // °°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
@@ -694,21 +692,21 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   printBufferGraph(prefixSumBuffer, prefixResults.size(), 10, '*');
 
 
-  // 7. Cleanup
-  glDeleteBuffers(1, &countBuffer); //@@@ glDeleteBuffers(1, &_countBuffer);
-  glDeleteBuffers(1, &prefixSumBuffer);
-  glDeleteBuffers(1, &blockSumsBuffer);
-  glDeleteBuffers(1, &blockOffsetsBuffer);
-  glDeleteBuffers(1, &errorFlagBuffer);
-  delete prefixPass1;
-  delete prefixPass2;
-  delete prefixPass3;
+  // // 7. Cleanup
+  // glDeleteBuffers(1, &countBuffer); //@@@ glDeleteBuffers(1, &_countBuffer);
+  // glDeleteBuffers(1, &prefixSumBuffer);
+  // glDeleteBuffers(1, &blockSumsBuffer);
+  // glDeleteBuffers(1, &blockOffsetsBuffer);
+  // glDeleteBuffers(1, &errorFlagBuffer);
+  // delete prefixPass1;
+  // delete prefixPass2;
+  // delete prefixPass3;
 
   // ****************************************************************************************************************************
 
 
   // #########################################################################
-  exit(0); // Exit the program after voxelization is complete
+  //exit(0); // Exit the program after voxelization is complete
   // #########################################################################
 
   // -----> COMPRESSION <-----
@@ -769,12 +767,27 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefixSumData.data());
 
+  
   // Cleanup
-  glDeleteBuffers(1, &transitionBuffer);
-  glDeleteBuffers(1, &countBuffer);
-  glDeleteBuffers(1, &overflowBuffer);
-  glDeleteBuffers(1, &blockSumsBuffer);
-  glDeleteBuffers(1, &blockOffsetsBuffer);
+  // Delete OpenGL buffers and resources if they were created
+  if (prefixSumBuffer) glDeleteBuffers(1, &prefixSumBuffer);
+  if (errorFlagBuffer) glDeleteBuffers(1, &errorFlagBuffer);
+  if (transitionBuffer) glDeleteBuffers(1, &transitionBuffer);
+  if (countBuffer) glDeleteBuffers(1, &countBuffer);
+  if (overflowBuffer) glDeleteBuffers(1, &overflowBuffer);
+  if (blockSumsBuffer) glDeleteBuffers(1, &blockSumsBuffer);
+  if (blockOffsetsBuffer) glDeleteBuffers(1, &blockOffsetsBuffer);
+  if (compressedBuffer) glDeleteBuffers(1, &compressedBuffer);
+  if (meshBuffers.vbo) glDeleteBuffers(1, &meshBuffers.vbo);
+  if (meshBuffers.ebo) glDeleteBuffers(1, &meshBuffers.ebo);
+  if (meshBuffers.vao) glDeleteVertexArrays(1, &meshBuffers.vao);
+  if (sliceTex) glDeleteTextures(1, &sliceTex);
+  if (fbo) glDeleteFramebuffers(1, &fbo);
+  if (depthRbo) glDeleteRenderbuffers(1, &depthRbo);
+
+  meshBuffers = {}; // reset values
+
+  // Delete shader objects (the Shader destructor should handle glDeleteProgram)
   delete drawShader;
   delete computeShader;
   delete compressTransitionsShader;
@@ -782,12 +795,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   delete prefixPass2;
   delete prefixPass3;
 
-  glDeleteBuffers(1, &meshBuffers.vbo);
-  glDeleteBuffers(1, &meshBuffers.ebo);
-  glDeleteVertexArrays(1, &meshBuffers.vao);
-  meshBuffers = {}; // resetta i valori
-  glDeleteTextures(1, &sliceTex);
-  glDeleteFramebuffers(1, &fbo);
+  if (window) glfwDestroyWindow(window);
   glfwTerminate();
 
   return {compressedData, prefixSumData};

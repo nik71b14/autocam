@@ -9,9 +9,7 @@
 // Parameters for voxelization
 struct VoxelizationParams {
   float resolution = 0.1; // Resolution referred to the units of the model (agnostic with reference to which units are used)
-  int resolutionX = 1024;
-  int resolutionY = 1024;
-  int resolutionZ = 1024;
+  glm::ivec3 resolutionXYZ = glm::ivec3(1024, 1024, 1024); // Resolution in pixels for each axis
 
   int slicesPerBlock = 32;
   size_t maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
@@ -28,7 +26,8 @@ class Voxelizer {
 public:
     Voxelizer(); // Default constructor
     Voxelizer(const VoxelizationParams& params);
-    Voxelizer(const Mesh& mesh, const VoxelizationParams& params);
+    //Voxelizer(const Mesh& mesh, const VoxelizationParams& params);
+    Voxelizer(const Mesh& mesh, VoxelizationParams& params);
 
     void setMesh(const Mesh& mesh);
     void setParams(const VoxelizationParams& params);
@@ -37,7 +36,7 @@ public:
     std::pair<std::vector<GLuint>, std::vector<GLuint>> getResults() const;
     float getScale() const { return scale; };
     glm::ivec3 getResolutionPx() const {
-        return glm::ivec3(params.resolutionX, params.resolutionY, params.resolutionZ);
+        return params.resolutionXYZ;//glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z);
     }
     float getResolution() const {
         return params.resolution;

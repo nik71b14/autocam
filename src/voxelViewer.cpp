@@ -49,7 +49,7 @@ void VoxelViewer::initGL() {
   glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
   glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
 
-  window = glfwCreateWindow(params.resolutionX, params.resolutionY, "Voxel Transition Viewer", nullptr, nullptr);
+  window = glfwCreateWindow(params.resolutionXYZ.x, params.resolutionXYZ.y, "Voxel Transition Viewer", nullptr, nullptr);
   if (!window) throw std::runtime_error("Failed to create GLFW window");
 
   glfwMakeContextCurrent(window);
@@ -70,7 +70,7 @@ void VoxelViewer::initGL() {
   
 
   glfwSwapInterval(1);
-  glViewport(0, 0, params.resolutionX, params.resolutionY);
+  glViewport(0, 0, params.resolutionXYZ.x, params.resolutionXYZ.y);
 }
 
 void VoxelViewer::onMouseMove(double xpos, double ypos) {
@@ -146,7 +146,7 @@ void VoxelViewer::run() {
 
   raymarchingShader->use();
   raymarchingShader->setIVec3("resolution", 
-      glm::ivec3(params.resolutionX, params.resolutionY, params.resolutionZ));
+      glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
   raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
 
   while (!glfwWindowShouldClose(window)) {
@@ -166,9 +166,9 @@ void VoxelViewer::run() {
     float windowAspect = (float)width / (float)height;
 
     // Calculate object dimensions based on voxelization parameters
-    float voxelScale = 1.0f / std::max(params.resolutionX, params.resolutionY); // or Z if 3D
-    float objectWidth = params.resolutionX * voxelScale;
-    float objectHeight = params.resolutionY * voxelScale;
+    float voxelScale = 1.0f / std::max(params.resolutionXYZ.x, params.resolutionXYZ.y); // or Z if 3D
+    float objectWidth = params.resolutionXYZ.x * voxelScale;
+    float objectHeight = params.resolutionXYZ.y * voxelScale;
     float objectAspect = objectWidth / objectHeight;
 
     // Fit object in view while preserving aspect ratio

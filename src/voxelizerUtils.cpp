@@ -2,9 +2,9 @@
 #include "voxelizerUtils.hpp"
 
 size_t estimateMemoryUsageBytes(const VoxelizationParams& params) {
-    size_t totalPixels = size_t(params.resolutionX) * size_t(params.resolutionY);
+    size_t totalPixels = size_t(params.resolutionXYZ.x) * size_t(params.resolutionXYZ.y);
 
-    size_t sliceTexBytes = params.resolutionX * params.resolutionY * (params.slicesPerBlock + 1) * 4; // RGBA8 = 4 bytes
+    size_t sliceTexBytes = params.resolutionXYZ.x * params.resolutionXYZ.y * (params.slicesPerBlock + 1) * 4; // RGBA8 = 4 bytes
     size_t transitionBufferBytes = totalPixels * params.maxTransitionsPerZColumn * sizeof(GLuint);
     size_t countBufferBytes = totalPixels * sizeof(GLuint);
     size_t overflowBufferBytes = totalPixels * sizeof(GLuint);
@@ -14,7 +14,7 @@ size_t estimateMemoryUsageBytes(const VoxelizationParams& params) {
 
 int chooseOptimalSlicesPerBlock(const VoxelizationParams& params) {
     int bestSlices = 1;
-    for (int testSlices = 1; testSlices <= std::min(128, params.resolutionZ); ++testSlices) {
+    for (int testSlices = 1; testSlices <= std::min(128, params.resolutionXYZ.z); ++testSlices) {
         VoxelizationParams testParams = params;
         testParams.slicesPerBlock = testSlices;
         size_t mem = estimateMemoryUsageBytes(testParams);
@@ -29,7 +29,7 @@ int chooseOptimalSlicesPerBlock(const VoxelizationParams& params) {
 
 int chooseOptimalPowerOfTwoSlicesPerBlock(const VoxelizationParams& params) {
     int bestSlices = 1;
-    for (int testSlices = 1; testSlices <= std::min(128, params.resolutionZ); testSlices *= 2) {
+    for (int testSlices = 1; testSlices <= std::min(128, params.resolutionXYZ.z); testSlices *= 2) {
         VoxelizationParams testParams = params;
         testParams.slicesPerBlock = testSlices;
         size_t mem = estimateMemoryUsageBytes(testParams);

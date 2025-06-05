@@ -144,9 +144,9 @@ void printBufferGraph(GLuint buffer, size_t bufferSize, int numRowsToPrint, char
 const int WORKGROUP_SIZE = 1024; // max local workgroup size
 
 // Helper: round up integer division
-inline int div_ceil(int x, int y) {
-    return (x + y - 1) / y;
-}
+// inline int div_ceil(int x, int y) {
+//     return (x + y - 1) / y;
+// }
 
 
 // Bindings:
