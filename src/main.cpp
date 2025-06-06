@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
   try {
 
     VoxelizationParams params;
-    params.resolution = 0.05; // e.g. mm
+    params.resolution = 0.02; // e.g. mm
     params.color = glm::vec3(0.1f, 0.4f, 0.8f); // Blue color for voxelization
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
