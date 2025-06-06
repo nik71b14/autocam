@@ -30,7 +30,7 @@ public:
   void clear() { objects.clear(); }
 
   // Subtract two voxel objects
-  bool subtract(const VoxelObject& obj1, const VoxelObject& obj2);
+  bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
 
 private:
   std::vector<VoxelObject> objects;

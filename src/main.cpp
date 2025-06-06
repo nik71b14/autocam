@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
   try {
 
     VoxelizationParams params;
-    params.resolution = 0.02; // e.g. mm
+    params.resolution = 0.05; // e.g. mm
     params.color = glm::vec3(0.1f, 0.4f, 0.8f); // Blue color for voxelization
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
@@ -69,6 +69,7 @@ int main(int argc, char** argv) {
     if (!ops->load("test/voxelized_obj_1.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
+    ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(100, 100, 100));
     ops->clear();
     delete ops;
 

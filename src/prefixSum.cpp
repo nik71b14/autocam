@@ -164,135 +164,134 @@ const int WORKGROUP_SIZE = 1024; // max local workgroup size
 // | pass3BlockLevel  | pass3_blocklevel.glsl  | Adjust previous level blockSums with upper-level blockOffsets  |
 
 void prefixSumMultiLevel1B(
-    GLuint countBuffer,
-    GLuint prefixSumBuffer,
-    GLuint blockSumsBuffer,
-    GLuint blockOffsetsBuffer,
-    GLuint errorFlagBuffer,
-    Shader* prefixPass1,
-    Shader* prefixPass2,
-    Shader* prefixPass3,
-    size_t totalElements,
-    int WORKGROUP_SIZE = 1024
+  GLuint countBuffer,
+  GLuint prefixSumBuffer,
+  GLuint blockSumsBuffer,
+  GLuint blockOffsetsBuffer,
+  GLuint errorFlagBuffer,
+  Shader* prefixPass1,
+  Shader* prefixPass2,
+  Shader* prefixPass3,
+  size_t totalElements,
+  int WORKGROUP_SIZE = 1024
 ) {
-    //const int WORKGROUP_SIZE = 1024;
-    GLuint numBlocks = div_ceil(totalElements, WORKGROUP_SIZE);
+  //const int WORKGROUP_SIZE = 1024;
+  GLuint numBlocks = div_ceil(totalElements, WORKGROUP_SIZE);
+
+  #ifdef DEBUG_PREFIX_SUM
+  std::cout << "numBlocks = " << numBlocks << std::endl;
+  #endif
+
+  std::vector<size_t> levelSizes = { totalElements };
+  std::vector<GLuint> levelBlockSumsBuffers = { 0, blockSumsBuffer };
+  std::vector<GLuint> levelBlockOffsetsBuffers = { 0, blockOffsetsBuffer };
+
+  // Calculate how many levels we need and each level's size
+  // Allocate temp buffers for levels ≥ 2
+  int currentSize = numBlocks;
+  while (currentSize > 1) {
+    levelSizes.push_back(currentSize);
+
+    GLuint sumsBuf = 0, offsBuf = 0;
+    glGenBuffers(1, &sumsBuf);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, sumsBuf);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, currentSize * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+    glGenBuffers(1, &offsBuf);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, offsBuf);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, currentSize * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+
+    levelBlockSumsBuffers.push_back(sumsBuf);
+    levelBlockOffsetsBuffers.push_back(offsBuf);
+
+    currentSize = div_ceil(currentSize, WORKGROUP_SIZE);
+  }
+
+  // Calculate number of levels
+  int numLevels = static_cast<int>(levelSizes.size());
+
+  // LEVEL 0: up to 1024 elements is the only level to be executed
+  prefixPass1->use();
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, countBuffer);                 // Input data
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);             // Output prefix sum
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, levelBlockSumsBuffers[1]);    // Output block sums
+  prefixPass1->setUInt("numBlocks", numBlocks);
+  prefixPass1->setUInt("numElements", totalElements);
+
+  glDispatchCompute(numBlocks, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  #ifdef DEBUG_PREFIX_SUM
+  printBufferContents(prefixSumBuffer, WORKGROUP_SIZE, totalElements + 1, "Level 0 prefix sum after pass1");
+  #endif
+
+  // LEVELS ≥ 1: only if we have more than WORKGROUP_SIZE elements
+  for (int lvl = 1; lvl < numLevels; ++lvl) {
+    int levelSize = levelSizes[lvl];
+    int dispatchCount = div_ceil(levelSize, WORKGROUP_SIZE);
+
+    GLuint inSums  = levelBlockSumsBuffers[lvl];
+    GLuint outOffs = levelBlockOffsetsBuffers[lvl];
+
+    // Clear error flag
+    GLuint zero = 0;
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorFlagBuffer);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &zero);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    prefixPass2->use();
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, inSums);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs);
+
+    GLuint nextLevelSums = (lvl + 1 < numLevels) ? levelBlockSumsBuffers[lvl + 1] : 0; // or dummy buffer if no next level
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nextLevelSums);
+
+    prefixPass2->setUInt("numBlocks", levelSize);
+
+    glDispatchCompute(dispatchCount, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  }
+
+  #ifdef DEBUG_PREFIX_SUM
+  //Output all levelBlockOffsetsBuffers
+  for (int i = 1; i < numLevels; ++i) {
+      printBufferContents(levelBlockOffsetsBuffers[i], WORKGROUP_SIZE, levelSizes[i], "levelBlockOffsetsBuffers[" + std::to_string(i) + "]");
+  }
+  #endif
+
+  // Final pass: adjust previous level blockSums with upper-level blockOffsets
+  for (int lvl = numLevels - 1; lvl >= 1; lvl--) {
+    int lowerLevelSize = levelSizes[lvl - 1];
+    int lowerNumBlocks = div_ceil(lowerLevelSize, WORKGROUP_SIZE);
 
     #ifdef DEBUG_PREFIX_SUM
-    std::cout << "numBlocks = " << numBlocks << std::endl;
-    #endif
-
-    std::vector<size_t> levelSizes = { totalElements };
-    std::vector<GLuint> levelBlockSumsBuffers = { 0, blockSumsBuffer };
-    std::vector<GLuint> levelBlockOffsetsBuffers = { 0, blockOffsetsBuffer };
-
-    // Calculate how many levels we need and each level's size
-    // Allocate temp buffers for levels ≥ 2
-    int currentSize = numBlocks;
-    while (currentSize > 1) {
-        levelSizes.push_back(currentSize);
-
-        GLuint sumsBuf = 0, offsBuf = 0;
-        glGenBuffers(1, &sumsBuf);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, sumsBuf);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, currentSize * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
-
-        glGenBuffers(1, &offsBuf);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, offsBuf);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, currentSize * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
-
-        levelBlockSumsBuffers.push_back(sumsBuf);
-        levelBlockOffsetsBuffers.push_back(offsBuf);
-
-        currentSize = div_ceil(currentSize, WORKGROUP_SIZE);
+    if (lvl - 1 >= 1) {
+        printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "BEFORE levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
     }
+    #endif
+    
+    prefixPass3->use();
+    if (lvl == 1) {
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+    } else {
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, levelBlockOffsetsBuffers[lvl - 1]);
+    }
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, levelBlockOffsetsBuffers[lvl]);
+    prefixPass3->setUInt("numElements", lowerLevelSize);
 
-    // Calculate number of levels
-    int numLevels = static_cast<int>(levelSizes.size());
-
-    // LEVEL 0: up to 1024 elements is the only level to be executed
-    prefixPass1->use();
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, countBuffer);                 // Input data
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);             // Output prefix sum
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, levelBlockSumsBuffers[1]);    // Output block sums
-    prefixPass1->setUInt("numBlocks", numBlocks);
-    prefixPass1->setUInt("numElements", totalElements);
-
-    glDispatchCompute(numBlocks, 1, 1);
+    glDispatchCompute(lowerNumBlocks, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     #ifdef DEBUG_PREFIX_SUM
-    printBufferContents(prefixSumBuffer, WORKGROUP_SIZE, totalElements + 1, "Level 0 prefix sum after pass1");
-    #endif
-
-    // LEVELS ≥ 1: only if we have more than WORKGROUP_SIZE elements
-    for (int lvl = 1; lvl < numLevels; ++lvl) {
-        int levelSize = levelSizes[lvl];
-        int dispatchCount = div_ceil(levelSize, WORKGROUP_SIZE);
-
-        GLuint inSums  = levelBlockSumsBuffers[lvl];
-        GLuint outOffs = levelBlockOffsetsBuffers[lvl];
-
-        // Clear error flag
-        GLuint zero = 0;
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, errorFlagBuffer);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &zero);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-        prefixPass2->use();
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, inSums);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, outOffs);
-
-        GLuint nextLevelSums = (lvl + 1 < numLevels) ? levelBlockSumsBuffers[lvl + 1] : 0; // or dummy buffer if no next level
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nextLevelSums);
-
-        prefixPass2->setUInt("numBlocks", levelSize);
-
-        glDispatchCompute(dispatchCount, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    }
-
-    #ifdef DEBUG_PREFIX_SUM
-    //Output all levelBlockOffsetsBuffers
-    for (int i = 1; i < numLevels; ++i) {
-        printBufferContents(levelBlockOffsetsBuffers[i], WORKGROUP_SIZE, levelSizes[i], "levelBlockOffsetsBuffers[" + std::to_string(i) + "]");
+    if (lvl - 1 >= 1) {
+        printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "AFTER levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
     }
     #endif
+  } 
 
-    // Final pass: adjust previous level blockSums with upper-level blockOffsets
-    for (int lvl = numLevels - 1; lvl >= 1; lvl--) {
-        int lowerLevelSize = levelSizes[lvl - 1];
-        int lowerNumBlocks = div_ceil(lowerLevelSize, WORKGROUP_SIZE);
-
-        #ifdef DEBUG_PREFIX_SUM
-        if (lvl - 1 >= 1) {
-            printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "BEFORE levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
-        }
-        #endif
-        
-        prefixPass3->use();
-        if (lvl == 1) {
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
-        } else {
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, levelBlockOffsetsBuffers[lvl - 1]);
-        }
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, levelBlockOffsetsBuffers[lvl]);
-        prefixPass3->setUInt("numElements", lowerLevelSize);
-
-        glDispatchCompute(lowerNumBlocks, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        #ifdef DEBUG_PREFIX_SUM
-        if (lvl - 1 >= 1) {
-            printBufferContents(levelBlockOffsetsBuffers[lvl - 1], WORKGROUP_SIZE, levelSizes[lvl - 1], "AFTER levelBlockOffsetsBuffers[" + std::to_string(lvl - 1) + "]");
-        }
-        #endif
-
-    } 
-
-    // Cleanup temporary buffers
-    for (int i = 2; i < numLevels; ++i) {
-        glDeleteBuffers(1, &levelBlockSumsBuffers[i]);
-        glDeleteBuffers(1, &levelBlockOffsetsBuffers[i]);
-    }
+  // Cleanup temporary buffers
+  for (int i = 2; i < numLevels; ++i) {
+    glDeleteBuffers(1, &levelBlockSumsBuffers[i]);
+    glDeleteBuffers(1, &levelBlockOffsetsBuffers[i]);
+  }
 }
