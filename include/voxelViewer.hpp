@@ -2,10 +2,11 @@
 
 #include <vector>
 #include <string>
-#include <glad/glad.h> 
-#include <GLFW/glfw3.h>
+//#include <GLFW/glfw3.h>
 #include "shader.hpp"
 #include "voxelizer.hpp"
+
+struct GLFWwindow; // Forward declaration for GLFW window to avoid including GLFW headers directly here (possible conflict with glad/glad.h)
 
 class VoxelViewer {
 public:

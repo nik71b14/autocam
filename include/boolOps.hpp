@@ -1,4 +1,6 @@
 #pragma once
+
+// #include <glad/glad.h>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -7,7 +9,6 @@
 
 // Assuming VoxelizationParams is defined somewhere
 #include "voxelizer.hpp" // adjust path as needed
-#include <glad/glad.h>
 
 class BoolOps {
 public:

@@ -6,6 +6,8 @@
 #include <atomic>
 #include <mutex>
 #include <glm/glm.hpp>
+#include <map>
+
 
 enum class Plane {
   XY, ZX, YZ
@@ -20,7 +22,10 @@ struct SimulationState {
   double speedFactor = 1.0;
 };
 
-#include <map>
+struct GcodePoint {
+    glm::vec3 position;
+    bool rapid;
+};
 
 class GCodeInterpreter {
 public:
@@ -40,6 +45,7 @@ public:
   double getCurrentSpindleSpeed() const;
   int getCurrentTool() const;
   Plane getCurrentPlane() const;
+  std::vector<GcodePoint> getToolpath();
 
 private:
   void executeCommand(const std::string& line);
@@ -48,6 +54,8 @@ private:
   std::vector<std::string> gcodeLines;
   std::atomic<bool> running;
   std::thread simulationThread;
+  std::vector<GcodePoint> toolpath;
+  bool previewMode = false;
 
   mutable std::mutex stateMutex;
   SimulationState state;

@@ -258,3 +258,20 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
     state.spindleSpeed = params['S'];
   }
 }
+
+std::vector<GcodePoint> GCodeInterpreter::getToolpath() {
+  this->toolpath.clear();
+  glm::vec3 savedPosition = state.position;  // preserve state
+  bool wasRunning = running;
+  previewMode = true;
+
+  for (const auto& line : gcodeLines) {
+      executeCommand(line);  // reuses actual logic
+  }
+
+  previewMode = false;
+  state.position = savedPosition;  // restore state
+  running = wasRunning;
+
+  return toolpath;
+}

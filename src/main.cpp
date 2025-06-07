@@ -6,6 +6,8 @@
 #include "voxelizerUtils.hpp"
 #include "boolOps.hpp"
 #include <assimp/scene.h>
+#include "gcode.hpp"
+// #include "gcodeViewer.hpp"
 
 //#define DEBUG_OUTPUT
 
@@ -21,6 +23,52 @@ int main(int argc, char** argv) {
 
   try {
 
+    // GCODE INTERPRETER TESTING ----------------------------------------------
+        GCodeInterpreter interpreter;
+
+    if (!interpreter.loadFile("gcode/star_pocket.gcode")) {
+        std::cerr << "Failed to load G-code file.\n";
+        return 1;
+    }
+
+    if (!interpreter.checkFile()) {
+        std::cerr << "Invalid G-code file.\n";
+        return 1;
+    }
+
+    // Extract full toolpath for initial rendering
+    std::vector<GcodePoint> toolpath = interpreter.getToolpath();
+
+    // Create viewer with toolpath
+    // GcodeViewer gCodeViewer(toolpath);
+
+    interpreter.setSpeedFactor(2.0); // Run 2x faster than real time
+    interpreter.run();
+
+    while (interpreter.isRunning()) {
+        glm::vec3 pos = interpreter.getCurrentPosition();
+
+        //@@@ DEBUG
+        std::cout << "Tool Position: X=" << pos.x
+                  << " Y=" << pos.y
+                  << " Z=" << pos.z << std::endl;
+
+        // Update viewer with current tool position
+        // gCodeViewer.setToolPosition(pos);
+
+        // Handle input and draw
+        // gCodeViewer.pollEvents();
+        // gCodeViewer.drawFrame();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    std::cout << "Simulation finished.\n";
+    // ------------------------------------------------------------------------
+
+    exit(EXIT_SUCCESS);
+
+    // VOXELIZATION PARAMETERS ------------------------------------------------
     VoxelizationParams params;
     params.resolution = 0.02; // e.g. mm
     params.color = glm::vec3(0.1f, 0.4f, 0.8f); // Blue color for voxelization
@@ -28,7 +76,9 @@ int main(int argc, char** argv) {
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
     //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
     //params.preview = true; // Enable preview during voxelization
+    // ------------------------------------------------------------------------
 
+    // VOXELIZATION PROCESS ---------------------------------------------------
     Mesh mesh = loadMesh(stlPath);
 
     // 1. Stack-allocate the Voxelizer object, run the voxelization, and save results
@@ -58,7 +108,9 @@ int main(int argc, char** argv) {
     #endif
 
     delete voxelizer;
+    // ------------------------------------------------------------------------
 
+    // BOOLEAN OPERATIONS TESTING ---------------------------------------------
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
     // Loads object 1
@@ -72,10 +124,9 @@ int main(int argc, char** argv) {
     ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(100, 100, 100));
     ops->clear();
     delete ops;
+    // ------------------------------------------------------------------------
 
-    exit(EXIT_SUCCESS);
-
-    /*
+    // VOXEL VIEWER -----------------------------------------------------------
     //params.resolutionXYZ = voxelizer->getResolutionPx(); // Not needed since params.resolutionXYZ is already set in the VoxelizationParams constructor
     VoxelViewer viewer(
       compressedData,
@@ -93,7 +144,8 @@ int main(int argc, char** argv) {
     //     32
     //   );
     // viewer.run();
-    */
+    // ------------------------------------------------------------------------
+
   } catch (const std::exception& e) {
     std::cerr << "[Error] " << e.what() << std::endl;
     return EXIT_FAILURE;
