@@ -74,17 +74,29 @@ void GcodeViewer::pollEvents() {
 }
 
 void GcodeViewer::updateCamera() {
-    projection = glm::perspective(glm::radians(45.0f), 800.f / 600.f, 0.1f, 1000.0f);
-    view = glm::lookAt(glm::vec3(50, 50, 100), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+    float aspect = static_cast<float>(width) / static_cast<float>(height);
+    float left = -100.0f;
+    float right = 100.0f;
+    float halfVertical = (abs(left) + abs(right)) / 2 / aspect; //50.0f / aspect;
+    std::cout << "aspect: " << aspect << std::endl;
+    std::cout << "halfVertical: " << halfVertical << std::endl;
+    float bottom = -halfVertical;
+    float top = halfVertical;
+
+    projection = glm::ortho(left, right, bottom, top, -1000.0f, 1000.0f);
+    view = glm::lookAt(glm::vec3(0, 0, 100), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+
 }
 
 void GcodeViewer::drawFrame() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(shaderProgram);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "uProj"), 1, GL_FALSE, &projection[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "uView"), 1, GL_FALSE, &view[0][0]);
+    shader->use();
+    shader->setMat4("uProj", projection);
+    shader->setMat4("uView", view);
 
     drawToolpath();
     drawToolhead();
@@ -93,30 +105,63 @@ void GcodeViewer::drawFrame() {
 }
 
 void GcodeViewer::drawToolpath() {
+    std::cout << "pathVertexCount: " << pathVertexCount << std::endl;
     glBindVertexArray(pathVAO);
-    glUniform3f(glGetUniformLocation(shaderProgram, "uColor"), 0.0f, 1.0f, 1.0f);
+    shader->setVec3("uColor", glm::vec3(0.0f, 1.0f, 1.0f));
     glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(pathVertexCount));
     glBindVertexArray(0);
 }
 
 void GcodeViewer::drawToolhead() {
-    glUniform3f(glGetUniformLocation(shaderProgram, "uColor"), 1.0f, 0.0f, 0.0f);
+    shader->use();
+    shader->setVec3("uColor", glm::vec3(1.0f, 0.0f, 0.0f));
 
     glm::mat4 model = glm::translate(glm::mat4(1.0f), toolPosition);
     glm::mat4 mvp = projection * view * model;
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "uProj"), 1, GL_FALSE, &mvp[0][0]);
+    shader->setMat4("uProj", mvp);
 
-    // Draw point as toolhead
-    float pos[] = { 0.f, 0.f, 0.f };
+    const int stacks = 12;
+    const int slices = 24;
+    const float radius = 1.0f;
+
+    std::vector<glm::vec3> vertices;
+
+    for (int i = 0; i < stacks; ++i) {
+        float phi1 = glm::pi<float>() * float(i) / stacks;
+        float phi2 = glm::pi<float>() * float(i + 1) / stacks;
+
+        for (int j = 0; j <= slices; ++j) {
+            float theta = 2 * glm::pi<float>() * float(j) / slices;
+
+            float x1 = radius * sin(phi1) * cos(theta);
+            float y1 = radius * sin(phi1) * sin(theta);
+            float z1 = radius * cos(phi1);
+
+            float x2 = radius * sin(phi2) * cos(theta);
+            float y2 = radius * sin(phi2) * sin(theta);
+            float z2 = radius * cos(phi2);
+
+            vertices.emplace_back(x1, y1, z1);
+            vertices.emplace_back(x2, y2, z2);
+        }
+    }
+
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(pos), pos, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
     glEnableVertexAttribArray(0);
-    glDrawArrays(GL_POINTS, 0, 1);
+
+    int vertsPerStrip = (slices + 1) * 2;
+    for (int i = 0; i < stacks; ++i) {
+        glDrawArrays(GL_TRIANGLE_STRIP, i * vertsPerStrip, vertsPerStrip);
+    }
+
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);
 }
+
+

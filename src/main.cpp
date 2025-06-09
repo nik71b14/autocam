@@ -7,7 +7,7 @@
 #include "boolOps.hpp"
 #include <assimp/scene.h>
 #include "gcode.hpp"
-// #include "gcodeViewer.hpp"
+#include "gcodeViewer.hpp"
 
 //#define DEBUG_OUTPUT
 
@@ -40,7 +40,8 @@ int main(int argc, char** argv) {
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
 
     // Create viewer with toolpath
-    // GcodeViewer gCodeViewer(toolpath);
+    std::cout << "Toolpath size: " << toolpath.size() << std::endl;
+    GcodeViewer gCodeViewer(toolpath);
 
     interpreter.setSpeedFactor(2.0); // Run 2x faster than real time
     interpreter.run();
@@ -49,18 +50,18 @@ int main(int argc, char** argv) {
         glm::vec3 pos = interpreter.getCurrentPosition();
 
         //@@@ DEBUG
-        std::cout << "Tool Position: X=" << pos.x
-                  << " Y=" << pos.y
-                  << " Z=" << pos.z << std::endl;
+        // std::cout << "Tool Position: X=" << pos.x
+        //           << " Y=" << pos.y
+        //           << " Z=" << pos.z << std::endl;
 
         // Update viewer with current tool position
-        // gCodeViewer.setToolPosition(pos);
+        gCodeViewer.setToolPosition(pos);
 
         // Handle input and draw
-        // gCodeViewer.pollEvents();
-        // gCodeViewer.drawFrame();
+        gCodeViewer.pollEvents();
+        gCodeViewer.drawFrame();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        //std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "Simulation finished.\n";

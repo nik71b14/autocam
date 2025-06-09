@@ -34,7 +34,6 @@ private:
     size_t pathVertexCount = 0;
     size_t sphereVertexCount = 0;
 
-    unsigned int shaderProgram = 0;
     glm::mat4 projection, view;
 
     void updateCamera();
