@@ -34,6 +34,31 @@ void GcodeViewer::init() {
     glEnable(GL_DEPTH_TEST);
     createShaders();
     updateCamera();
+
+    // Set this instance as the user pointer for callbacks
+    glfwSetWindowUserPointer(window, this);
+
+    // Mouse callbacks
+    glfwSetMouseButtonCallback(window, [](GLFWwindow* win, int button, int action, int mods) {
+        (void)mods; // Unused parameter cast to avoid warnings
+        double x, y;
+        glfwGetCursorPos(win, &x, &y);
+        // viewer is a pointer to the GcodeViewer instance
+        auto* viewer = static_cast<GcodeViewer*>(glfwGetWindowUserPointer(win));
+        if (viewer) viewer->onMouseButton(button, action, x, y);
+    });
+
+    glfwSetCursorPosCallback(window, [](GLFWwindow* win, double x, double y) {
+        auto* viewer = static_cast<GcodeViewer*>(glfwGetWindowUserPointer(win));
+        if (viewer) viewer->onMouseMove(x, y);
+    });
+
+    glfwSetScrollCallback(window, [](GLFWwindow* win, double xoffset, double yoffset) {
+        (void)xoffset; // Unused parameter cast to avoid warnings
+        auto* viewer = static_cast<GcodeViewer*>(glfwGetWindowUserPointer(win));
+        if (viewer) viewer->onScroll(yoffset);
+    });
+
 }
 
 void GcodeViewer::createShaders() {
@@ -85,14 +110,25 @@ void GcodeViewer::updateCamera() {
     float bottom = -halfVertical;
     float top = halfVertical;
 
+    // Ortho
     projection = glm::ortho(left, right, bottom, top, -1000.0f, 1000.0f);
+
+    // Use a perspective projection
+    // float fov = 45.0f;
+    // float nearPlane = 0.1f;
+    // float farPlane = 2000.0f;
+    // projection = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
+
     view = glm::lookAt(glm::vec3(0, 0, 100), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+
 
 }
 
 void GcodeViewer::drawFrame() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    view = getViewMatrix();
 
     shader->use();
     shader->setMat4("uProj", projection);
@@ -105,7 +141,6 @@ void GcodeViewer::drawFrame() {
 }
 
 void GcodeViewer::drawToolpath() {
-    std::cout << "pathVertexCount: " << pathVertexCount << std::endl;
     glBindVertexArray(pathVAO);
     shader->setVec3("uColor", glm::vec3(0.0f, 1.0f, 1.0f));
     glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(pathVertexCount));
@@ -164,4 +199,62 @@ void GcodeViewer::drawToolhead() {
     glDeleteVertexArrays(1, &vao);
 }
 
+// Mouse callback for camera control
+void GcodeViewer::onMouseButton(int button, int action, double xpos, double ypos) {
 
+  if (button == GLFW_MOUSE_BUTTON_LEFT) {
+    leftButtonDown = (action == GLFW_PRESS);
+    std::cout << "leftButtonDown: " << leftButtonDown << std::endl;
+  }
+  if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+    rightButtonDown = (action == GLFW_PRESS);
+  }
+  lastMousePos = glm::vec2(xpos, ypos);
+}
+
+void GcodeViewer::onMouseMove(double xpos, double ypos) {
+  glm::vec2 currentPos = glm::vec2(xpos, ypos);
+  glm::vec2 delta = currentPos - lastMousePos;
+  lastMousePos = currentPos;
+
+  if (leftButtonDown) {
+    // Rotate around target
+    float sensitivity = 0.3f;
+    yaw += delta.x * sensitivity;
+    pitch += delta.y * sensitivity;
+    pitch = glm::clamp(pitch, -89.0f, 89.0f);
+  }
+
+  if (rightButtonDown) {
+    // Pan target position
+    float panSpeed = cameraDistance * 0.002f;
+    glm::vec3 right = glm::normalize(glm::cross(getCameraDirection(), glm::vec3(0, 1, 0)));
+    glm::vec3 up = glm::vec3(0, 1, 0);
+    cameraTarget -= right * delta.x * panSpeed;
+    cameraTarget += up * delta.y * panSpeed;
+  }
+}
+
+void GcodeViewer::onScroll(double yoffset) {
+  cameraDistance *= std::pow(0.9f, yoffset);  // Smooth zoom
+  cameraDistance = glm::clamp(cameraDistance, 1.0f, 500.0f);
+
+  std::cout << "cameraDistance: " << cameraDistance << std::endl;
+  //@@@ ----------> IN MODALITA' ORTOGONALE NON FUNZIONA, DEVO AGGIORNARE LA PROJECTION
+}
+
+glm::vec3 GcodeViewer::getCameraDirection() {
+  float pitchRad = glm::radians(pitch);
+  float yawRad = glm::radians(yaw);
+  return glm::normalize(glm::vec3(
+    cos(pitchRad) * sin(yawRad),
+    sin(pitchRad),
+    cos(pitchRad) * cos(yawRad)
+  ));
+}
+
+glm::mat4 GcodeViewer::getViewMatrix() {
+  glm::vec3 direction = getCameraDirection();
+  glm::vec3 cameraPos = cameraTarget - direction * cameraDistance;
+  return glm::lookAt(cameraPos, cameraTarget, glm::vec3(0, 1, 0));
+}

@@ -184,6 +184,7 @@ void GCodeInterpreter::parseLine(const std::string& line, std::map<char, double>
   }
 }
 
+/*
 void GCodeInterpreter::executeCommand(const std::string& line) {
   std::map<char, double> params;
   std::string cmd;
@@ -258,6 +259,104 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
     state.spindleSpeed = params['S'];
   }
 }
+*/
+
+void GCodeInterpreter::executeCommand(const std::string& line) {
+  std::map<char, double> params;
+  std::string cmd;
+  parseLine(line, params, cmd);
+
+  if (cmd == "G0" || cmd == "G1") {
+    glm::vec3 startPos;
+    double currentFeedRate;
+    double speedFactor;
+    //int currentTool;
+    //double spindleSpeed;
+
+    {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      startPos = state.position;
+      currentFeedRate = state.feedRate;
+      speedFactor = state.speedFactor;
+      //currentTool = state.tool;
+      //spindleSpeed = state.spindleSpeed;
+    }
+
+    glm::vec3 targetPos = startPos;
+    if (params.count('X')) targetPos.x = static_cast<float>(params['X']);
+    if (params.count('Y')) targetPos.y = static_cast<float>(params['Y']);
+    if (params.count('Z')) targetPos.z = static_cast<float>(params['Z']);
+
+    if (params.count('F')) {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      state.feedRate = params['F'];
+      currentFeedRate = state.feedRate;
+    }
+
+    // Store the toolpath point if previewing
+    if (previewMode) {
+
+      toolpath.push_back({
+        .position = targetPos
+        // .start = startPos,
+        // .end = targetPos,
+        // .feedRate = currentFeedRate,
+        // .tool = currentTool,
+        // .spindleSpeed = spindleSpeed
+      });
+    }
+
+    // Simulated movement (if not in preview mode)
+    double distance = glm::length(targetPos - startPos);
+    double timeSeconds = (cmd == "G0") ? distance / 5000.0 : distance / (currentFeedRate / 60.0);
+    timeSeconds /= speedFactor;
+
+    const double stepTime = 0.01;
+    int steps = std::max(1, static_cast<int>(timeSeconds / stepTime));
+
+    for (int i = 1; i <= steps && running && !previewMode; ++i) {
+      double t = static_cast<double>(i) / steps;
+      glm::vec3 interpolated = glm::mix(startPos, targetPos, static_cast<float>(t));
+      {
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.position = interpolated;
+      }
+      std::this_thread::sleep_for(std::chrono::duration<double>(timeSeconds / steps));
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      state.position = targetPos;
+    }
+
+  } else if (cmd == "G4") {
+    double dwell = params.count('P') ? params['P'] : 0;
+    double localSpeed;
+    {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      localSpeed = state.speedFactor;
+    }
+    if (!previewMode)
+      std::this_thread::sleep_for(std::chrono::duration<double>(dwell / 1000.0 / localSpeed));
+
+  } else if (cmd == "G17") {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    state.currentPlane = Plane::XY;
+  } else if (cmd == "G18") {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    state.currentPlane = Plane::ZX;
+  } else if (cmd == "G19") {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    state.currentPlane = Plane::YZ;
+  } else if (cmd == "M6" && params.count('T')) {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    state.tool = static_cast<int>(params['T']);
+  } else if (params.count('S')) {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    state.spindleSpeed = params['S'];
+  }
+}
+
 
 std::vector<GcodePoint> GCodeInterpreter::getToolpath() {
   this->toolpath.clear();
@@ -266,6 +365,7 @@ std::vector<GcodePoint> GCodeInterpreter::getToolpath() {
   previewMode = true;
 
   for (const auto& line : gcodeLines) {
+    std::cout << line << std::endl;
       executeCommand(line);  // reuses actual logic
   }
 

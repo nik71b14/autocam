@@ -24,7 +24,6 @@ struct SimulationState {
 
 struct GcodePoint {
     glm::vec3 position;
-    bool rapid;
 };
 
 class GCodeInterpreter {
@@ -59,4 +58,5 @@ private:
 
   mutable std::mutex stateMutex;
   SimulationState state;
+
 };
