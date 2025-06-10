@@ -33,7 +33,13 @@ void GcodeViewer::init() {
 
     glEnable(GL_DEPTH_TEST);
     createShaders();
-    updateCamera();
+    shader->use();
+
+    // Set up viewport and clear color
+    glClearColor(0.1f, 0.1f, 0.1f, 1.f);
+
+    // Set up axes
+    //initAxes();
 
     // Set this instance as the user pointer for callbacks
     glfwSetWindowUserPointer(window, this);
@@ -98,42 +104,16 @@ void GcodeViewer::pollEvents() {
     glfwPollEvents();
 }
 
-void GcodeViewer::updateCamera() {
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-    float aspect = static_cast<float>(width) / static_cast<float>(height);
-    float left = -100.0f;
-    float right = 100.0f;
-    float halfVertical = (abs(left) + abs(right)) / 2 / aspect; //50.0f / aspect;
-    std::cout << "aspect: " << aspect << std::endl;
-    std::cout << "halfVertical: " << halfVertical << std::endl;
-    float bottom = -halfVertical;
-    float top = halfVertical;
-
-    // Ortho
-    projection = glm::ortho(left, right, bottom, top, -1000.0f, 1000.0f);
-
-    // Use a perspective projection
-    // float fov = 45.0f;
-    // float nearPlane = 0.1f;
-    // float farPlane = 2000.0f;
-    // projection = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
-
-    view = glm::lookAt(glm::vec3(0, 0, 100), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-
-
-}
-
 void GcodeViewer::drawFrame() {
-    glClearColor(0.1f, 0.1f, 0.1f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     view = getViewMatrix();
+    projection = getProjectionMatrix();
 
-    shader->use();
     shader->setMat4("uProj", projection);
     shader->setMat4("uView", view);
 
+    drawAxes();
     drawToolpath();
     drawToolhead();
 
@@ -145,58 +125,6 @@ void GcodeViewer::drawToolpath() {
     shader->setVec3("uColor", glm::vec3(0.0f, 1.0f, 1.0f));
     glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(pathVertexCount));
     glBindVertexArray(0);
-}
-
-void GcodeViewer::drawToolhead() {
-    shader->use();
-    shader->setVec3("uColor", glm::vec3(1.0f, 0.0f, 0.0f));
-
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), toolPosition);
-    glm::mat4 mvp = projection * view * model;
-    shader->setMat4("uProj", mvp);
-
-    const int stacks = 12;
-    const int slices = 24;
-    const float radius = 1.0f;
-
-    std::vector<glm::vec3> vertices;
-
-    for (int i = 0; i < stacks; ++i) {
-        float phi1 = glm::pi<float>() * float(i) / stacks;
-        float phi2 = glm::pi<float>() * float(i + 1) / stacks;
-
-        for (int j = 0; j <= slices; ++j) {
-            float theta = 2 * glm::pi<float>() * float(j) / slices;
-
-            float x1 = radius * sin(phi1) * cos(theta);
-            float y1 = radius * sin(phi1) * sin(theta);
-            float z1 = radius * cos(phi1);
-
-            float x2 = radius * sin(phi2) * cos(theta);
-            float y2 = radius * sin(phi2) * sin(theta);
-            float z2 = radius * cos(phi2);
-
-            vertices.emplace_back(x1, y1, z1);
-            vertices.emplace_back(x2, y2, z2);
-        }
-    }
-
-    GLuint vao, vbo;
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
-    glEnableVertexAttribArray(0);
-
-    int vertsPerStrip = (slices + 1) * 2;
-    for (int i = 0; i < stacks; ++i) {
-        glDrawArrays(GL_TRIANGLE_STRIP, i * vertsPerStrip, vertsPerStrip);
-    }
-
-    glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);
 }
 
 // Mouse callback for camera control
@@ -226,21 +154,23 @@ void GcodeViewer::onMouseMove(double xpos, double ypos) {
   }
 
   if (rightButtonDown) {
-    // Pan target position
-    float panSpeed = cameraDistance * 0.002f;
-    glm::vec3 right = glm::normalize(glm::cross(getCameraDirection(), glm::vec3(0, 1, 0)));
-    glm::vec3 up = glm::vec3(0, 1, 0);
-    cameraTarget -= right * delta.x * panSpeed;
-    cameraTarget += up * delta.y * panSpeed;
+    if (orthographicMode) {
+      // In orthographic mode, pan based on view center and width (delta.y sign is inverted)
+      viewCenter -= glm::vec2(delta.x, -delta.y) * (viewWidth / 400.0f); // Adjust based on window width
+    } else {
+      // In perspective mode, pan based on camera target and distance
+      glm::vec3 up = glm::vec3(0, 1, 0);
+      float panSpeed = cameraDistance * 0.002f;
+      glm::vec3 right = glm::normalize(glm::cross(getCameraDirection(), up));
+      cameraTarget -= right * delta.x * panSpeed;
+      cameraTarget += up * delta.y * panSpeed;
+    }
   }
 }
 
 void GcodeViewer::onScroll(double yoffset) {
   cameraDistance *= std::pow(0.9f, yoffset);  // Smooth zoom
   cameraDistance = glm::clamp(cameraDistance, 1.0f, 500.0f);
-
-  std::cout << "cameraDistance: " << cameraDistance << std::endl;
-  //@@@ ----------> IN MODALITA' ORTOGONALE NON FUNZIONA, DEVO AGGIORNARE LA PROJECTION
 }
 
 glm::vec3 GcodeViewer::getCameraDirection() {
@@ -253,8 +183,138 @@ glm::vec3 GcodeViewer::getCameraDirection() {
   ));
 }
 
+// view matrix
 glm::mat4 GcodeViewer::getViewMatrix() {
   glm::vec3 direction = getCameraDirection();
   glm::vec3 cameraPos = cameraTarget - direction * cameraDistance;
-  return glm::lookAt(cameraPos, cameraTarget, glm::vec3(0, 1, 0));
+  glm::vec3 up = glm::vec3(0, 1, 0);
+  return glm::lookAt(cameraPos, cameraTarget, up);
 }
+
+// projection matrix
+glm::mat4 GcodeViewer::getProjectionMatrix() {
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+    float aspect = static_cast<float>(width) / static_cast<float>(height);
+
+    // Apply zoom factor to the base view width
+    float zoomedWidth = viewWidth * (INITIAL_CAMERA_DISTANCE / cameraDistance);
+    float halfWidth = zoomedWidth * 0.5f;
+    float halfHeight = halfWidth / aspect;
+
+    float left = viewCenter.x - halfWidth;
+    float right = viewCenter.x + halfWidth;
+    float bottom = viewCenter.y - halfHeight;
+    float top = viewCenter.y + halfHeight;
+
+    return glm::ortho(left, right, bottom, top, -1000.0f, 1000.0f);
+}
+
+void GcodeViewer::initAxes() {
+    if (axesInitialized) return;
+
+    // 3 axis segments, each from origin to positive direction
+    std::vector<float> axesVertices = {
+        0.0f, 0.0f, 0.0f,   AXES_LENGTH, 0.0f, 0.0f,  // X (red)
+        0.0f, 0.0f, 0.0f,   0.0f, AXES_LENGTH, 0.0f,  // Y (green)
+        0.0f, 0.0f, 0.0f,   0.0f, 0.0f, AXES_LENGTH   // Z (blue)
+    };
+
+    glGenVertexArrays(1, &axesVAO);
+    glGenBuffers(1, &axesVBO);
+
+    glBindVertexArray(axesVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, axesVBO);
+    glBufferData(GL_ARRAY_BUFFER, axesVertices.size() * sizeof(float), axesVertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+
+    axesInitialized = true;
+}
+
+void GcodeViewer::drawAxes() {
+    initAxes();
+    
+    glBindVertexArray(axesVAO);
+
+    // Red X axis
+    shader->setVec3("uColor", glm::vec3(1.0f, 0.0f, 0.0f));
+    glDrawArrays(GL_LINES, 0, 2);
+
+    // Green Y axis
+    shader->setVec3("uColor", glm::vec3(0.0f, 1.0f, 0.0f));
+    glDrawArrays(GL_LINES, 2, 2);
+
+    // Blue Z axis
+    shader->setVec3("uColor", glm::vec3(0.0f, 0.0f, 1.0f));
+    glDrawArrays(GL_LINES, 4, 2);
+
+    glBindVertexArray(0);
+
+}
+
+void GcodeViewer::initToolhead() {
+    if (toolheadInitialized) return;
+
+    std::vector<glm::vec3> vertices;
+
+    for (int i = 0; i < SPHERE_STACKS; ++i) {
+        float phi1 = glm::pi<float>() * float(i) / SPHERE_STACKS;
+        float phi2 = glm::pi<float>() * float(i + 1) / SPHERE_STACKS;
+
+        for (int j = 0; j <= SPHERE_SLICES; ++j) {
+            float theta = 2 * glm::pi<float>() * float(j) / SPHERE_SLICES;
+
+            float x1 = SPHERE_RADIUS * sin(phi1) * cos(theta);
+            float y1 = SPHERE_RADIUS * sin(phi1) * sin(theta);
+            float z1 = SPHERE_RADIUS * cos(phi1);
+
+            float x2 = SPHERE_RADIUS * sin(phi2) * cos(theta);
+            float y2 = SPHERE_RADIUS * sin(phi2) * sin(theta);
+            float z2 = SPHERE_RADIUS * cos(phi2);
+
+            vertices.emplace_back(x1, y1, z1);
+            vertices.emplace_back(x2, y2, z2);
+        }
+    }
+
+    toolheadVertexCount = vertices.size();
+
+    glGenVertexArrays(1, &toolheadVAO);
+    glGenBuffers(1, &toolheadVBO);
+
+    glBindVertexArray(toolheadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, toolheadVBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+    toolheadInitialized = true;
+}
+
+void GcodeViewer::drawToolhead() {
+    initToolhead();
+
+    shader->use();
+    shader->setVec3("uColor", glm::vec3(1.0f, 0.0f, 0.0f));
+
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), toolPosition);
+    glm::mat4 mvp = projection * view * model;
+    shader->setMat4("uProj", mvp);
+
+    glBindVertexArray(toolheadVAO);
+
+    int vertsPerStrip = (SPHERE_SLICES + 1) * 2;
+    int numStrips = toolheadVertexCount / vertsPerStrip;
+
+    for (int i = 0; i < numStrips; ++i) {
+        glDrawArrays(GL_TRIANGLE_STRIP, i * vertsPerStrip, vertsPerStrip);
+    }
+
+    glBindVertexArray(0);
+}
+
