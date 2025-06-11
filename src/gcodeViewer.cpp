@@ -41,14 +41,10 @@ void GcodeViewer::init() {
   shader->use();
 
   // Simple white light coming from the top-left
-  glm::vec3 lightDir = glm::normalize(glm::vec3(-2.0f, -0.0f, 2.0f));
-  shader->setVec3("lightDir", lightDir);
+  shader->setVec3("lightDir", LIGHT_DIRECTION);
 
   // Set up viewport and clear color
   glClearColor(0.1f, 0.1f, 0.1f, 1.f);
-
-  // Set up axes
-  //initAxes();
 
   // Set up toolpath buffers
   setupBuffers();
@@ -145,12 +141,12 @@ void GcodeViewer::drawFrame() {
   shader->setMat4("uModel", glm::mat4(1.0f)); // Identity model matrix for static objects
 
   drawAxes();
-  drawToolpath();
-  // drawTool(); // Uses its own model matrix
+/*   drawToolpath();
   //drawToolhead(); // Uses its own model matrix
   drawWorkpiece(); // Uses its own model matrix (transparent objects last)
-  drawTool(); // Uses its own model matrix
+  drawTool(); // Uses its own model matrix */
 
+  drawWorkpiece2(); //&&&&&
 
   glfwSwapBuffers(window);
 }
@@ -268,6 +264,9 @@ void GcodeViewer::initAxes() {
 
   axesInitialized = true;
 }
+
+
+// =======> USARE UN FLAT SHADER PER GLI ASSI <======== 
 
 void GcodeViewer::drawAxes() {
   initAxes();
@@ -421,9 +420,9 @@ void GcodeViewer::initWorkpiece2(const char* stlPath) {
   glGenBuffers(1, &workpieceVBO2);
   glGenBuffers(1, &workpieceEBO2);
 
-  glBindVertexArray(workpieceVAO);
+  glBindVertexArray(workpieceVAO2);
 
-  glBindBuffer(GL_ARRAY_BUFFER, workpieceVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, workpieceVBO2);
   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, workpieceEBO2);
@@ -444,7 +443,19 @@ void GcodeViewer::initWorkpiece2(const char* stlPath) {
   workpieceVertexCount2 = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
   workpieceInitialized = true;
 
-  std::cout << "Workpiece2 initialized with " << workpieceIndexCount << " indices." << std::endl;
+  std::cout << "Workpiece2 initialized with " << workpieceVertexCount2 << " vertices." << std::endl;
+}
+
+void GcodeViewer::drawWorkpiece2() {
+  initWorkpiece2("models/workpiece_100_100_50_neg.stl"); // Replace with actual STL path
+
+  shader->use();
+  shader->setMat4("uModel", glm::mat4(1.0f));  // or transform if needed
+  shader->setVec4("uColor", glm::vec4(0.7f, 1.0f, 1.0f, 0.85f));  // base color
+
+  glBindVertexArray(workpieceVAO2);
+  glDrawArrays(GL_TRIANGLES, 0, workpieceVertexCount2);
+  glBindVertexArray(0);
 }
 
 void GcodeViewer::initTool(const char* stlPath) {

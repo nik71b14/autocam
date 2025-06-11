@@ -16,6 +16,8 @@
 #define INITIAL_CAMERA_POSITION glm::vec3(0.0f, 0.0f, 50.0f) // Initial camera position
 #define INITIAL_CAMERA_TARGET glm::vec3(0.0f) // Initial camera target position
 
+#define LIGHT_DIRECTION glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)) // Direction of the light source
+
 struct GLFWwindow; // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
 class GcodeViewer {
