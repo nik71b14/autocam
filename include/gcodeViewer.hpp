@@ -44,7 +44,7 @@ private:
     glm::vec3 cameraTarget = glm::vec3(0.0f);                   // Point camera is looking at
     float cameraDistance = INITIAL_CAMERA_DISTANCE;             // Distance from camera to target (for zoom)
     float pitch = 0.0f;                                         // Up/down angle
-    float yaw = 0.0f;                                           // Left/right angle
+    float yaw = 180.0f;                                           // Left/right angle
 
     // Vars for orthographic projection
     glm::vec2 viewCenter = glm::vec2(0.0f);                     // Center of orthographic projection
@@ -86,4 +86,22 @@ private:
 
     void initToolhead();
     void drawToolhead();
+
+    // Workpiece geometry
+    GLuint workpieceVAO = 0;
+    GLuint workpieceVBO = 0;
+    int workpieceVertexCount = 0;
+    bool workpieceInitialized = false;
+
+    void initWorkpiece(const char* stlPath);
+    void drawWorkpiece();
+
+    // Tool geometry
+    GLuint toolVAO = 0;
+    GLuint toolVBO = 0;
+    int toolVertexCount = 0;
+    bool toolInitialized = false;
+
+    void initTool(const char* stlPath);
+    void drawTool();
 };
