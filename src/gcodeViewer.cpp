@@ -10,7 +10,7 @@
 GcodeViewer::GcodeViewer(const std::vector<GcodePoint>& toolpath)
   : toolPosition(0.0f), path(toolpath)  {
   init();
-  setupBuffers();
+  // setupBuffers();
 }
 
 GcodeViewer::~GcodeViewer() {
@@ -40,11 +40,18 @@ void GcodeViewer::init() {
   createShaders();
   shader->use();
 
+  // Simple white light coming from the top-left
+  glm::vec3 lightDir = glm::normalize(glm::vec3(-2.0f, -0.0f, 2.0f));
+  shader->setVec3("lightDir", lightDir);
+
   // Set up viewport and clear color
   glClearColor(0.1f, 0.1f, 0.1f, 1.f);
 
   // Set up axes
   //initAxes();
+
+  // Set up toolpath buffers
+  setupBuffers();
 
   // Set this instance as the user pointer for callbacks
   glfwSetWindowUserPointer(window, this);
