@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
   try {
 
     // GCODE INTERPRETER TESTING ----------------------------------------------
-        GCodeInterpreter interpreter;
+    GCodeInterpreter interpreter;
 
     if (!interpreter.loadFile("gcode/star_pocket.gcode")) {
         std::cerr << "Failed to load G-code file.\n";

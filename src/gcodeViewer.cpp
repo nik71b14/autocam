@@ -166,7 +166,7 @@ void GcodeViewer::drawToolpath() {
 void GcodeViewer::onMouseButton(int button, int action, double xpos, double ypos) {
   if (button == GLFW_MOUSE_BUTTON_LEFT) {
     leftButtonDown = (action == GLFW_PRESS);
-    std::cout << "leftButtonDown: " << leftButtonDown << std::endl;
+    // std::cout << "leftButtonDown: " << leftButtonDown << std::endl;
   }
   if (button == GLFW_MOUSE_BUTTON_RIGHT) {
     rightButtonDown = (action == GLFW_PRESS);
@@ -182,8 +182,8 @@ void GcodeViewer::onMouseMove(double xpos, double ypos) {
   if (leftButtonDown) {
     // Rotate around target
     float sensitivity = 0.3f;
-    yaw += delta.x * sensitivity;
-    pitch += delta.y * sensitivity;
+    yaw -= delta.x * sensitivity;
+    pitch -= delta.y * sensitivity;
     pitch = glm::clamp(pitch, -89.0f, 89.0f);
   }
 
@@ -403,6 +403,48 @@ void GcodeViewer::drawWorkpiece() {
   glBindVertexArray(workpieceVAO);
   glDrawArrays(GL_TRIANGLES, 0, workpieceVertexCount);
   glBindVertexArray(0);
+}
+
+//@@@ Init workpiece considering normals
+void GcodeViewer::initWorkpiece2(const char* stlPath) {
+  if (workpieceInitialized) {
+    return;
+  }
+
+  MeshWithNormals mesh = loadMeshWithNormals(stlPath); // Assumes mesh has .vertices and .indices
+
+  std::vector<float> vertices = mesh.vertices; // flat array of floats (x,y,z,nx,ny,nz,x,y,z,nx,ny,nz,...)
+  std::vector<unsigned int> indices = mesh.indices;
+
+  // Create VAO, VBO, and EBO for the workpiece with normals
+  glGenVertexArrays(1, &workpieceVAO2);
+  glGenBuffers(1, &workpieceVBO2);
+  glGenBuffers(1, &workpieceEBO2);
+
+  glBindVertexArray(workpieceVAO);
+
+  glBindBuffer(GL_ARRAY_BUFFER, workpieceVBO);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, workpieceEBO2);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+  // Position attribute (location = 0)
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+  
+  // Normal attribute (location = 1)
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+  
+  glBindVertexArray(0);
+
+  // Store index count
+  workpieceIndexCount = static_cast<GLsizei>(indices.size());
+  workpieceVertexCount2 = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
+  workpieceInitialized = true;
+
+  std::cout << "Workpiece2 initialized with " << workpieceIndexCount << " indices." << std::endl;
 }
 
 void GcodeViewer::initTool(const char* stlPath) {

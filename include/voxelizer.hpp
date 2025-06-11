@@ -5,6 +5,8 @@
 #include <utility>
 #include <glm/glm.hpp>
 #include <assimp/scene.h>
+#include "meshLoader.hpp"
+#include "meshTypes.hpp"
 
 // Parameters for voxelization
 struct VoxelizationParams {
@@ -17,11 +19,6 @@ struct VoxelizationParams {
   glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f); // Default color (white)
 
   bool preview = false; // Whether to render a preview during voxelization
-};
-
-struct Mesh {
-  std::vector<float> vertices;
-  std::vector<unsigned int> indices;
 };
 
 class Voxelizer {
