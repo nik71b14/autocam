@@ -129,7 +129,7 @@ void GcodeViewer::drawFrame() {
   glEnable(GL_DEPTH_TEST);
   // glDepthFunc(GL_LEQUAL);
   // glDisable(GL_CULL_FACE);
-  glDisable(GL_BLEND);
+  //glDisable(GL_BLEND); // Disable transparency
 
 
   view = getViewMatrix();
@@ -141,10 +141,11 @@ void GcodeViewer::drawFrame() {
   shader->setMat4("uModel", IDENTITY_MODEL); // Identity model matrix for static objects
 
   drawAxes();
-/*   drawToolpath();
+  drawToolpath();
   //drawToolhead(); // Uses its own model matrix
-  drawWorkpiece(); // Uses its own model matrix (transparent objects last)
-  drawTool(); // Uses its own model matrix */
+  //drawWorkpiece(); // Uses its own model matrix (transparent objects last)
+  // drawTool(); // Uses its own model matrix
+  drawTool2(); // Uses its own model matrix
 
   drawWorkpiece2(); //&&&&&
 
@@ -152,8 +153,18 @@ void GcodeViewer::drawFrame() {
 }
 
 void GcodeViewer::drawToolpath() {
+
+  shader_flat->use();
+
+  view = getViewMatrix();
+  projection = getProjectionMatrix();
+
+  shader_flat->setMat4("uModel", IDENTITY_MODEL);
+  shader_flat->setMat4("uView", view);
+  shader_flat->setMat4("uProj", projection);
+
   glBindVertexArray(pathVAO);
-  shader->setVec4("uColor", glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+  shader_flat->setVec4("uColor", glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
   glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(pathVertexCount));
   glBindVertexArray(0);
 }
@@ -414,7 +425,7 @@ void GcodeViewer::drawWorkpiece() {
 
 //@@@ Init workpiece considering normals
 void GcodeViewer::initWorkpiece2(const char* stlPath) {
-  if (workpieceInitialized) {
+  if (workpieceInitialized2) {
     return;
   }
 
@@ -449,7 +460,7 @@ void GcodeViewer::initWorkpiece2(const char* stlPath) {
   // Store index count
   workpieceIndexCount = static_cast<GLsizei>(indices.size());
   workpieceVertexCount2 = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
-  workpieceInitialized = true;
+  workpieceInitialized2 = true;
 
   std::cout << "Workpiece2 initialized with " << workpieceVertexCount2 << " vertices." << std::endl;
 }
@@ -516,5 +527,62 @@ void GcodeViewer::drawTool() {
 
   glBindVertexArray(toolVAO);
   glDrawArrays(GL_TRIANGLES, 0, toolVertexCount);
+  glBindVertexArray(0);
+}
+
+//@@@ Init tool considering normals
+void GcodeViewer::initTool2(const char* stlPath) {
+  if (toolInitialized2) {
+    return;
+  }
+
+  MeshWithNormals mesh = loadMeshWithNormals(stlPath); // Assumes mesh has .vertices and .indices
+
+  std::vector<float> vertices = mesh.vertices; // flat array of floats (x,y,z,nx,ny,nz,x,y,z,nx,ny,nz,...)
+  std::vector<unsigned int> indices = mesh.indices;
+
+  // Create VAO, VBO, and EBO for the tool with normals
+  glGenVertexArrays(1, &toolVAO2);
+  glGenBuffers(1, &toolVBO2);
+  glGenBuffers(1, &toolEBO2);
+
+  glBindVertexArray(toolVAO2);
+
+  glBindBuffer(GL_ARRAY_BUFFER, toolVBO2);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, toolEBO2);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+  // Position attribute (location = 0)
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+  
+  // Normal attribute (location = 1)
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+  
+  glBindVertexArray(0);
+
+  // Store index count
+  toolIndexCount = static_cast<GLsizei>(indices.size());
+  toolVertexCount2 = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
+  toolInitialized = true;
+
+  std::cout << "Tool2 initialized with " << toolVertexCount2 << " vertices." << std::endl;
+}
+
+void GcodeViewer::drawTool2() {
+  initTool2("models/hemispheric_mill_10.stl"); // Replace with actual STL path
+
+  shader->use();
+  shader->setVec4("uColor", glm::vec4(1.0, 0.0f, 0.0f, 1.0f));
+
+  // Pass the model matrix to the shader
+  glm::mat4 model = glm::translate(IDENTITY_MODEL, toolPosition);
+  shader->setMat4("uModel", model);
+
+  glBindVertexArray(toolVAO2);
+  glDrawArrays(GL_TRIANGLES, 0, toolVertexCount2);
   glBindVertexArray(0);
 }

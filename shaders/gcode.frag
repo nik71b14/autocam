@@ -24,7 +24,7 @@ void main() {
     vec3 diffuseColor = uColor.rgb * 0.5 * max(dot(norm, -lightDir), 0.0);
     vec3 finalColor = ambientColor + diffuseColor;
     FragColor = vec4(finalColor, uColor.a);
-
+    // FragColor = vec4(finalColor, 0.5f);
 }
 
 // MODEL WITHOUT NORMALS

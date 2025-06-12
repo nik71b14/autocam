@@ -116,4 +116,14 @@ private:
   bool toolInitialized = false;
   void initTool(const char* stlPath);
   void drawTool();
+
+  // Tool geometry with normals (for shading)
+  GLuint toolVAO2 = 0;
+  GLuint toolVBO2 = 0;
+  GLuint toolEBO2 = 0;
+  int toolIndexCount = 0;
+  int toolVertexCount2 = 0;
+  bool toolInitialized2 = false;
+  void initTool2(const char* stlPath);
+  void drawTool2();
 };
