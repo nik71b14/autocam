@@ -24,6 +24,7 @@ private:
 
   Shader* shader = nullptr;
   Shader* shader_flat = nullptr;
+  Shader* shader_raymarching = nullptr;
   GLFWwindow* window = nullptr;
   glm::vec3 toolPosition;
   glm::mat4 projection, view;
@@ -97,4 +98,12 @@ private:
   bool toolInitialized = false;
   void initTool(const char* stlPath);
   void drawTool();
+
+  // Voxelized object (raymarching)
+  GLuint quadVAO = 0;
+  GLuint quadVBO = 0;
+  GLuint compressedBuffer = 0;
+  GLuint prefixSumBuffer = 0;
+  void initVoxelizedObject();
+  void renderVoxelizedObject();
 };

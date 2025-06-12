@@ -13,6 +13,29 @@ GcodeViewer::GcodeViewer(const std::vector<GcodePoint>& toolpath)
 }
 
 GcodeViewer::~GcodeViewer() {
+
+  // Cleanup
+  if (shader) delete shader;
+  if (shader_flat) delete shader_flat;
+  if (shader_raymarching) delete shader_raymarching;
+  if (window) glfwSetWindowUserPointer(window, nullptr); // Clear user pointer before destroying window
+  if (axesVAO) glDeleteVertexArrays(1, &axesVAO);
+  if (axesVBO) glDeleteBuffers(1, &axesVBO);
+  if (pathVAO) glDeleteVertexArrays(1, &pathVAO);
+  if (pathVBO) glDeleteBuffers(1, &pathVBO);
+  if (toolheadVAO) glDeleteVertexArrays(1, &toolheadVAO);
+  if (toolheadVBO) glDeleteBuffers(1, &toolheadVBO);
+  if (workpieceVAO) glDeleteVertexArrays(1, &workpieceVAO);
+  if (workpieceVBO) glDeleteBuffers(1, &workpieceVBO);
+  if (workpieceEBO) glDeleteBuffers(1, &workpieceEBO);
+  if (toolVAO) glDeleteVertexArrays(1, &toolVAO);
+  if (toolVBO) glDeleteBuffers(1, &toolVBO);
+  if (toolEBO) glDeleteBuffers(1, &toolEBO);
+  if (quadVAO) glDeleteVertexArrays(1, &quadVAO);
+  if (quadVBO) glDeleteBuffers(1, &quadVBO);
+  if (compressedBuffer) glDeleteBuffers(1, &compressedBuffer);
+  if (prefixSumBuffer) glDeleteBuffers(1, &prefixSumBuffer);
+
   if (window) glfwDestroyWindow(window);
   glfwTerminate();
 }
@@ -80,6 +103,7 @@ void GcodeViewer::init() {
 void GcodeViewer::createShaders() {
   shader = new Shader("shaders/gcode.vert", "shaders/gcode.frag");
   shader_flat = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
+  shader_raymarching = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
 }
 
 void GcodeViewer::initToolpath() {
@@ -478,4 +502,42 @@ void GcodeViewer::drawTool() {
   glBindVertexArray(toolVAO);
   glDrawArrays(GL_TRIANGLES, 0, toolVertexCount);
   glBindVertexArray(0);
+}
+
+void GcodeViewer::initVoxelizedObject() {
+  shader_raymarching->use();
+
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
+  //glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+  float quadVertices[] = {
+      -1.0f, -1.0f,  1.0f, -1.0f,  -1.0f,  1.0f,
+      -1.0f,  1.0f,  1.0f, -1.0f,   1.0f,  1.0f,
+  };
+
+  glGenVertexArrays(1, &quadVAO);
+  glGenBuffers(1, &quadVBO);
+  glBindVertexArray(quadVAO);
+  glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+
+  glGenBuffers(1, &compressedBuffer);
+  glGenBuffers(1, &prefixSumBuffer);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData.size() * sizeof(GLuint), prefixSumData.data(), GL_DYNAMIC_COPY);
+
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, compressedBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+}
+
+void GcodeViewer::renderVoxelizedObject() {
+
 }
