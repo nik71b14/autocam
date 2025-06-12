@@ -21,7 +21,6 @@ public:
 
 private:
   void init();
-  void setupBuffers();
 
   Shader* shader = nullptr;
   Shader* shader_flat = nullptr;
@@ -68,6 +67,9 @@ private:
   std::vector<GcodePoint> path;
   unsigned int pathVAO = 0, pathVBO = 0;
   size_t pathVertexCount = 0;
+  // void setupBuffers();
+  bool toolPathInitialized = false;
+  void initToolpath();
   void drawToolpath();
 
   // Toolhead geometry (a sphere)

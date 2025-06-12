@@ -25,7 +25,7 @@ void GcodeViewer::init() {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_DEPTH_BITS, 24);  // Add this line
 
-  window = glfwCreateWindow(800, 600, "G-code Viewer", nullptr, nullptr);
+  window = glfwCreateWindow(INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, "G-code Viewer", nullptr, nullptr);
   if (!window) throw std::runtime_error("Failed to create window");
 
   glfwMakeContextCurrent(window);
@@ -37,19 +37,22 @@ void GcodeViewer::init() {
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   createShaders();
-  shader->use();
 
-  // Simple white light coming from the top-left
+  // Lighting setup
+  shader->use();
   shader->setVec3("lightDir", LIGHT_DIRECTION);
 
   // Set up viewport and clear color
   glClearColor(0.1f, 0.1f, 0.1f, 1.f);
 
-  // Set up toolpath buffers
-  setupBuffers();
-
   // Set this instance as the user pointer for callbacks
   glfwSetWindowUserPointer(window, this);
+
+  // Set viewport size
+  glfwSetFramebufferSizeCallback(window, [](GLFWwindow* win, int width, int height) {
+    (void)win; // Unused parameter cast to avoid warnings
+    glViewport(0, 0, width, height);
+  });
 
   // Mouse callbacks
   glfwSetMouseButtonCallback(window, [](GLFWwindow* win, int button, int action, int mods) {
@@ -79,7 +82,10 @@ void GcodeViewer::createShaders() {
   shader_flat = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
 }
 
-void GcodeViewer::setupBuffers() {
+void GcodeViewer::initToolpath() {
+
+  if (toolPathInitialized) return;
+
   // Setup toolpath line VAO/VBO
   std::vector<float> vertices;
   for (const auto& pt : path) {
@@ -98,6 +104,8 @@ void GcodeViewer::setupBuffers() {
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
   glEnableVertexAttribArray(0);
   glBindVertexArray(0);
+
+  toolPathInitialized = true;
 }
 
 void GcodeViewer::setToolPosition(const glm::vec3& pos) {
@@ -156,6 +164,7 @@ void GcodeViewer::drawFrame() {
 }
 
 void GcodeViewer::drawToolpath() {
+  initToolpath();
 
   shader_flat->use();
 
@@ -169,7 +178,7 @@ void GcodeViewer::drawToolpath() {
 void GcodeViewer::onMouseButton(int button, int action, double xpos, double ypos) {
   if (button == GLFW_MOUSE_BUTTON_LEFT) {
     leftButtonDown = (action == GLFW_PRESS);
-    #ifdef DEBUG_OUTPUT
+    #ifdef DEBUG_OUTPUT_GCODE
     std::cout << "leftButtonDown: " << leftButtonDown << std::endl;
     #endif
   }
@@ -340,7 +349,7 @@ void GcodeViewer::drawToolhead() {
   initToolhead();
 
   shader->use();
-  shader->setVec4("uColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+  shader->setVec4("uColor", TOOL_COLOR);
 
   // Pass the model matrix to the shader
   glm::mat4 model = glm::translate(IDENTITY_MODEL, toolPosition);
@@ -396,7 +405,7 @@ void GcodeViewer::initWorkpiece(const char* stlPath) {
   workpieceVertexCount = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
   workpieceInitialized = true;
 
-  #ifdef DEBUG_OUTPUT
+  #ifdef DEBUG_OUTPUT_GCODE
   std::cout << "Workpiece2 initialized with " << workpieceVertexCount << " vertices." << std::endl;
   #endif
 }
@@ -406,7 +415,7 @@ void GcodeViewer::drawWorkpiece() {
 
   shader->use();
   shader->setMat4("uModel", IDENTITY_MODEL);  // or transform if needed
-  shader->setVec4("uColor", glm::vec4(0.7f, 1.0f, 1.0f, 0.85f));  // base color
+  shader->setVec4("uColor", WORKPIECE_COLOR);  // base color
 
   glBindVertexArray(workpieceVAO);
   glDrawArrays(GL_TRIANGLES, 0, workpieceVertexCount);
@@ -451,7 +460,7 @@ void GcodeViewer::initTool(const char* stlPath) {
   toolVertexCount = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
   toolInitialized = true;
 
-  #ifdef DEBUG_OUTPUT
+  #ifdef DEBUG_OUTPUT_GCODE
   std::cout << "Tool2 initialized with " << toolVertexCount << " vertices." << std::endl;
   #endif
 }
@@ -460,7 +469,7 @@ void GcodeViewer::drawTool() {
   initTool(TOOL_STL_PATH); // Replace with actual STL path
 
   shader->use();
-  shader->setVec4("uColor", glm::vec4(1.0, 0.0f, 0.0f, 1.0f));
+  shader->setVec4("uColor", TOOL_COLOR);
 
   // Pass the model matrix to the shader
   glm::mat4 model = glm::translate(IDENTITY_MODEL, toolPosition);

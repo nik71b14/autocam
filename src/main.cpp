@@ -8,13 +8,9 @@
 #include <assimp/scene.h>
 #include "gcode.hpp"
 #include "gcodeViewer.hpp"
+#include "main_params.hpp"
 
-//#define DEBUG_OUTPUT
 
-const char* STL_PATH = "models/model3_bin.stl";
-//const char* STL_PATH = "models/cone.stl";
-//const char* STL_PATH = "models/cube.stl";
-//const char* STL_PATH = "models/single_face_xy.stl";
 
 int main(int argc, char** argv) {
 
@@ -26,7 +22,7 @@ int main(int argc, char** argv) {
     // GCODE INTERPRETER TESTING ----------------------------------------------
     GCodeInterpreter interpreter;
 
-    if (!interpreter.loadFile("gcode/star_pocket.gcode")) {
+    if (!interpreter.loadFile(GCODE_PATH)) {
         std::cerr << "Failed to load G-code file.\n";
         return 1;
     }
@@ -38,21 +34,17 @@ int main(int argc, char** argv) {
 
     // Extract full toolpath for initial rendering
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
-
-    // Create viewer with toolpath
-    std::cout << "Toolpath size: " << toolpath.size() << std::endl;
     GcodeViewer gCodeViewer(toolpath);
 
-    interpreter.setSpeedFactor(2.0); // Run 2x faster than real time
+    interpreter.setSpeedFactor(SPEED_FACTOR); // Run 2x faster than real time
     interpreter.run();
 
     while (interpreter.isRunning()) {
         glm::vec3 pos = interpreter.getCurrentPosition();
 
-        //@@@ DEBUG
-        // std::cout << "Tool Position: X=" << pos.x
-        //           << " Y=" << pos.y
-        //           << " Z=" << pos.z << std::endl;
+        #ifdef MAIN_DEBUG_OUTPUT
+        std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
+        #endif
 
         // Update viewer with current tool position
         gCodeViewer.setToolPosition(pos);
@@ -93,7 +85,7 @@ int main(int argc, char** argv) {
     // voxelizer.run();
     // auto [compressedData, prefixSumData] = voxelizer.getResults();
 
-    #ifdef DEBUG_OUTPUT
+    #ifdef MAIN_DEBUG_OUTPUT
     std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
     std::cout << "Loaded mesh: " << stlPath << std::endl;
     std::cout << "Number of vertices: " << mesh.vertices.size() / 3 << std::endl;
