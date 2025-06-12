@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
     }
     ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(100, 100, 100));
     ops->clear();
-    delete ops;
+    if (ops) delete ops;
     // ------------------------------------------------------------------------
 
     // VOXEL VIEWER -----------------------------------------------------------

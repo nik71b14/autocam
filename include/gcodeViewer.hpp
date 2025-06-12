@@ -6,6 +6,8 @@
 #include "gcode.hpp"
 #include "shader.hpp"
 #include "gcode_params.hpp"
+#include "voxelizer.hpp"
+#include "boolOps.hpp"
 
 struct GLFWwindow; // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
@@ -100,10 +102,16 @@ private:
   void drawTool();
 
   // Voxelized object (raymarching)
+  BoolOps* ops;
+  std::vector<VoxelObject> quad;
+  VoxelizationParams params;
+  std::vector<unsigned int> compressedData;
+  std::vector<unsigned int> prefixSumData;
   GLuint quadVAO = 0;
   GLuint quadVBO = 0;
   GLuint compressedBuffer = 0;
   GLuint prefixSumBuffer = 0;
-  void initVoxelizedObject();
-  void renderVoxelizedObject();
+  bool quadInitialized = false;
+  void initQuad();
+  void drawQuad();
 };

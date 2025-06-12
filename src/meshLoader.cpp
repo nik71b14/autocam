@@ -92,17 +92,6 @@ MeshWithNormals loadMeshWithNormals(const char* path) {
       }
   }
 
-  //@@@ DEBUG: Print first 10 vertices with normals
-  for (size_t i = 0; i < std::min(vertices.size() / 6, size_t(10)); ++i) {
-    std::cout << "Vertex " << i << ": ("
-          << vertices[i * 6 + 0] << ", "
-          << vertices[i * 6 + 1] << ", "
-          << vertices[i * 6 + 2] << ")  Normal: ("
-          << vertices[i * 6 + 3] << ", "
-          << vertices[i * 6 + 4] << ", "
-          << vertices[i * 6 + 5] << ")\n";
-  }
-
   MeshWithNormals result;
   result.vertices = std::move(vertices);
   result.indices = std::move(indices);

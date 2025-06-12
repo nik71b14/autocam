@@ -10,16 +10,16 @@
 // Assuming VoxelizationParams is defined somewhere
 #include "voxelizer.hpp" // adjust path as needed
 
+struct VoxelObject {
+  VoxelizationParams params;
+  std::vector<GLuint> compressedData;
+  std::vector<GLuint> prefixSumData;
+};
+
 class BoolOps {
 public:
   BoolOps() = default;
   ~BoolOps() { clear(); }
-
-  struct VoxelObject {
-    VoxelizationParams params;
-    std::vector<GLuint> compressedData;
-    std::vector<GLuint> prefixSumData;
-  };
 
   // Load a voxel object from file and store it internally
   bool load(const std::string& filename);

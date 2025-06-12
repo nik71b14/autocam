@@ -15,7 +15,7 @@ uniform int maxTransitions;
 uniform mat4 invViewProj;
 uniform vec3 cameraPos;
 uniform ivec2 screenResolution;
-uniform vec3 color; //&&&
+uniform vec3 color;
 
 bool isInsideVoxel(int x, int y, int z) {
     int columnIndex = y * resolution.x + x;

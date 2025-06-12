@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include "shader.hpp"
 #include "meshLoader.hpp"
+#include "boolOps.hpp"
 
 GcodeViewer::GcodeViewer(const std::vector<GcodePoint>& toolpath)
   : toolPosition(0.0f), path(toolpath)  {
@@ -183,6 +184,7 @@ void GcodeViewer::drawFrame() {
   drawToolpath();     // shader_flat
   drawTool();         // shader
   drawWorkpiece();    // shader
+  drawQuad();         // shader_raymarching
 
   glfwSwapBuffers(window);
 }
@@ -504,7 +506,25 @@ void GcodeViewer::drawTool() {
   glBindVertexArray(0);
 }
 
-void GcodeViewer::initVoxelizedObject() {
+void GcodeViewer::initQuad() {
+  if (quadInitialized) return;
+
+  // Create BoolOps instance and load voxel objects
+  ops = new BoolOps();
+  // =======> Workpiece @@@@@@@
+  if (!ops->load("test/voxelized_obj_1.bin")) {
+    std::cerr << "Failed to load voxelized object." << std::endl;
+  }
+  // =======> Tool @@@@@@@
+  if (!ops->load("test/voxelized_obj_1.bin")) {
+    std::cerr << "Failed to load voxelized object." << std::endl;
+  }
+
+  // Extract workpiece object data
+  params = ops->getObjects()[0].params; // Get voxelization parameters from the first object
+  compressedData = ops->getObjects()[0].compressedData; // Get compressed data from the first object
+  prefixSumData = ops->getObjects()[0].prefixSumData; // Get prefix sum data from the first object
+  
   shader_raymarching->use();
 
   glDisable(GL_DEPTH_TEST);
@@ -525,8 +545,8 @@ void GcodeViewer::initVoxelizedObject() {
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 
-  glGenBuffers(1, &compressedBuffer);
-  glGenBuffers(1, &prefixSumBuffer);
+  glGenBuffers(1, &compressedBuffer); //%%%
+  glGenBuffers(1, &prefixSumBuffer); //%%%
 
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
   glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
@@ -536,8 +556,34 @@ void GcodeViewer::initVoxelizedObject() {
 
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, compressedBuffer);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+
+  quadInitialized = true;
 }
 
-void GcodeViewer::renderVoxelizedObject() {
+void GcodeViewer::drawQuad() {
+  initQuad();
 
+  //@@@ DRAFT, IT IS A DUPLICATE OF THE SAME FUNCTIONS CALLED ELSEWHERE
+  glm::vec3 direction = getCameraDirection();
+  glm::vec3 cameraPos = cameraTarget - direction * cameraDistance;
+  int width, height;
+  glfwGetFramebufferSize(window, &width, &height);
+  //@@@
+
+  shader_raymarching->use();
+  shader_raymarching->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z)); //%%%
+  shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn); //%%%
+
+  // Calculate inverse view-projection matrix
+  glm::mat4 invViewProj = glm::inverse(projection * view);
+
+  shader_raymarching->setMat4("invViewProj", invViewProj);
+  shader_raymarching->setVec3("cameraPos", cameraPos);
+  shader_raymarching->setIVec2("screenResolution", glm::ivec2(width, height));
+  shader_raymarching->setVec3("color", params.color); //%%%
+
+  glBindVertexArray(quadVAO);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+
+  glUseProgram(0);
 }

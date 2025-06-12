@@ -1,4 +1,8 @@
--> Visualizzazione di un oggetto voxelizzato in gcodeViewer
+-> Voxelizzare e creare un file .bin di un blocco 100x100x50 e vedere se viene visualizzato correttamente
+-> Voxelizzare il tool da 10 mm a punta sferica
+-> Verificare che vengano visualizzati correttamente
+
+
 -> "aggancio" di un utensile voxelizzato al punto di lavoro del simulatore gcode
 -> sottrazione dell'utensile voxelizzato dal workpiece passo per passo, durante la simulazione
 
