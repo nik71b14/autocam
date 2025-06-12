@@ -5,20 +5,7 @@
 #include <vector>
 #include "gcode.hpp"
 #include "shader.hpp"
-
-#define AXES_LENGTH 10.0f
-#define SPHERE_STACKS 12
-#define SPHERE_SLICES 24
-#define SPHERE_RADIUS 1.0f
-#define INITIAL_YAW 180.0f // Initial yaw angle for camera
-#define INITIAL_PITCH 0.0f // Initial pitch angle for camera
-#define INITIAL_CAMERA_DISTANCE 50.0f
-#define INITIAL_CAMERA_POSITION glm::vec3(0.0f, 0.0f, 50.0f) // Initial camera position
-#define INITIAL_CAMERA_TARGET glm::vec3(0.0f) // Initial camera target position
-
-#define LIGHT_DIRECTION glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)) // Direction of the light source
-
-#define IDENTITY_MODEL glm::mat4(1.0f) // Identity matrix for model transformations
+#include "gcode_params.hpp"
 
 struct GLFWwindow; // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
@@ -53,8 +40,8 @@ private:
   float yaw = INITIAL_YAW;                               // Left/right angle
 
   // Vars for orthographic projection
-  glm::vec2 viewCenter = glm::vec2(0.0f);                // Center of orthographic projection
-  float viewWidth = 200.0f;                              // Width of orthographic view
+  glm::vec2 viewCenter = INITIAL_VIEW_CENTER;            // Center of orthographic projection
+  float viewWidth = INITIAL_VIEW_WIDTH;                  // Width of orthographic view
 
   glm::vec2 lastMousePos;
   bool leftButtonDown = false;
@@ -91,39 +78,21 @@ private:
   void initToolhead();
   void drawToolhead();
 
-  // Workpiece geometry
+  // Workpiece geometry with normals (for shading)
   GLuint workpieceVAO = 0;
   GLuint workpieceVBO = 0;
+  GLuint workpieceEBO = 0;
   int workpieceVertexCount = 0;
   bool workpieceInitialized = false;
   void initWorkpiece(const char* stlPath);
   void drawWorkpiece();
 
-  // Workpiece geometry with normals (for shading)
-  GLuint workpieceVAO2 = 0;
-  GLuint workpieceVBO2 = 0;
-  GLuint workpieceEBO2 = 0;
-  int workpieceIndexCount = 0;
-  int workpieceVertexCount2 = 0;
-  bool workpieceInitialized2 = false;
-  void initWorkpiece2(const char* stlPath);
-  void drawWorkpiece2();
-
-  // Tool geometry
+  // Tool geometry with normals (for shading)
   GLuint toolVAO = 0;
   GLuint toolVBO = 0;
+  GLuint toolEBO = 0;
   int toolVertexCount = 0;
   bool toolInitialized = false;
   void initTool(const char* stlPath);
   void drawTool();
-
-  // Tool geometry with normals (for shading)
-  GLuint toolVAO2 = 0;
-  GLuint toolVBO2 = 0;
-  GLuint toolEBO2 = 0;
-  int toolIndexCount = 0;
-  int toolVertexCount2 = 0;
-  bool toolInitialized2 = false;
-  void initTool2(const char* stlPath);
-  void drawTool2();
 };
