@@ -18,6 +18,8 @@
 
 #define LIGHT_DIRECTION glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)) // Direction of the light source
 
+#define IDENTITY_MODEL glm::mat4(1.0f) // Identity matrix for model transformations
+
 struct GLFWwindow; // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
 class GcodeViewer {
@@ -35,6 +37,7 @@ private:
   void setupBuffers();
 
   Shader* shader = nullptr;
+  Shader* shader_flat = nullptr;
   GLFWwindow* window = nullptr;
   glm::vec3 toolPosition;
   glm::mat4 projection, view;

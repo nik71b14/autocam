@@ -10,7 +10,6 @@
 GcodeViewer::GcodeViewer(const std::vector<GcodePoint>& toolpath)
   : toolPosition(0.0f), path(toolpath)  {
   init();
-  // setupBuffers();
 }
 
 GcodeViewer::~GcodeViewer() {
@@ -77,6 +76,7 @@ void GcodeViewer::init() {
 
 void GcodeViewer::createShaders() {
   shader = new Shader("shaders/gcode.vert", "shaders/gcode.frag");
+  shader_flat = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
 }
 
 void GcodeViewer::setupBuffers() {
@@ -138,7 +138,7 @@ void GcodeViewer::drawFrame() {
   shader->setMat4("uProj", projection);
   shader->setMat4("uView", view);
 
-  shader->setMat4("uModel", glm::mat4(1.0f)); // Identity model matrix for static objects
+  shader->setMat4("uModel", IDENTITY_MODEL); // Identity model matrix for static objects
 
   drawAxes();
 /*   drawToolpath();
@@ -271,18 +271,27 @@ void GcodeViewer::initAxes() {
 void GcodeViewer::drawAxes() {
   initAxes();
 
+  shader_flat->use();
+
+  view = getViewMatrix();
+  projection = getProjectionMatrix();
+
+  shader_flat->setMat4("uModel", IDENTITY_MODEL);
+  shader_flat->setMat4("uView", view);
+  shader_flat->setMat4("uProj", projection);
+
   glBindVertexArray(axesVAO);
 
   // Red X axis
-  shader->setVec4("uColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+  shader_flat->setVec4("uColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
   glDrawArrays(GL_LINES, 0, 2);
 
   // Green Y axis
-  shader->setVec4("uColor", glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+  shader_flat->setVec4("uColor", glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
   glDrawArrays(GL_LINES, 2, 2);
 
   // Blue Z axis
-  shader->setVec4("uColor", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+  shader_flat->setVec4("uColor", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
   glDrawArrays(GL_LINES, 4, 2);
 
   glBindVertexArray(0);
@@ -335,7 +344,7 @@ void GcodeViewer::drawToolhead() {
   shader->setVec4("uColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
   // Pass the model matrix to the shader
-  glm::mat4 model = glm::translate(glm::mat4(1.0f), toolPosition);
+  glm::mat4 model = glm::translate(IDENTITY_MODEL, toolPosition);
   shader->setMat4("uModel", model);
 
   glBindVertexArray(toolheadVAO);
@@ -396,8 +405,7 @@ void GcodeViewer::drawWorkpiece() {
   shader->setVec4("uColor", glm::vec4(0.6f, 0.6f, 0.6f, 1.0f));
 
   // Pass the model matrix to the shader
-  glm::mat4 model = glm::mat4(1.0f);  // Identity matrix, no translation
-  shader->setMat4("uModel", model);
+  shader->setMat4("uModel", IDENTITY_MODEL);
 
   glBindVertexArray(workpieceVAO);
   glDrawArrays(GL_TRIANGLES, 0, workpieceVertexCount);
@@ -450,7 +458,7 @@ void GcodeViewer::drawWorkpiece2() {
   initWorkpiece2("models/workpiece_100_100_50_neg.stl"); // Replace with actual STL path
 
   shader->use();
-  shader->setMat4("uModel", glm::mat4(1.0f));  // or transform if needed
+  shader->setMat4("uModel", IDENTITY_MODEL);  // or transform if needed
   shader->setVec4("uColor", glm::vec4(0.7f, 1.0f, 1.0f, 0.85f));  // base color
 
   glBindVertexArray(workpieceVAO2);
@@ -503,7 +511,7 @@ void GcodeViewer::drawTool() {
   shader->setVec4("uColor", glm::vec4(1.0, 0.0f, 0.0f, 1.0f));
 
   // Pass the model matrix to the shader
-  glm::mat4 model = glm::translate(glm::mat4(1.0f), toolPosition);
+  glm::mat4 model = glm::translate(IDENTITY_MODEL, toolPosition);
   shader->setMat4("uModel", model);
 
   glBindVertexArray(toolVAO);
