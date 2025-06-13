@@ -512,11 +512,11 @@ void GcodeViewer::initQuad() {
   // Create BoolOps instance and load voxel objects
   ops = new BoolOps();
   // =======> Workpiece @@@@@@@
-  if (!ops->load("test/voxelized_obj_1.bin")) {
+  if (!ops->load(VOXELIZED_WORKPIECE_PATH)) {
     std::cerr << "Failed to load voxelized object." << std::endl;
   }
   // =======> Tool @@@@@@@
-  if (!ops->load("test/voxelized_obj_1.bin")) {
+  if (!ops->load(VOXELIZED_TOOL_PATH)) {
     std::cerr << "Failed to load voxelized object." << std::endl;
   }
 

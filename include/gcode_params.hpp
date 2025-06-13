@@ -30,3 +30,8 @@
 // Lighting
 #define LIGHT_DIRECTION glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)) // Direction of the light source
 
+// Voxelized object
+// #define VOXELIZED_WORKPIECE_PATH "test/workpiece_100_100_50.bin" // Path to the voxelized workpiece
+#define VOXELIZED_WORKPIECE_PATH "test/cone_trunc.bin" // Path to the voxelized workpiece
+#define VOXELIZED_TOOL_PATH "test/hemispheric_mill_10.bin" // Path to the voxelized tool
+

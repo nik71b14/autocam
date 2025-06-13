@@ -146,7 +146,9 @@ void Voxelizer::normalizeMesh() {
   #endif
 
   glm::vec3 size = maxExtents - minExtents;
-  this->scale = 1.0f / std::max(size.x, size.y);
+  // this->scale = 1.0f / std::max(size.x, size.y);
+  this->scale = 1.0f / std::max({size.x, size.y, size.z}); //%%%%% FIX: Use max of all three dimensions
+ 
   glm::vec3 center = (maxExtents + minExtents) * 0.5f;
 
   #ifdef DEBUG_OUTPUT
@@ -316,9 +318,11 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
                   zeroFlags.size() * sizeof(GLuint),
                   zeroFlags.data());
 
-  //glm::mat4 projection = glm::ortho(-0.51f, 0.51f, -0.51f, 0.51f, 0.0f, zSpan);
-  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, 100*zSpan); // Changed here from 1*zSpan to 10*zSpan
-  glm::mat4 view = glm::lookAt(glm::vec3(0, 0, zSpan / 2.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+  // glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, 1.0f);
+  // glm::mat4 view = glm::lookAt(glm::vec3(0, 0, 0.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+
+  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, -1.0f, 1.0f); //%%%%
+  glm::mat4 view = glm::mat4(1.0f);  // Identity matrix //%%%%
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glViewport(0, 0, params.resolutionXYZ.x, params.resolutionXYZ.y);

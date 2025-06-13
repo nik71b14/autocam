@@ -28,6 +28,21 @@ VoxelViewer::VoxelViewer(
   VoxelizationParams params): params(params), compressedData(compressed), prefixSumData(prefixSum){
   initGL();
   setupShaderAndBuffers();
+
+  //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+  // Compute distance ONCE after setup
+  float voxelScale = 1.0f / std::max({
+    params.resolutionXYZ.x,
+    params.resolutionXYZ.y,
+    params.resolutionXYZ.z
+  });
+
+  float radius = 0.5f * glm::length(glm::vec3(params.resolutionXYZ) * voxelScale);
+
+  distance = radius / std::tan(glm::radians(45.0f / 2.0f)) + radius;
+
+  std::cout << "Initial computed distance = " << distance << std::endl;
+  //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 }
 
 VoxelViewer::~VoxelViewer() {
@@ -102,10 +117,9 @@ void VoxelViewer::onMouseButton(int button, int action, int mods) {
 void VoxelViewer::onScroll(double xoffset, double yoffset) {
   (void)xoffset; // Ignore horizontal scroll for now
   distance *= (1.0f - yoffset * 0.1f);
-  distance = glm::clamp(distance, 0.1f, 10.0f);
+  //distance = glm::clamp(distance, 0.1f, 10.0f);
   // std::cout << "Current distance: " << distance << std::endl;
 }
-
 
 void VoxelViewer::setupShaderAndBuffers() {
   raymarchingShader = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
@@ -166,7 +180,12 @@ void VoxelViewer::run() {
     float windowAspect = (float)width / (float)height;
 
     // Calculate object dimensions based on voxelization parameters
-    float voxelScale = 1.0f / std::max(params.resolutionXYZ.x, params.resolutionXYZ.y); // or Z if 3D
+    // float voxelScale = 1.0f / std::max(params.resolutionXYZ.x, params.resolutionXYZ.y); // or Z if 3D
+    float voxelScale = 1.0f / std::max({
+      params.resolutionXYZ.x,
+      params.resolutionXYZ.y,
+      params.resolutionXYZ.z
+    });
     float objectWidth = params.resolutionXYZ.x * voxelScale;
     float objectHeight = params.resolutionXYZ.y * voxelScale;
     float objectAspect = objectWidth / objectHeight;
@@ -194,7 +213,8 @@ void VoxelViewer::run() {
           0.1f, 100.0f
         );
     } else {
-        proj = glm::perspective(glm::radians(45.0f), windowAspect, 0.1f, 100.0f);
+        proj = glm::perspective(glm::radians(45.0f), windowAspect, 0.01f, 1000.0f);
+
     }
     
     // Camera setup

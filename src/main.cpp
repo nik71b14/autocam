@@ -9,7 +9,12 @@
 #include "gcode.hpp"
 #include "gcodeViewer.hpp"
 #include "main_params.hpp"
+#include "utils.hpp"
 
+//#define GCODE_TESTING
+//#define VOXELIZATION_TESTING
+//#define BOOLEAN_OPERATIONS_TESTING
+#define VOXEL_VIEWER_TESTING
 
 
 int main(int argc, char** argv) {
@@ -19,7 +24,19 @@ int main(int argc, char** argv) {
 
   try {
 
+    // VOXELIZATION PARAMETERS ------------------------------------------------
+    VoxelizationParams params;
+    params.resolution = 0.2; // e.g. mm
+    params.color = glm::vec3(0.1f, 0.4f, 0.8f); // Blue color for voxelization
+    params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
+    params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
+    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
+    //params.preview = true; // Enable preview during voxelization
+    // ------------------------------------------------------------------------
+
+
     // GCODE INTERPRETER TESTING ----------------------------------------------
+    #ifdef GCODE_TESTING
     GCodeInterpreter interpreter;
 
     if (!interpreter.loadFile(GCODE_PATH)) {
@@ -57,27 +74,21 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "Simulation finished.\n";
-    // ------------------------------------------------------------------------
-
     exit(EXIT_SUCCESS);
-
-    // VOXELIZATION PARAMETERS ------------------------------------------------
-    VoxelizationParams params;
-    params.resolution = 0.02; // e.g. mm
-    params.color = glm::vec3(0.1f, 0.4f, 0.8f); // Blue color for voxelization
-    params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
-    params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
-    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
-    //params.preview = true; // Enable preview during voxelization
+    #endif // GCODE_TESTING
     // ------------------------------------------------------------------------
 
-    // VOXELIZATION PROCESS ---------------------------------------------------
+    // VOXELIZATION TESTING ---------------------------------------------------
+    #if defined(VOXELIZATION_TESTING) || defined(VOXEL_VIEWER_TESTING)
     Mesh mesh = loadMesh(stlPath);
 
     // 1. Stack-allocate the Voxelizer object, run the voxelization, and save results
     Voxelizer* voxelizer = new Voxelizer(mesh, params);
     voxelizer->run();
-    voxelizer->save("test/voxelized_obj_1.bin"); // Save results to a binary file
+    
+    //voxelizer->save("test/test.bin"); // Save results to a binary file
+    voxelizer->save("test/" + stlToBinName(getFileNameFromPath(STL_PATH))); // Save results to a binary file
+
     auto [compressedData, prefixSumData] = voxelizer->getResults();
 
     // Heap-allocated Voxelizer object (alternative)
@@ -101,9 +112,11 @@ int main(int argc, char** argv) {
     #endif
 
     delete voxelizer;
+    #endif // VOXELIZATION_TESTING
     // ------------------------------------------------------------------------
 
     // BOOLEAN OPERATIONS TESTING ---------------------------------------------
+    #ifdef BOOLEAN_OPERATIONS_TESTING
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
     // Loads object 1
@@ -117,9 +130,12 @@ int main(int argc, char** argv) {
     ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(100, 100, 100));
     ops->clear();
     if (ops) delete ops;
+    exit(EXIT_SUCCESS);
+    #endif // BOOLEAN_OPERATIONS_TESTING
     // ------------------------------------------------------------------------
 
-    // VOXEL VIEWER -----------------------------------------------------------
+    // VOXEL VIEWER TESTING----------------------------------------------------
+    #ifdef VOXEL_VIEWER_TESTING
     //params.resolutionXYZ = voxelizer->getResolutionPx(); // Not needed since params.resolutionXYZ is already set in the VoxelizationParams constructor
     VoxelViewer viewer(
       compressedData,
@@ -137,6 +153,9 @@ int main(int argc, char** argv) {
     //     32
     //   );
     // viewer.run();
+
+    exit(EXIT_SUCCESS);
+    #endif // VOXEL_VIEWER_TESTING
     // ------------------------------------------------------------------------
 
   } catch (const std::exception& e) {
