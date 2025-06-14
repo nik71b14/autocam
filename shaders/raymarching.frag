@@ -1,3 +1,4 @@
+// THIS IS ABOUT OK
 #version 460 core
 
 out vec4 fragColor;
@@ -16,6 +17,7 @@ uniform mat4 invViewProj;
 uniform vec3 cameraPos;
 uniform ivec2 screenResolution;
 uniform vec3 color;
+uniform vec3 physicalScale; //%%%
 
 bool isInsideVoxel(int x, int y, int z) {
     int columnIndex = y * resolution.x + x;

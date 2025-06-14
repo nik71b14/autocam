@@ -158,6 +158,26 @@ void VoxelViewer::setupShaderAndBuffers() {
 
 void VoxelViewer::run() {
 
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+  float maxRes = std::max({
+    params.resolutionXYZ.x,
+    params.resolutionXYZ.y,
+    params.resolutionXYZ.z
+  });
+  glm::vec3 physicalScale(
+      params.resolutionXYZ.x / maxRes,
+      params.resolutionXYZ.y / maxRes,
+      params.resolutionXYZ.z / maxRes
+  );
+  //raymarchingShader->setVec3("physicalScale", physicalScale);
+  std::cout << "physicalScale = (" 
+        << physicalScale.x << ", " 
+        << physicalScale.y << ", " 
+        << physicalScale.z << ")" << std::endl;
+
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
   raymarchingShader->use();
   raymarchingShader->setIVec3("resolution", 
       glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
