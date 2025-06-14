@@ -29,20 +29,30 @@ VoxelViewer::VoxelViewer(
   initGL();
   setupShaderAndBuffers();
 
-  //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-  // Compute distance ONCE after setup
-  float voxelScale = 1.0f / std::max({
-    params.resolutionXYZ.x,
-    params.resolutionXYZ.y,
-    params.resolutionXYZ.z
-  });
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  // // Compute distance ONCE after setup
+  // float voxelScale = 1.0f / std::max({
+  //   params.resolutionXYZ.x,
+  //   params.resolutionXYZ.y,
+  //   params.resolutionXYZ.z
+  // });
+  // float radius = 0.5f * glm::length(glm::vec3(params.resolutionXYZ) * voxelScale);
+  // distance = radius / std::tan(glm::radians(45.0f / 2.0f)) + radius;
+  // std::cout << "Initial computed distance = " << distance << std::endl;
 
-  float radius = 0.5f * glm::length(glm::vec3(params.resolutionXYZ) * voxelScale);
-
+  // Compute distance based on actual bounding box dimensions
+  float halfX = 0.5f;
+  float halfY = 0.5f;
+  float halfZ = params.zSpan * 0.5f;
+  
+  // Calculate bounding sphere radius
+  float radius = glm::length(glm::vec3(halfX, halfY, halfZ));
+  
+  // Calculate distance to fit object in view
   distance = radius / std::tan(glm::radians(45.0f / 2.0f)) + radius;
 
   std::cout << "Initial computed distance = " << distance << std::endl;
-  //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 }
 
 VoxelViewer::~VoxelViewer() {
@@ -158,33 +168,9 @@ void VoxelViewer::setupShaderAndBuffers() {
 
 void VoxelViewer::run() {
 
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  // float normalizedZSpan = params.zSpan;  // This is the normalized Z span from voxelization
-  float normalizedZSpan = 5.0f;  // This is the normalized Z span from voxelization
-  raymarchingShader->setFloat("normalizedZSpan", normalizedZSpan);
-
-  // float maxRes = std::max({
-  //   params.resolutionXYZ.x,
-  //   params.resolutionXYZ.y,
-  //   params.resolutionXYZ.z
-  // });
-  // glm::vec3 physicalScale(
-  //     params.resolutionXYZ.x / maxRes,
-  //     params.resolutionXYZ.y / maxRes,
-  //     params.resolutionXYZ.z / maxRes
-  // );
-  // //raymarchingShader->setVec3("physicalScale", physicalScale);
-  // std::cout << "physicalScale = (" 
-  //       << physicalScale.x << ", " 
-  //       << physicalScale.y << ", " 
-  //       << physicalScale.z << ")" << std::endl;
-
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+  raymarchingShader->setFloat("normalizedZSpan", params.zSpan);  // Add this line
   raymarchingShader->use();
-  raymarchingShader->setIVec3("resolution", 
-      glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
+  raymarchingShader->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
   raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
 
   while (!glfwWindowShouldClose(window)) {
@@ -234,13 +220,20 @@ void VoxelViewer::run() {
         proj = glm::ortho(
           -viewWidth / 2.0f, viewWidth / 2.0f,
           -viewHeight / 2.0f, viewHeight / 2.0f,
-          0.1f, 100.0f
+          -params.zSpan * 0.6f,  // Near plane (negative to include behind camera)
+          params.zSpan * 1.4f    // Far plane
         );
     } else {
-        proj = glm::perspective(glm::radians(45.0f), windowAspect, 0.01f, 1000.0f);
-
+      // Calculate dynamic FOV for better framing
+      float fov = glm::clamp(static_cast<float>(glm::degrees(2.0f * std::atan(1.0f / distance))), 30.0f, 90.0f);
+      proj = glm::perspective(
+          glm::radians(fov),
+          windowAspect,
+          0.1f,
+          distance * 4.0f
+      );
     }
-    
+
     // Camera setup
     // glm::vec3 cameraPos(0, 0, 2.0);
     // glm::vec3 pointToLookAt(0, 0, 0);
@@ -249,12 +242,19 @@ void VoxelViewer::run() {
 
     // Calculate camera position based on pitch, yaw, distance and target (mouse interaction)
     glm::vec3 dir;
-    dir.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    dir.x = -sin(glm::radians(yaw)) * cos(glm::radians(pitch));  // Changed sign
     dir.y = sin(glm::radians(pitch));
-    dir.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    dir.z = cos(glm::radians(yaw)) * cos(glm::radians(pitch));   // Changed from sin to cos
 
-    glm::vec3 cameraPos = target + glm::vec3(panOffset, 0.0f) + (-dir * distance);
-    glm::mat4 view = glm::lookAt(cameraPos, target + glm::vec3(panOffset, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    // Calculate actual center of bounding box
+    float zCenter = 0.0f;  // Since we're symmetric in Z
+    glm::vec3 actualCenter = glm::vec3(0.0f, 0.0f, zCenter);
+    
+    glm::vec3 cameraPos = actualCenter + glm::vec3(panOffset, 0.0f) + (-dir * distance);
+
+    //glm::vec3 up = glm::vec3(1.0f, 0.0f, 0.0f); // Up vector remains unchanged
+    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f); // Up vector remains unchanged
+    glm::mat4 view = glm::lookAt(cameraPos, actualCenter + glm::vec3(panOffset, 0.0f), up);
 
     // Calculate inverse view-projection matrix
     glm::mat4 invViewProj = glm::inverse(proj * view);

@@ -26,12 +26,12 @@ int main(int argc, char** argv) {
 
     // VOXELIZATION PARAMETERS ------------------------------------------------
     VoxelizationParams params;
-    params.resolution = 0.2; // e.g. mm
+    params.resolution = 0.1; // e.g. mm
     params.color = glm::vec3(0.1f, 0.4f, 0.8f); // Blue color for voxelization
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
     //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
-    params.preview = true; // Enable preview during voxelization
+    //params.preview = true; // Enable preview during voxelization
     // ------------------------------------------------------------------------
 
 
@@ -111,6 +111,9 @@ int main(int argc, char** argv) {
           << voxelizer->getResolution() << " [object units]" << std::endl;
     #endif
 
+    // Get updated params
+    params = voxelizer->getParams();
+
     delete voxelizer;
     #endif // VOXELIZATION_TESTING
     // ------------------------------------------------------------------------
@@ -145,15 +148,6 @@ int main(int argc, char** argv) {
     viewer.setOrthographic(false); // Set orthographic projection
     viewer.run(); 
     
-    // VoxelViewer viewer(
-    //     "test/cross_compressedBuffer.bin",
-    //     "test/cross_prefixSumBuffer.bin",
-    //     200,
-    //     200,
-    //     32
-    //   );
-    // viewer.run();
-
     exit(EXIT_SUCCESS);
     #endif // VOXEL_VIEWER_TESTING
     // ------------------------------------------------------------------------

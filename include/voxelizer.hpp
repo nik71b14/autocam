@@ -17,6 +17,7 @@ struct VoxelizationParams {
   size_t maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
   int maxTransitionsPerZColumn = 32;
   glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f); // Default color (white)
+  float zSpan = 1.0f;  //%%%%%%
 
   bool preview = false; // Whether to render a preview during voxelization
 };
@@ -30,6 +31,7 @@ public:
 
     void setMesh(const Mesh& mesh);
     void setParams(const VoxelizationParams& params);
+    VoxelizationParams getParams() const { return this->params; }
 
     void run();
     bool save(const std::string& filename);

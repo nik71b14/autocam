@@ -31,7 +31,7 @@ Voxelizer::Voxelizer(const Mesh& mesh, VoxelizationParams& params): mesh(mesh), 
     indices = mesh.indices;
 
     glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
-    params.resolutionXYZ = res; // Modify params passed in constructor by reference
+    //params.resolutionXYZ = res; // Modify params passed in constructor by reference
     this->params.resolutionXYZ = res; // Modify class member params.resolutionXYZ
 
     normalizeMesh(); // Normalize the mesh vertices
@@ -43,7 +43,7 @@ void Voxelizer::setMesh(const Mesh& newMesh) {
     indices = newMesh.indices;
 
     glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
-    params.resolutionXYZ = res; // Modify params passed in constructor by reference
+    //params.resolutionXYZ = res; // Modify params passed in constructor by reference
     this->params.resolutionXYZ = res; // Modify class member params.resolutionXYZ
 
     normalizeMesh(); // Normalize the mesh vertices
@@ -121,6 +121,8 @@ void Voxelizer::run() {
   if (vertices.empty() || indices.empty()) throw std::runtime_error("Vertices or indices not set.");
 
   float zSpan = computeZSpan();
+  params.zSpan = zSpan; // Modify params passed in constructor by reference
+
   auto [data, prefix] = this->voxelizerZ(vertices, indices, zSpan, params);
 
   this->compressedData = std::move(data);
@@ -148,12 +150,7 @@ void Voxelizer::normalizeMesh() {
   #endif
 
   glm::vec3 size = maxExtents - minExtents;
-  //@@@ QUA SCELGO UNA SCALA T.C. L'OGGETTO SIA CONTENUTO ESATTAMENTE UN UN QUADRATO NEL PIANO XY
-  //@@@ LUNGO L'ASSE Z, L'OGGETTO PUO' ESSERE PIU' GRANDE
-  //@@@ DEVO MODIFICARE projection etc.
   this->scale = 1.0f / std::max(size.x, size.y);
-  //this->scale = 1.0f / std::max({size.x, size.y, size.z}); //%%%%% FIX: Use max of all three dimensions
- 
   glm::vec3 center = (maxExtents + minExtents) * 0.5f;
 
   #ifdef DEBUG_OUTPUT
@@ -328,16 +325,14 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
 
   // Calculate depth along the z direction (distance between min and max z after normalization)
 
-  std::cout << "zSpan: " << zSpan << std::endl; //%%%
-
   //    <)     |           o       |
   //                       | center (absolute position)
   //    | eye
   //    |<---->| near (distance from eye to near plane)
   //    |<------------------------>| far (distance from eye to far plane)
  
-  const float nearPlane = -0.1f; // Near plane distance
-  const float farPlane = zSpan + 0.1f; // Far plane distance, slightly beyond the zSpan
+  const float nearPlane = 0.0f; // Near plane distance
+  const float farPlane = 2.0f * zSpan; // Far plane distance, slightly beyond the zSpan (2x)
 
   // lefe, right, bottom, top represents a 1.0f x 1.0f square in the XY plane, due to the coosen normalization scale
   glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, nearPlane, farPlane);

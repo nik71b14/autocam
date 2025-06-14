@@ -17,7 +17,7 @@ uniform mat4 invViewProj;
 uniform vec3 cameraPos;
 uniform ivec2 screenResolution;
 uniform vec3 color;
-uniform vec3 physicalScale; //%%%
+uniform float normalizedZSpan;  //%%% New uniform for Z span
 
 bool isInsideVoxel(int x, int y, int z) {
     int columnIndex = y * resolution.x + x;
@@ -63,8 +63,11 @@ void main() {
     float aspect = float(screenResolution.x) / float(screenResolution.y);
     
     // Volume bounds (fixed cubic volume in world space)
-    vec3 boxMin = vec3(-0.5, -0.5, -0.5);
-    vec3 boxMax = vec3(0.5, 0.5, 0.5);
+    //vec3 boxMin = vec3(-0.5, -0.5, -0.5);
+    //vec3 boxMax = vec3(0.5, 0.5, 0.5);
+    float zHalf = normalizedZSpan * 0.5; //%%%%
+    vec3 boxMin = vec3(-0.5, -0.5, -zHalf);
+    vec3 boxMax = vec3(0.5, 0.5, zHalf);
     
     // Ray-box intersection
     vec3 invDir = 1.0 / rayDir;
@@ -94,8 +97,13 @@ void main() {
     
     for (int i = 0; i < maxSteps; ++i) {
         // Convert to voxel grid coordinates
-        vec3 normalizedPos = (pos - boxMin) / (boxMax - boxMin);
-        ivec3 ipos = ivec3(floor(normalizedPos * voxelSizeVec));
+        // vec3 normalizedPos = (pos - boxMin) / (boxMax - boxMin);
+        // ivec3 ipos = ivec3(floor(normalizedPos * voxelSizeVec));
+        //%%%%%% Convert to voxel grid coordinates
+        vec3 boxSize = boxMax - boxMin;
+        vec3 normalizedPos = (pos - boxMin) / boxSize;
+        ivec3 ipos = ivec3(floor(normalizedPos * vec3(resolution)));
+
         
         if (all(greaterThanEqual(ipos, ivec3(0))) && 
             all(lessThan(ipos, resolution))) 
