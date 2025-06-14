@@ -33,6 +33,7 @@ Voxelizer::Voxelizer(const Mesh& mesh, VoxelizationParams& params): mesh(mesh), 
     glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
     params.resolutionXYZ = res; // Modify params passed in constructor by reference
     this->params.resolutionXYZ = res; // Modify class member params.resolutionXYZ
+
     normalizeMesh(); // Normalize the mesh vertices
 }
 
@@ -44,6 +45,7 @@ void Voxelizer::setMesh(const Mesh& newMesh) {
     glm::ivec3 res = this->calculateResolutionPx(vertices); // Calculate resolution based on mesh vertices
     params.resolutionXYZ = res; // Modify params passed in constructor by reference
     this->params.resolutionXYZ = res; // Modify class member params.resolutionXYZ
+
     normalizeMesh(); // Normalize the mesh vertices
 }
 
@@ -146,8 +148,11 @@ void Voxelizer::normalizeMesh() {
   #endif
 
   glm::vec3 size = maxExtents - minExtents;
-  // this->scale = 1.0f / std::max(size.x, size.y);
-  this->scale = 1.0f / std::max({size.x, size.y, size.z}); //%%%%% FIX: Use max of all three dimensions
+  //@@@ QUA SCELGO UNA SCALA T.C. L'OGGETTO SIA CONTENUTO ESATTAMENTE UN UN QUADRATO NEL PIANO XY
+  //@@@ LUNGO L'ASSE Z, L'OGGETTO PUO' ESSERE PIU' GRANDE
+  //@@@ DEVO MODIFICARE projection etc.
+  this->scale = 1.0f / std::max(size.x, size.y);
+  //this->scale = 1.0f / std::max({size.x, size.y, size.z}); //%%%%% FIX: Use max of all three dimensions
  
   glm::vec3 center = (maxExtents + minExtents) * 0.5f;
 
@@ -321,8 +326,26 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(
   // glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.0f, 1.0f);
   // glm::mat4 view = glm::lookAt(glm::vec3(0, 0, 0.5f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
-  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, -1.0f, 1.0f); //%%%%
-  glm::mat4 view = glm::mat4(1.0f);  // Identity matrix //%%%%
+  // Calculate depth along the z direction (distance between min and max z after normalization)
+
+  std::cout << "zSpan: " << zSpan << std::endl; //%%%
+
+  //    <)     |           o       |
+  //                       | center (absolute position)
+  //    | eye
+  //    |<---->| near (distance from eye to near plane)
+  //    |<------------------------>| far (distance from eye to far plane)
+ 
+  const float nearPlane = -0.1f; // Near plane distance
+  const float farPlane = zSpan + 0.1f; // Far plane distance, slightly beyond the zSpan
+
+  // lefe, right, bottom, top represents a 1.0f x 1.0f square in the XY plane, due to the coosen normalization scale
+  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, nearPlane, farPlane);
+
+  const glm::vec3 eye = glm::vec3(0, 0, zSpan / 2 + 0.1f); // Camera position
+  const glm::vec3 center = glm::vec3(0, 0, 0); // Point to look at
+  const glm::vec3 up = glm::vec3(0, 1, 0); // Up vector
+  glm::mat4 view = glm::lookAt(eye, center, up);
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glViewport(0, 0, params.resolutionXYZ.x, params.resolutionXYZ.y);

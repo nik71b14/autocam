@@ -57,7 +57,7 @@ private:
   void onScroll(double xoffset, double yoffset);
 
   float pitch = 0.0f;
-  float yaw = 0.0f;
+  float yaw = 90.0f;
   float distance = 2.0f;
   glm::vec3 target = glm::vec3(0.0f);
   glm::vec2 panOffset = glm::vec2(0.0f);
