@@ -17,7 +17,7 @@ uniform mat4 invViewProj;
 uniform vec3 cameraPos;
 uniform ivec2 screenResolution;
 uniform vec3 color;
-uniform float normalizedZSpan;  //%%% New uniform for Z span
+uniform float normalizedZSpan;
 
 bool isInsideVoxel(int x, int y, int z) {
     int columnIndex = y * resolution.x + x;
@@ -39,6 +39,10 @@ bool isInsideVoxel(int x, int y, int z) {
 }
 
 void main() {
+
+    // float normalizedX = gl_FragCoord.x / float(screenResolution.x);
+    // fragColor = vec4(normalizedX, 0.0, 0.0, 1.0);
+    // return;
 
     // fragColor = vec4(0.0, 1.0, 0.0, 1.0);
     // return;
@@ -63,9 +67,7 @@ void main() {
     float aspect = float(screenResolution.x) / float(screenResolution.y);
     
     // Volume bounds (fixed cubic volume in world space)
-    //vec3 boxMin = vec3(-0.5, -0.5, -0.5);
-    //vec3 boxMax = vec3(0.5, 0.5, 0.5);
-    float zHalf = normalizedZSpan * 0.5; //%%%%
+    float zHalf = normalizedZSpan * 0.5;
     vec3 boxMin = vec3(-0.5, -0.5, -zHalf);
     vec3 boxMax = vec3(0.5, 0.5, zHalf);
     
@@ -97,11 +99,10 @@ void main() {
     
     for (int i = 0; i < maxSteps; ++i) {
         // Convert to voxel grid coordinates
-        // vec3 normalizedPos = (pos - boxMin) / (boxMax - boxMin);
-        // ivec3 ipos = ivec3(floor(normalizedPos * voxelSizeVec));
-        //%%%%%% Convert to voxel grid coordinates
         vec3 boxSize = boxMax - boxMin;
         vec3 normalizedPos = (pos - boxMin) / boxSize;
+
+        normalizedPos.x = 1.0 - normalizedPos.x; //%%% Flip X coordinate to match the voxel grid orientation
         ivec3 ipos = ivec3(floor(normalizedPos * vec3(resolution)));
 
         

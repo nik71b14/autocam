@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     params.maxMemoryBudgetBytes = 512 * 1024 * 1024; // 512 MB
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
     //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
-    //params.preview = true; // Enable preview during voxelization
+    // params.preview = true; // Enable preview during voxelization
     // ------------------------------------------------------------------------
 
 
