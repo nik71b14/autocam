@@ -11,19 +11,15 @@
 
 #include "voxelizer.hpp"
 
-VoxelViewer::VoxelViewer(const std::string& compressedFile, const std::string& prefixSumFile,
-                         VoxelizationParams params)
-    : params(params) {
-  if (!loadBinaryFile(compressedFile, compressedData) ||
-      !loadBinaryFile(prefixSumFile, prefixSumData)) {
+VoxelViewer::VoxelViewer(const std::string& compressedFile, const std::string& prefixSumFile, VoxelizationParams params) : params(params) {
+  if (!loadBinaryFile(compressedFile, compressedData) || !loadBinaryFile(prefixSumFile, prefixSumData)) {
     throw std::runtime_error("Failed to load one or both input files");
   }
   initGL();
   setupShaderAndBuffers();
 }
 
-VoxelViewer::VoxelViewer(const std::vector<unsigned int>& compressed,
-                         const std::vector<unsigned int>& prefixSum, VoxelizationParams params)
+VoxelViewer::VoxelViewer(const std::vector<unsigned int>& compressed, const std::vector<unsigned int>& prefixSum, VoxelizationParams params)
     : params(params), compressedData(compressed), prefixSumData(prefixSum) {
   initGL();
   setupShaderAndBuffers();
@@ -73,13 +69,11 @@ void VoxelViewer::initGL() {
   glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
   glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
 
-  window = glfwCreateWindow(params.resolutionXYZ.x, params.resolutionXYZ.y,
-                            "Voxel Transition Viewer", nullptr, nullptr);
+  window = glfwCreateWindow(params.resolutionXYZ.x, params.resolutionXYZ.y, "Voxel Transition Viewer", nullptr, nullptr);
   if (!window) throw std::runtime_error("Failed to create GLFW window");
 
   glfwMakeContextCurrent(window);
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    throw std::runtime_error("Failed to initialize GLAD");
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to initialize GLAD");
 
   // Mouse callbacks
   glfwSetWindowUserPointer(window, this);
@@ -123,11 +117,16 @@ void VoxelViewer::onMouseButton(int button, int action, int mods) {
   lastMousePos = glm::vec2(xpos, ypos);
 }
 
+//%%%
+// void VoxelViewer::onScroll(double xoffset, double yoffset) {
+//   (void)xoffset;  // Ignore horizontal scroll for now
+//   distance *= (1.0f - yoffset * 0.1f);
+// }
+
 void VoxelViewer::onScroll(double xoffset, double yoffset) {
   (void)xoffset;  // Ignore horizontal scroll for now
   distance *= (1.0f - yoffset * 0.1f);
-  // distance = glm::clamp(distance, 0.1f, 10.0f);
-  //  std::cout << "Current distance: " << distance << std::endl;
+  distance = glm::clamp(distance, 0.01f, 100.0f);  // Prevent negative or excessive zoom
 }
 
 void VoxelViewer::setupShaderAndBuffers() {
@@ -155,23 +154,19 @@ void VoxelViewer::setupShaderAndBuffers() {
   glGenBuffers(1, &prefixSumBuffer);
 
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint),
-               compressedData.data(), GL_DYNAMIC_COPY);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
 
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData.size() * sizeof(GLuint),
-               prefixSumData.data(), GL_DYNAMIC_COPY);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData.size() * sizeof(GLuint), prefixSumData.data(), GL_DYNAMIC_COPY);
 
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, compressedBuffer);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
 }
 
 void VoxelViewer::run() {
-  raymarchingShader->setFloat("normalizedZSpan", params.zSpan);  // Add this line
   raymarchingShader->use();
-  raymarchingShader->setIVec3(
-      "resolution",
-      glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
+  raymarchingShader->setFloat("normalizedZSpan", params.zSpan);  // Add this line
+  raymarchingShader->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
   raymarchingShader->setInt("maxTransitions", params.maxTransitionsPerZColumn);
 
   while (!glfwWindowShouldClose(window)) {
@@ -193,8 +188,7 @@ void VoxelViewer::run() {
     // Calculate object dimensions based on voxelization parameters
     // float voxelScale = 1.0f / std::max(params.resolutionXYZ.x, params.resolutionXYZ.y); // or Z
     // if 3D
-    float voxelScale =
-        1.0f / std::max({params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z});
+    float voxelScale = 1.0f / std::max({params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z});
     float objectWidth = params.resolutionXYZ.x * voxelScale;
     float objectHeight = params.resolutionXYZ.y * voxelScale;
     float objectAspect = objectWidth / objectHeight;
@@ -215,17 +209,27 @@ void VoxelViewer::run() {
     // Set up projection matrix
     glm::mat4 proj;
     if (this->ortho) {
-      // Use symmetric frustum that matches window aspect ratio
-      proj = glm::ortho(-viewWidth / 2.0f, viewWidth / 2.0f, -viewHeight / 2.0f, viewHeight / 2.0f,
-                        -params.zSpan * 0.6f,  // Near plane (negative to include behind camera)
-                        params.zSpan * 1.4f    // Far plane
-      );
+      float scale = distance;  // Use distance as scaling factor for ortho bounds
+      proj = glm::ortho(-viewWidth / 2.0f * scale, viewWidth / 2.0f * scale, -viewHeight / 2.0f * scale, viewHeight / 2.0f * scale,
+                        -params.zSpan * 0.6f, params.zSpan * 1.4f);
     } else {
-      // Calculate dynamic FOV for better framing
-      float fov = glm::clamp(static_cast<float>(glm::degrees(2.0f * std::atan(1.0f / distance))),
-                             30.0f, 90.0f);
+      float fov = glm::clamp(static_cast<float>(glm::degrees(2.0f * std::atan(1.0f / distance))), 30.0f, 90.0f);
       proj = glm::perspective(glm::radians(fov), windowAspect, 0.1f, distance * 4.0f);
     }
+
+    //%%%
+    // glm::mat4 proj;
+    // if (this->ortho) {
+    //   // Use symmetric frustum that matches window aspect ratio
+    //   proj = glm::ortho(-viewWidth / 2.0f, viewWidth / 2.0f, -viewHeight / 2.0f, viewHeight / 2.0f,
+    //                     -params.zSpan * 0.6f,  // Near plane (negative to include behind camera)
+    //                     params.zSpan * 1.4f    // Far plane
+    //   );
+    // } else {
+    //   // Calculate dynamic FOV for better framing
+    //   float fov = glm::clamp(static_cast<float>(glm::degrees(2.0f * std::atan(1.0f / distance))), 30.0f, 90.0f);
+    //   proj = glm::perspective(glm::radians(fov), windowAspect, 0.1f, distance * 4.0f);
+    // }
 
     // Camera setup
     // glm::vec3 cameraPos(0, 0, 2.0);

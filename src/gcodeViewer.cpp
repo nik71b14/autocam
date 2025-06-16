@@ -1,25 +1,23 @@
 #include "gcodeViewer.hpp"
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <glad/glad.h>
+
 #include <iostream>
 #include <stdexcept>
-#include "shader.hpp"
-#include "meshLoader.hpp"
-#include "boolOps.hpp"
 
-GcodeViewer::GcodeViewer(const std::vector<GcodePoint>& toolpath)
-  : toolPosition(0.0f), path(toolpath)  {
-  init();
-}
+#include "boolOps.hpp"
+#include "meshLoader.hpp"
+#include "shader.hpp"
+
+GcodeViewer::GcodeViewer(const std::vector<GcodePoint>& toolpath) : toolPosition(0.0f), path(toolpath) { init(); }
 
 GcodeViewer::~GcodeViewer() {
-
   // Cleanup
   if (shader) delete shader;
   if (shader_flat) delete shader_flat;
   if (shader_raymarching) delete shader_raymarching;
-  if (window) glfwSetWindowUserPointer(window, nullptr); // Clear user pointer before destroying window
+  if (window) glfwSetWindowUserPointer(window, nullptr);  // Clear user pointer before destroying window
   if (axesVAO) glDeleteVertexArrays(1, &axesVAO);
   if (axesVBO) glDeleteBuffers(1, &axesVBO);
   if (pathVAO) glDeleteVertexArrays(1, &pathVAO);
@@ -53,8 +51,7 @@ void GcodeViewer::init() {
   if (!window) throw std::runtime_error("Failed to create window");
 
   glfwMakeContextCurrent(window);
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    throw std::runtime_error("Failed to initialize GLAD");
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to initialize GLAD");
 
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
@@ -74,13 +71,13 @@ void GcodeViewer::init() {
 
   // Set viewport size
   glfwSetFramebufferSizeCallback(window, [](GLFWwindow* win, int width, int height) {
-    (void)win; // Unused parameter cast to avoid warnings
+    (void)win;  // Unused parameter cast to avoid warnings
     glViewport(0, 0, width, height);
   });
 
   // Mouse callbacks
   glfwSetMouseButtonCallback(window, [](GLFWwindow* win, int button, int action, int mods) {
-    (void)mods; // Unused parameter cast to avoid warnings
+    (void)mods;  // Unused parameter cast to avoid warnings
     double x, y;
     glfwGetCursorPos(win, &x, &y);
     // viewer is a pointer to the GcodeViewer instance
@@ -94,11 +91,10 @@ void GcodeViewer::init() {
   });
 
   glfwSetScrollCallback(window, [](GLFWwindow* win, double xoffset, double yoffset) {
-    (void)xoffset; // Unused parameter cast to avoid warnings
+    (void)xoffset;  // Unused parameter cast to avoid warnings
     auto* viewer = static_cast<GcodeViewer*>(glfwGetWindowUserPointer(win));
     if (viewer) viewer->onScroll(yoffset);
   });
-
 }
 
 void GcodeViewer::createShaders() {
@@ -108,7 +104,6 @@ void GcodeViewer::createShaders() {
 }
 
 void GcodeViewer::initToolpath() {
-
   if (toolPathInitialized) return;
 
   // Setup toolpath line VAO/VBO
@@ -133,17 +128,11 @@ void GcodeViewer::initToolpath() {
   toolPathInitialized = true;
 }
 
-void GcodeViewer::setToolPosition(const glm::vec3& pos) {
-  toolPosition = pos;
-}
+void GcodeViewer::setToolPosition(const glm::vec3& pos) { toolPosition = pos; }
 
-bool GcodeViewer::shouldClose() const {
-  return glfwWindowShouldClose(window);
-}
+bool GcodeViewer::shouldClose() const { return glfwWindowShouldClose(window); }
 
-void GcodeViewer::pollEvents() {
-  glfwPollEvents();
-}
+void GcodeViewer::pollEvents() { glfwPollEvents(); }
 
 void GcodeViewer::drawFrame() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -162,8 +151,7 @@ void GcodeViewer::drawFrame() {
   glEnable(GL_DEPTH_TEST);
   // glDepthFunc(GL_LEQUAL);
   // glDisable(GL_CULL_FACE);
-  //glDisable(GL_BLEND); // Disable transparency
-
+  // glDisable(GL_BLEND); // Disable transparency
 
   view = getViewMatrix();
   projection = getProjectionMatrix();
@@ -172,19 +160,19 @@ void GcodeViewer::drawFrame() {
   shader->use();
   shader->setMat4("uProj", projection);
   shader->setMat4("uView", view);
-  shader->setMat4("uModel", IDENTITY_MODEL); // Identity model matrix for static objects
+  shader->setMat4("uModel", IDENTITY_MODEL);  // Identity model matrix for static objects
 
   // Default shader for flat objects
   shader_flat->use();
   shader_flat->setMat4("uProj", projection);
   shader_flat->setMat4("uView", view);
-  shader_flat->setMat4("uModel", IDENTITY_MODEL); // Identity model matrix for static objects
+  shader_flat->setMat4("uModel", IDENTITY_MODEL);  // Identity model matrix for static objects
 
-  drawAxes();         // shader_flat
-  drawToolpath();     // shader_flat
-  drawTool();         // shader
-  drawWorkpiece();    // shader
-  drawQuad();         // shader_raymarching
+  drawAxes();       // shader_flat
+  drawToolpath();   // shader_flat
+  drawTool();       // shader
+  drawWorkpiece();  // shader
+  drawQuad();       // shader_raymarching
 
   glfwSwapBuffers(window);
 }
@@ -204,9 +192,9 @@ void GcodeViewer::drawToolpath() {
 void GcodeViewer::onMouseButton(int button, int action, double xpos, double ypos) {
   if (button == GLFW_MOUSE_BUTTON_LEFT) {
     leftButtonDown = (action == GLFW_PRESS);
-    #ifdef DEBUG_OUTPUT_GCODE
+#ifdef DEBUG_OUTPUT_GCODE
     std::cout << "leftButtonDown: " << leftButtonDown << std::endl;
-    #endif
+#endif
   }
   if (button == GLFW_MOUSE_BUTTON_RIGHT) {
     rightButtonDown = (action == GLFW_PRESS);
@@ -230,7 +218,7 @@ void GcodeViewer::onMouseMove(double xpos, double ypos) {
   if (rightButtonDown) {
     if (orthographicMode) {
       // In orthographic mode, pan based on view center and width (delta.y sign is inverted)
-      viewCenter -= glm::vec2(delta.x, -delta.y) * (viewWidth / 400.0f); // Adjust based on window width
+      viewCenter -= glm::vec2(delta.x, -delta.y) * (viewWidth / 400.0f);  // Adjust based on window width
     } else {
       // In perspective mode, pan based on camera target and distance
       glm::vec3 up = glm::vec3(0, 1, 0);
@@ -250,11 +238,7 @@ void GcodeViewer::onScroll(double yoffset) {
 glm::vec3 GcodeViewer::getCameraDirection() {
   float pitchRad = glm::radians(pitch);
   float yawRad = glm::radians(yaw);
-  return glm::normalize(glm::vec3(
-    cos(pitchRad) * sin(yawRad),
-    sin(pitchRad),
-    cos(pitchRad) * cos(yawRad)
-  ));
+  return glm::normalize(glm::vec3(cos(pitchRad) * sin(yawRad), sin(pitchRad), cos(pitchRad) * cos(yawRad)));
 }
 
 // view matrix
@@ -289,9 +273,9 @@ void GcodeViewer::initAxes() {
 
   // 3 axis segments, each from origin to positive direction
   std::vector<float> axesVertices = {
-    0.0f, 0.0f, 0.0f,   AXES_LENGTH, 0.0f, 0.0f,  // X (red)
-    0.0f, 0.0f, 0.0f,   0.0f, AXES_LENGTH, 0.0f,  // Y (green)
-    0.0f, 0.0f, 0.0f,   0.0f, 0.0f, AXES_LENGTH   // Z (blue)
+      0.0f, 0.0f, 0.0f, AXES_LENGTH, 0.0f,        0.0f,        // X (red)
+      0.0f, 0.0f, 0.0f, 0.0f,        AXES_LENGTH, 0.0f,        // Y (green)
+      0.0f, 0.0f, 0.0f, 0.0f,        0.0f,        AXES_LENGTH  // Z (blue)
   };
 
   glGenVertexArrays(1, &axesVAO);
@@ -399,9 +383,9 @@ void GcodeViewer::initWorkpiece(const char* stlPath) {
     return;
   }
 
-  MeshWithNormals mesh = loadMeshWithNormals(stlPath); // Assumes mesh has .vertices and .indices
+  MeshWithNormals mesh = loadMeshWithNormals(stlPath);  // Assumes mesh has .vertices and .indices
 
-  std::vector<float> vertices = mesh.vertices; // flat array of floats (x,y,z,nx,ny,nz,x,y,z,nx,ny,nz,...)
+  std::vector<float> vertices = mesh.vertices;  // flat array of floats (x,y,z,nx,ny,nz,x,y,z,nx,ny,nz,...)
   std::vector<unsigned int> indices = mesh.indices;
 
   // Create VAO, VBO, and EBO for the workpiece with normals
@@ -420,27 +404,27 @@ void GcodeViewer::initWorkpiece(const char* stlPath) {
   // Position attribute (location = 0)
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-  
+
   // Normal attribute (location = 1)
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-  
+
   glBindVertexArray(0);
 
   // Store index count
-  workpieceVertexCount = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
+  workpieceVertexCount = static_cast<int>(vertices.size()) / 6;  // 6 floats per vertex (x,y,z,nx,ny,nz)
   workpieceInitialized = true;
 
-  #ifdef DEBUG_OUTPUT_GCODE
+#ifdef DEBUG_OUTPUT_GCODE
   std::cout << "Workpiece2 initialized with " << workpieceVertexCount << " vertices." << std::endl;
-  #endif
+#endif
 }
 
 void GcodeViewer::drawWorkpiece() {
-  initWorkpiece(WORKPIECE_STL_PATH); // Replace with actual STL path
+  initWorkpiece(WORKPIECE_STL_PATH);  // Replace with actual STL path
 
   shader->use();
-  shader->setMat4("uModel", IDENTITY_MODEL);  // or transform if needed
+  shader->setMat4("uModel", IDENTITY_MODEL);   // or transform if needed
   shader->setVec4("uColor", WORKPIECE_COLOR);  // base color
 
   glBindVertexArray(workpieceVAO);
@@ -454,9 +438,9 @@ void GcodeViewer::initTool(const char* stlPath) {
     return;
   }
 
-  MeshWithNormals mesh = loadMeshWithNormals(stlPath); // Assumes mesh has .vertices and .indices
+  MeshWithNormals mesh = loadMeshWithNormals(stlPath);  // Assumes mesh has .vertices and .indices
 
-  std::vector<float> vertices = mesh.vertices; // flat array of floats (x,y,z,nx,ny,nz,x,y,z,nx,ny,nz,...)
+  std::vector<float> vertices = mesh.vertices;  // flat array of floats (x,y,z,nx,ny,nz,x,y,z,nx,ny,nz,...)
   std::vector<unsigned int> indices = mesh.indices;
 
   // Create VAO, VBO, and EBO for the tool with normals
@@ -475,24 +459,24 @@ void GcodeViewer::initTool(const char* stlPath) {
   // Position attribute (location = 0)
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-  
+
   // Normal attribute (location = 1)
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-  
+
   glBindVertexArray(0);
 
   // Store index count
-  toolVertexCount = static_cast<int>(vertices.size()) / 6; // 6 floats per vertex (x,y,z,nx,ny,nz)
+  toolVertexCount = static_cast<int>(vertices.size()) / 6;  // 6 floats per vertex (x,y,z,nx,ny,nz)
   toolInitialized = true;
 
-  #ifdef DEBUG_OUTPUT_GCODE
+#ifdef DEBUG_OUTPUT_GCODE
   std::cout << "Tool2 initialized with " << toolVertexCount << " vertices." << std::endl;
-  #endif
+#endif
 }
 
 void GcodeViewer::drawTool() {
-  initTool(TOOL_STL_PATH); // Replace with actual STL path
+  initTool(TOOL_STL_PATH);  // Replace with actual STL path
 
   shader->use();
   shader->setVec4("uColor", TOOL_COLOR);
@@ -521,20 +505,27 @@ void GcodeViewer::initQuad() {
   }
 
   // Extract workpiece object data
-  params = ops->getObjects()[0].params; // Get voxelization parameters from the first object
-  compressedData = ops->getObjects()[0].compressedData; // Get compressed data from the first object
-  prefixSumData = ops->getObjects()[0].prefixSumData; // Get prefix sum data from the first object
-  
+  params = ops->getObjects()[0].params;                  // Get voxelization parameters from the first object
+
+  //%%%%%%
+  std::cout << "Voxel Params:" << std::endl;
+  std::cout << "  resolutionXYZ: (" << params.resolutionXYZ.x << ", " << params.resolutionXYZ.y << ", " << params.resolutionXYZ.z << ")" << std::endl;
+  std::cout << "  maxTransitionsPerZColumn: " << params.maxTransitionsPerZColumn << std::endl;
+  std::cout << "  zSpan: " << params.zSpan << std::endl;
+  std::cout << "  color: (" << params.color.x << ", " << params.color.y << ", " << params.color.z << ")" << std::endl;
+
+  compressedData = ops->getObjects()[0].compressedData;  // Get compressed data from the first object
+  prefixSumData = ops->getObjects()[0].prefixSumData;    // Get prefix sum data from the first object
+
   shader_raymarching->use();
 
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_BLEND);
-  //glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+  // glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
   float quadVertices[] = {
-      -1.0f, -1.0f,  1.0f, -1.0f,  -1.0f,  1.0f,
-      -1.0f,  1.0f,  1.0f, -1.0f,   1.0f,  1.0f,
+      -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
   };
 
   glGenVertexArrays(1, &quadVAO);
@@ -545,8 +536,8 @@ void GcodeViewer::initQuad() {
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 
-  glGenBuffers(1, &compressedBuffer); //%%%
-  glGenBuffers(1, &prefixSumBuffer); //%%%
+  glGenBuffers(1, &compressedBuffer);  //%%%
+  glGenBuffers(1, &prefixSumBuffer);   //%%%
 
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
   glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
@@ -571,8 +562,9 @@ void GcodeViewer::drawQuad() {
   //@@@
 
   shader_raymarching->use();
-  shader_raymarching->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z)); //%%%
-  shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn); //%%%
+  shader_raymarching->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));  //%%%
+  shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn);                                                   //%%%
+  shader_raymarching->setFloat("normalizedZSpan", params.zSpan);  // Add this line
 
   // Calculate inverse view-projection matrix
   glm::mat4 invViewProj = glm::inverse(projection * view);
@@ -580,7 +572,7 @@ void GcodeViewer::drawQuad() {
   shader_raymarching->setMat4("invViewProj", invViewProj);
   shader_raymarching->setVec3("cameraPos", cameraPos);
   shader_raymarching->setIVec2("screenResolution", glm::ivec2(width, height));
-  shader_raymarching->setVec3("color", params.color); //%%%
+  shader_raymarching->setVec3("color", params.color);  //%%%
 
   glBindVertexArray(quadVAO);
   glDrawArrays(GL_TRIANGLES, 0, 6);

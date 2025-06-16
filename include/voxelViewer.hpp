@@ -10,6 +10,7 @@ struct GLFWwindow; // Forward declaration for GLFW window to avoid including GLF
 
 class VoxelViewer {
 public:
+
   // Constructor from files
   VoxelViewer(
     const std::string& compressedBufferFile,

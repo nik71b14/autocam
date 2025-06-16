@@ -1,93 +1,91 @@
+#include <assimp/scene.h>
+
 #include <iostream>
 #include <stdexcept>
-#include "meshLoader.hpp"
-#include "voxelViewer.hpp"
-#include "voxelizer.hpp"
-#include "voxelizerUtils.hpp"
+
 #include "boolOps.hpp"
-#include <assimp/scene.h>
 #include "gcode.hpp"
 #include "gcodeViewer.hpp"
 #include "main_params.hpp"
+#include "meshLoader.hpp"
 #include "utils.hpp"
+#include "voxelViewer.hpp"
+#include "voxelizer.hpp"
+#include "voxelizerUtils.hpp"
 
-//#define GCODE_TESTING
-//#define VOXELIZATION_TESTING
-//#define BOOLEAN_OPERATIONS_TESTING
-#define VOXEL_VIEWER_TESTING
-
+#define GCODE_TESTING
+// #define VOXELIZATION_TESTING
+// #define BOOLEAN_OPERATIONS_TESTING
+// #define VOXEL_VIEWER_TESTING
 
 int main(int argc, char** argv) {
-
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
   std::cout << "Using STL path: " << stlPath << std::endl;
 
   try {
-
     // VOXELIZATION PARAMETERS ------------------------------------------------
     VoxelizationParams params;
     params.resolution = RESOLUTION;
     params.color = WHITE;
     params.maxMemoryBudgetBytes = MEM_512MB;
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
-    //params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
-    // params.preview = true; // Enable preview during voxelization
-    // ------------------------------------------------------------------------
+// params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
+//  params.preview = true; // Enable preview during voxelization
+//  ------------------------------------------------------------------------
 
-
-    // GCODE INTERPRETER TESTING ----------------------------------------------
-    #ifdef GCODE_TESTING
+// GCODE INTERPRETER TESTING ----------------------------------------------
+#ifdef GCODE_TESTING
     GCodeInterpreter interpreter;
 
     if (!interpreter.loadFile(GCODE_PATH)) {
-        std::cerr << "Failed to load G-code file.\n";
-        return 1;
+      std::cerr << "Failed to load G-code file.\n";
+      return 1;
     }
 
     if (!interpreter.checkFile()) {
-        std::cerr << "Invalid G-code file.\n";
-        return 1;
+      std::cerr << "Invalid G-code file.\n";
+      return 1;
     }
 
     // Extract full toolpath for initial rendering
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
     GcodeViewer gCodeViewer(toolpath);
 
-    interpreter.setSpeedFactor(SPEED_FACTOR); // Run 2x faster than real time
+    interpreter.setSpeedFactor(SPEED_FACTOR);  // Run 2x faster than real time
     interpreter.run();
 
     while (interpreter.isRunning()) {
-        glm::vec3 pos = interpreter.getCurrentPosition();
+      glm::vec3 pos = interpreter.getCurrentPosition();
 
-        #ifdef MAIN_DEBUG_OUTPUT
-        std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
-        #endif
+#ifdef MAIN_DEBUG_OUTPUT
+      std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
+#endif
 
-        // Update viewer with current tool position
-        gCodeViewer.setToolPosition(pos);
+      // Update viewer with current tool position
+      gCodeViewer.setToolPosition(pos);
 
-        // Handle input and draw
-        gCodeViewer.pollEvents();
-        gCodeViewer.drawFrame();
+      // Handle input and draw
+      gCodeViewer.pollEvents();
+      gCodeViewer.drawFrame();
 
-        //std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      // std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "Simulation finished.\n";
     exit(EXIT_SUCCESS);
-    #endif // GCODE_TESTING
-    // ------------------------------------------------------------------------
+#endif  // GCODE_TESTING
+// ------------------------------------------------------------------------
 
-    // VOXELIZATION TESTING ---------------------------------------------------
-    #if defined(VOXELIZATION_TESTING) || defined(VOXEL_VIEWER_TESTING)
+// VOXELIZATION TESTING ---------------------------------------------------
+#if defined(VOXELIZATION_TESTING) || defined(VOXEL_VIEWER_TESTING)
     Mesh mesh = loadMesh(stlPath);
 
     // 1. Stack-allocate the Voxelizer object, run the voxelization, and save results
     Voxelizer* voxelizer = new Voxelizer(mesh, params);
     voxelizer->run();
-    
-    //voxelizer->save("test/test.bin"); // Save results to a binary file
-    voxelizer->save("test/" + stlToBinName(getFileNameFromPath(STL_PATH))); // Save results to a binary file
+
+    // voxelizer->save("test/test.bin"); // Save results to a binary file
+    voxelizer->save("test/" + stlToBinName(getFileNameFromPath(STL_PATH)));  // Save results to a binary file
 
     auto [compressedData, prefixSumData] = voxelizer->getResults();
 
@@ -96,30 +94,26 @@ int main(int argc, char** argv) {
     // voxelizer.run();
     // auto [compressedData, prefixSumData] = voxelizer.getResults();
 
-    #ifdef MAIN_DEBUG_OUTPUT
+#ifdef MAIN_DEBUG_OUTPUT
     std::cout << "Optimal slices per block (power of 2): " << params.slicesPerBlock << std::endl;
     std::cout << "Loaded mesh: " << stlPath << std::endl;
     std::cout << "Number of vertices: " << mesh.vertices.size() / 3 << std::endl;
     std::cout << "Number of faces: " << mesh.indices.size() / 3 << std::endl;
     std::cout << "Computed scale: " << voxelizer->getScale() << std::endl;
     glm::ivec3 res = voxelizer->getResolutionPx();
-    std::cout << "Voxelization resolution: " 
-          << res.x << " (X) x " 
-          << res.y << " (Y) x " 
-          << res.z << " (Z) [px]" << std::endl;
-    std::cout << "Voxelization resolution: "
-          << voxelizer->getResolution() << " [object units]" << std::endl;
-    #endif
+    std::cout << "Voxelization resolution: " << res.x << " (X) x " << res.y << " (Y) x " << res.z << " (Z) [px]" << std::endl;
+    std::cout << "Voxelization resolution: " << voxelizer->getResolution() << " [object units]" << std::endl;
+#endif
 
     // Get updated params
     params = voxelizer->getParams();
 
     delete voxelizer;
-    #endif // VOXELIZATION_TESTING
-    // ------------------------------------------------------------------------
+#endif  // VOXELIZATION_TESTING
+// ------------------------------------------------------------------------
 
-    // BOOLEAN OPERATIONS TESTING ---------------------------------------------
-    #ifdef BOOLEAN_OPERATIONS_TESTING
+// BOOLEAN OPERATIONS TESTING ---------------------------------------------
+#ifdef BOOLEAN_OPERATIONS_TESTING
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
     // Loads object 1
@@ -134,22 +128,19 @@ int main(int argc, char** argv) {
     ops->clear();
     if (ops) delete ops;
     exit(EXIT_SUCCESS);
-    #endif // BOOLEAN_OPERATIONS_TESTING
-    // ------------------------------------------------------------------------
+#endif  // BOOLEAN_OPERATIONS_TESTING
+// ------------------------------------------------------------------------
 
-    // VOXEL VIEWER TESTING----------------------------------------------------
-    #ifdef VOXEL_VIEWER_TESTING
-    //params.resolutionXYZ = voxelizer->getResolutionPx(); // Not needed since params.resolutionXYZ is already set in the VoxelizationParams constructor
-    VoxelViewer viewer(
-      compressedData,
-      prefixSumData,
-      params
-    );
-    viewer.setOrthographic(false); // Set orthographic projection
-    viewer.run(); 
-    
+// VOXEL VIEWER TESTING----------------------------------------------------
+#ifdef VOXEL_VIEWER_TESTING
+    // params.resolutionXYZ = voxelizer->getResolutionPx(); // Not needed since params.resolutionXYZ is already set in the
+    // VoxelizationParams constructor
+    VoxelViewer viewer(compressedData, prefixSumData, params);
+    viewer.setOrthographic(true);  // Set orthographic projection
+    viewer.run();
+
     exit(EXIT_SUCCESS);
-    #endif // VOXEL_VIEWER_TESTING
+#endif  // VOXEL_VIEWER_TESTING
     // ------------------------------------------------------------------------
 
   } catch (const std::exception& e) {
