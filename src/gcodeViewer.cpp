@@ -30,10 +30,10 @@ GcodeViewer::~GcodeViewer() {
   if (toolVAO) glDeleteVertexArrays(1, &toolVAO);
   if (toolVBO) glDeleteBuffers(1, &toolVBO);
   if (toolEBO) glDeleteBuffers(1, &toolEBO);
-  if (quadVAO) glDeleteVertexArrays(1, &quadVAO);
-  if (quadVBO) glDeleteBuffers(1, &quadVBO);
-  if (compressedBuffer) glDeleteBuffers(1, &compressedBuffer);
-  if (prefixSumBuffer) glDeleteBuffers(1, &prefixSumBuffer);
+  if (workpieceVO_VAO) glDeleteVertexArrays(1, &workpieceVO_VAO);
+  if (workpieceVO_VBO) glDeleteBuffers(1, &workpieceVO_VBO);
+  if (workpieceVO_compressedBuffer) glDeleteBuffers(1, &workpieceVO_compressedBuffer);
+  if (workpieceVO_prefixSumBuffer) glDeleteBuffers(1, &workpieceVO_prefixSumBuffer);
 
   if (window) glfwDestroyWindow(window);
   glfwTerminate();
@@ -169,7 +169,7 @@ void GcodeViewer::drawFrame() {
   shader_flat->setMat4("uModel", IDENTITY_MODEL);  // Identity model matrix for static objects
 
   glDepthMask(GL_FALSE);  // %%%% Don't write to depth buffer
-  drawQuad();             // shader_raymarching
+  drawWorkpieceVO();      // shader_raymarching
   glDepthMask(GL_TRUE);   // %%%% Re-enable depth writes
 
   drawAxes();      // shader_flat
@@ -182,7 +182,7 @@ void GcodeViewer::drawFrame() {
   // Draw transparent volume last %%%%
   // glEnable(GL_BLEND);
   // glDepthMask(GL_FALSE);  // Disable depth writes for transparency
-  // drawQuad();
+  // drawWorkpieceVO();
   // glDepthMask(GL_TRUE);  // Re-enable depth writes
   // glDisable(GL_BLEND);
 }
@@ -500,7 +500,7 @@ void GcodeViewer::drawTool() {
   glBindVertexArray(0);
 }
 
-void GcodeViewer::initQuad() {
+/* void GcodeViewer::initQuad() {
   if (quadInitialized) return;
 
   // Create BoolOps instance and load voxel objects
@@ -537,31 +537,113 @@ void GcodeViewer::initQuad() {
       -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
   };
 
-  glGenVertexArrays(1, &quadVAO);
-  glGenBuffers(1, &quadVBO);
-  glBindVertexArray(quadVAO);
-  glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+  glGenVertexArrays(1, &workpieceVO_VAO);
+  glGenBuffers(1, &workpieceVO_VBO);
+  glBindVertexArray(workpieceVO_VAO);
+  glBindBuffer(GL_ARRAY_BUFFER, workpieceVO_VBO);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 
-  glGenBuffers(1, &compressedBuffer);
-  glGenBuffers(1, &prefixSumBuffer);
+  glGenBuffers(1, &workpieceVO_compressedBuffer);
+  glGenBuffers(1, &workpieceVO_prefixSumBuffer);
 
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_compressedBuffer);
   glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
 
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_prefixSumBuffer);
   glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData.size() * sizeof(GLuint), prefixSumData.data(), GL_DYNAMIC_COPY);
 
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, compressedBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, workpieceVO_compressedBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, workpieceVO_prefixSumBuffer);
 
   quadInitialized = true;
 }
+ */
 
-void GcodeViewer::drawQuad() {
-  initQuad();
+void GcodeViewer::initVO(const std::string& path, VOType type) {
+  //@@@ Tool management
+  if (type == VOType::TOOL) {
+    return;
+  }
+
+  // Create BoolOps instance and load voxel objects
+  if (!ops) {
+    ops = new BoolOps();
+  }
+
+  if (!ops->load(path)) {
+    std::cerr << "Failed to load voxelized object." << std::endl;
+    return;
+  }
+
+#ifdef DEBUG_OUTPUT_GCODE
+  std::cout << "Voxel Params:" << std::endl;
+  std::cout << "  resolutionXYZ: (" << params.resolutionXYZ.x << ", " << params.resolutionXYZ.y << ", " << params.resolutionXYZ.z << ")" << std::endl;
+  std::cout << "  maxTransitionsPerZColumn: " << params.maxTransitionsPerZColumn << std::endl;
+  std::cout << "  zSpan: " << params.zSpan << std::endl;
+  std::cout << "  scale: " << params.scale << std::endl;
+  std::cout << "  color: (" << params.color.x << ", " << params.color.y << ", " << params.color.z << ")" << std::endl;
+#endif
+
+  // If the type is WORKPIECE, setup for visualization
+  if (type == VOType::WORKPIECE) {
+    // Extract workpiece object data
+    params = ops->getObjects().back().params;  // Get voxelization parameters from the last object
+
+    // Clean all buffers and VAOs
+    if (workpieceVO_VAO) glDeleteVertexArrays(1, &workpieceVO_VAO);
+    if (workpieceVO_VBO) glDeleteBuffers(1, &workpieceVO_VBO);
+    if (workpieceVO_compressedBuffer) glDeleteBuffers(1, &workpieceVO_compressedBuffer);
+    if (workpieceVO_prefixSumBuffer) glDeleteBuffers(1, &workpieceVO_prefixSumBuffer);
+    workpieceVO_VAO = 0;
+    workpieceVO_VBO = 0;
+    workpieceVO_compressedBuffer = 0;
+    workpieceVO_prefixSumBuffer = 0;
+
+    std::vector<unsigned int> compressedData;
+    std::vector<unsigned int> prefixSumData;
+
+    compressedData = ops->getObjects().back().compressedData;  // Get compressed data from the first object
+    prefixSumData = ops->getObjects().back().prefixSumData;    // Get prefix sum data from the first object
+
+    shader_raymarching->use();
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+    float quadVertices[] = {
+        -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
+    };
+
+    glGenVertexArrays(1, &workpieceVO_VAO);
+    glGenBuffers(1, &workpieceVO_VBO);
+    glBindVertexArray(workpieceVO_VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, workpieceVO_VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+
+    glGenBuffers(1, &workpieceVO_compressedBuffer);
+    glGenBuffers(1, &workpieceVO_prefixSumBuffer);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_compressedBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_prefixSumBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData.size() * sizeof(GLuint), prefixSumData.data(), GL_DYNAMIC_COPY);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, workpieceVO_compressedBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, workpieceVO_prefixSumBuffer);
+
+    return;
+  }
+
+  if (type == VOType::TOOL) {
+  }
+}
+
+void GcodeViewer::drawWorkpieceVO() {
+  // initQuad(); //%%%%%
 
   glm::vec3 direction = getCameraDirection();
   glm::vec3 cameraPos = cameraTarget - direction * cameraDistance;
@@ -592,8 +674,59 @@ void GcodeViewer::drawQuad() {
   shader_raymarching->setIVec2("screenResolution", glm::ivec2(width, height));
   shader_raymarching->setVec3("color", params.color);
 
-  glBindVertexArray(quadVAO);
+  glBindVertexArray(workpieceVO_VAO);
   glDrawArrays(GL_TRIANGLES, 0, 6);
 
   glUseProgram(0);
+}
+
+void GcodeViewer::initWorkpieceVO(const std::string& path) { initVO(path, VOType::WORKPIECE); }
+
+void GcodeViewer::initToolVO(const std::string& path) { initVO(path, VOType::TOOL); }
+
+void GcodeViewer::carve(glm::vec3 pos) {
+  // std::cout << "Carve position: (" << pos.x << ", " << pos.y << ", " << pos.z << ")" << std::endl;
+  // return;
+
+  glm::vec3 carvePosition = pos - glm::vec3(0.0f, 0.0f, -30.0f);  // Adjust position to center the tool
+  ops->subtract(ops->getObjects()[0], ops->getObjects()[1], carvePosition);
+
+  // Update the voxelized workpiece object after carving
+  const auto& obj = ops->getObjects()[0];
+  params = obj.params;
+
+  if (workpieceVO_VAO) glDeleteVertexArrays(1, &workpieceVO_VAO);
+  if (workpieceVO_VBO) glDeleteBuffers(1, &workpieceVO_VBO);
+  if (workpieceVO_compressedBuffer) glDeleteBuffers(1, &workpieceVO_compressedBuffer);
+  if (workpieceVO_prefixSumBuffer) glDeleteBuffers(1, &workpieceVO_prefixSumBuffer);
+  workpieceVO_VAO = 0;
+  workpieceVO_VBO = 0;
+  workpieceVO_compressedBuffer = 0;
+  workpieceVO_prefixSumBuffer = 0;
+
+  shader_raymarching->use();
+
+  float quadVertices[] = {
+      -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
+  };
+
+  glGenVertexArrays(1, &workpieceVO_VAO);
+  glGenBuffers(1, &workpieceVO_VBO);
+  glBindVertexArray(workpieceVO_VAO);
+  glBindBuffer(GL_ARRAY_BUFFER, workpieceVO_VBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+
+  glGenBuffers(1, &workpieceVO_compressedBuffer);
+  glGenBuffers(1, &workpieceVO_prefixSumBuffer);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_compressedBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj.compressedData.size() * sizeof(GLuint), obj.compressedData.data(), GL_DYNAMIC_COPY);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_prefixSumBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj.prefixSumData.size() * sizeof(GLuint), obj.prefixSumData.data(), GL_DYNAMIC_COPY);
+
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, workpieceVO_compressedBuffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, workpieceVO_prefixSumBuffer);
 }

@@ -10,8 +10,9 @@
 #include "shader.hpp"
 #include "voxelizer.hpp"
 
-// Projection type enum
+// Enums 
 enum class ProjectionType { ORTHOGRAPHIC, PERSPECTIVE };
+enum class VOType { WORKPIECE, TOOL };
 
 struct GLFWwindow;  // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
@@ -20,14 +21,20 @@ class GcodeViewer {
   GcodeViewer(const std::vector<GcodePoint>& toolpath);
   ~GcodeViewer();
 
-  void setToolPosition(const glm::vec3& pos);
-  void setProjectionType(ProjectionType type) { projectionType = type; };
-  bool shouldClose() const;
   void pollEvents();
   void drawFrame();
+  void carve(glm::vec3 pos);
+
+  // Set Voxelized Objects (VO)
+  void setWorkpieceVO(std::string workpiecePath) { initWorkpieceVO(workpiecePath.c_str()); };
+  void setToolVO(std::string toolPath) { initToolVO(toolPath.c_str()); };
+
+  void setToolPosition(const glm::vec3& pos);
+  void setProjectionType(ProjectionType type) { projectionType = type; };
 
  private:
   void init();
+  bool shouldClose() const;
 
   Shader* shader = nullptr;
   Shader* shader_flat = nullptr;
@@ -107,17 +114,20 @@ class GcodeViewer {
   void initTool(const char* stlPath);
   void drawTool();
 
-  // Voxelized object (raymarching)
-  BoolOps* ops;
-  std::vector<VoxelObject> quad;
+  // Boolean operations for voxel objects
+  BoolOps* ops = nullptr;  // Boolean operations for voxel objects
+  void initVO(const std::string& path, VOType type);
+
+  // Workpiece VO
   VoxelizationParams params;
-  std::vector<unsigned int> compressedData;
-  std::vector<unsigned int> prefixSumData;
-  GLuint quadVAO = 0;
-  GLuint quadVBO = 0;
-  GLuint compressedBuffer = 0;
-  GLuint prefixSumBuffer = 0;
-  bool quadInitialized = false;
-  void initQuad();
-  void drawQuad();
+  GLuint workpieceVO_VAO = 0;
+  GLuint workpieceVO_VBO = 0;
+  GLuint workpieceVO_compressedBuffer = 0;
+  GLuint workpieceVO_prefixSumBuffer = 0;
+  void initWorkpieceVO(const std::string& path);
+  void drawWorkpieceVO();
+
+  // Tool VO
+  void initToolVO(const std::string& path);
+
 };

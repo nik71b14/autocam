@@ -13,9 +13,9 @@
 #include "voxelizer.hpp"
 #include "voxelizerUtils.hpp"
 
-#define GCODE_TESTING
+//  #define GCODE_TESTING
 //  #define VOXELIZATION_TESTING
-//  #define BOOLEAN_OPERATIONS_TESTING
+#define BOOLEAN_OPERATIONS_TESTING
 //  #define VOXEL_VIEWER_TESTING
 
 int main(int argc, char** argv) {
@@ -52,6 +52,8 @@ int main(int argc, char** argv) {
 
     GcodeViewer gCodeViewer(toolpath);
     gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
+    gCodeViewer.setWorkpieceVO("test/workpiece_100_100_50.bin");  // Set workpiece .bin file
+    gCodeViewer.setToolVO("models/hemispheric_mill_10.bin");      // Set tool .bin file)
 
     interpreter.setSpeedFactor(SPEED_FACTOR);  // Run 2x faster than real time
     interpreter.run();
@@ -68,6 +70,7 @@ int main(int argc, char** argv) {
 
       // Handle input and draw
       gCodeViewer.pollEvents();
+      gCodeViewer.carve(pos);  // Carve the workpiece with the tool
       gCodeViewer.drawFrame();
 
       // std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -119,14 +122,27 @@ int main(int argc, char** argv) {
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
     // Loads object 1
-    if (!ops->load("test/voxelized_obj_1.bin")) {
+    if (!ops->load("test/workpiece_100_100_50.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
     // Loads object 2
-    if (!ops->load("test/voxelized_obj_1.bin")) {
+    if (!ops->load("test/hemispheric_mill_10.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
-    ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(100, 100, 100));
+
+    int index = 0;
+    for (float mov = 0.0f; mov < 400.0f; mov += 20.0f) {
+      // Subtract the second object from the first with an offset
+      ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(200.0f + mov, 200.0f + mov, -800.0f));
+      index++;
+      std::cout << "Subtraction operation " << index << " completed." << std::endl;
+    }
+    // ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(200.0f, 200.0f, -1000.0f));
+
+    // this->objects[0].params.color = glm::vec3(1.0f, 0.8f, 0.6f);
+    VoxelViewer viewer(ops->getObjects()[0].compressedData, ops->getObjects()[0].prefixSumData, ops->getObjects()[0].params);
+    viewer.run();
+
     ops->clear();
     if (ops) delete ops;
     exit(EXIT_SUCCESS);

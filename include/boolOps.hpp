@@ -1,14 +1,14 @@
 #pragma once
 
 // #include <glad/glad.h>
-#include <string>
-#include <vector>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 // Assuming VoxelizationParams is defined somewhere
-#include "voxelizer.hpp" // adjust path as needed
+#include "voxelizer.hpp"  // adjust path as needed
 
 struct VoxelObject {
   VoxelizationParams params;
@@ -17,7 +17,7 @@ struct VoxelObject {
 };
 
 class BoolOps {
-public:
+ public:
   BoolOps() = default;
   ~BoolOps() { clear(); }
 
@@ -33,6 +33,6 @@ public:
   // Subtract two voxel objects
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
 
-private:
+ private:
   std::vector<VoxelObject> objects;
 };
