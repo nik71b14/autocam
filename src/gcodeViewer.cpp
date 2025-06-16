@@ -178,6 +178,13 @@ void GcodeViewer::drawFrame() {
   // drawWorkpiece();            // shader
 
   glfwSwapBuffers(window);
+
+  // Draw transparent volume last %%%%
+  // glEnable(GL_BLEND);
+  // glDepthMask(GL_FALSE);  // Disable depth writes for transparency
+  // drawQuad();
+  // glDepthMask(GL_TRUE);  // Re-enable depth writes
+  // glDisable(GL_BLEND);
 }
 
 void GcodeViewer::drawToolpath() {
@@ -524,9 +531,6 @@ void GcodeViewer::initQuad() {
 
   shader_raymarching->use();
 
-  glDisable(GL_DEPTH_TEST);
-  glDisable(GL_BLEND);
-  // glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
   float quadVertices[] = {
@@ -574,13 +578,14 @@ void GcodeViewer::drawQuad() {
   glm::mat4 model = glm::mat4(1.0f);
   if (this->projectionType == ProjectionType::ORTHOGRAPHIC) {
     model = glm::scale(model, glm::vec3(1.0f / params.scale));
-    model = glm::translate(model, params.center * params.scale);  // Center the model, considering that params.center is in world coordinates
-    // Note: the x coordinate is flipped in the fragment shader, so we flip the model matrix here
-    model = glm::scale(model, glm::vec3(-1.0f, 1.0f, -1.0f));  // Flip both X and Z axes
+    model = glm::translate(model, params.center * params.scale);
+    model = glm::scale(model, glm::vec3(-1.0f, 1.0f, -1.0f));
   }
 
-  // Calculate inverse view-projection matrix
-  glm::mat4 invViewProj = glm::inverse(projection * view * model);
+  glm::mat4 viewProj = projection * view * model;
+  glm::mat4 invViewProj = glm::inverse(viewProj);
+
+  shader_raymarching->setMat4("viewProj", viewProj);  // <-- NEW: set viewProj matrix
   shader_raymarching->setMat4("invViewProj", invViewProj);
 
   shader_raymarching->setVec3("cameraPos", cameraPos);
