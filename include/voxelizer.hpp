@@ -18,6 +18,7 @@ struct VoxelizationParams {
   int maxTransitionsPerZColumn = 32;
   glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f); // Default color (white)
   float zSpan = 1.0f;  //%%%%%%
+  float scale = 1.0f; // Scale factor for normalization, used to fit the mesh in the voxel grid
 
   bool preview = false; // Whether to render a preview during voxelization
 };
@@ -36,7 +37,7 @@ public:
     void run();
     bool save(const std::string& filename);
     std::pair<std::vector<GLuint>, std::vector<GLuint>> getResults() const;
-    float getScale() const { return scale; };
+    float getScale() const { return params.scale; };
     glm::ivec3 getResolutionPx() const {
         return params.resolutionXYZ;//glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z);
     }
@@ -49,7 +50,7 @@ private:
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
     VoxelizationParams params;
-    float scale = 1.0f; // Scale factor for normalization
+    //float scale = 1.0f; // Scale factor for normalization
 
     std::vector<GLuint> compressedData;
     std::vector<GLuint> prefixSumData;

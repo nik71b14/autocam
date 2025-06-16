@@ -14,9 +14,9 @@
 #include "voxelizerUtils.hpp"
 
 #define GCODE_TESTING
-// #define VOXELIZATION_TESTING
-// #define BOOLEAN_OPERATIONS_TESTING
-// #define VOXEL_VIEWER_TESTING
+//  #define VOXELIZATION_TESTING
+//  #define BOOLEAN_OPERATIONS_TESTING
+//  #define VOXEL_VIEWER_TESTING
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;

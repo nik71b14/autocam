@@ -209,9 +209,16 @@ void VoxelViewer::run() {
     // Set up projection matrix
     glm::mat4 proj;
     if (this->ortho) {
-      float scale = distance;  // Use distance as scaling factor for ortho bounds
-      proj = glm::ortho(-viewWidth / 2.0f * scale, viewWidth / 2.0f * scale, -viewHeight / 2.0f * scale, viewHeight / 2.0f * scale,
-                        -params.zSpan * 0.6f, params.zSpan * 1.4f);
+      float left, right, bottom, top, zNear, zFar;
+
+      left = -viewWidth / 2.0f * distance;
+      right = viewWidth / 2.0f * distance;
+      bottom = -viewHeight / 2.0f * distance;
+      top = viewHeight / 2.0f * distance;
+      zNear = -params.zSpan * 0.6f;  // Near plane (negative to include behind camera)
+      zFar = params.zSpan * 1.4f;    // Far plane
+
+      proj = glm::ortho(left, right, bottom, top, zNear, zFar);
     } else {
       float fov = glm::clamp(static_cast<float>(glm::degrees(2.0f * std::atan(1.0f / distance))), 30.0f, 90.0f);
       proj = glm::perspective(glm::radians(fov), windowAspect, 0.1f, distance * 4.0f);

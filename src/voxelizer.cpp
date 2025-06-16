@@ -150,19 +150,20 @@ void Voxelizer::normalizeMesh() {
   #endif
 
   glm::vec3 size = maxExtents - minExtents;
-  this->scale = 1.0f / std::max(size.x, size.y);
+  //this->scale = 1.0f / std::max(size.x, size.y);
+  this->params.scale = 1.0f / std::max(size.x, size.y);
   glm::vec3 center = (maxExtents + minExtents) * 0.5f;
 
   #ifdef DEBUG_OUTPUT
   std::cout << "Size: (" << size.x << ", " << size.y << ", " << size.z << ")\n";
-  std::cout << "Scale factor: " << scale << "\n";
+  std::cout << "Scale factor: " << params.scale << "\n";
   std::cout << "Center: (" << center.x << ", " << center.y << ", " << center.z << ")\n";
   #endif
 
   // Normalize all vertices in-place
   for (size_t i = 0; i < vertices.size(); i += 3) {
       glm::vec3 v(vertices[i], vertices[i + 1], vertices[i + 2]);
-      v = (v - center) * scale;
+      v = (v - center) * params.scale;
       vertices[i]     = v.x;
       vertices[i + 1] = v.y;
       vertices[i + 2] = v.z;

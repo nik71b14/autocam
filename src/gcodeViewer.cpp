@@ -505,13 +505,15 @@ void GcodeViewer::initQuad() {
   }
 
   // Extract workpiece object data
-  params = ops->getObjects()[0].params;                  // Get voxelization parameters from the first object
+  params = ops->getObjects()[0].params;  // Get voxelization parameters from the first object
 
   //%%%%%%
   std::cout << "Voxel Params:" << std::endl;
-  std::cout << "  resolutionXYZ: (" << params.resolutionXYZ.x << ", " << params.resolutionXYZ.y << ", " << params.resolutionXYZ.z << ")" << std::endl;
+  std::cout << "  resolutionXYZ: (" << params.resolutionXYZ.x << ", " << params.resolutionXYZ.y << ", " << params.resolutionXYZ.z << ")"
+            << std::endl;
   std::cout << "  maxTransitionsPerZColumn: " << params.maxTransitionsPerZColumn << std::endl;
   std::cout << "  zSpan: " << params.zSpan << std::endl;
+  std::cout << "  scale: " << params.scale << std::endl;
   std::cout << "  color: (" << params.color.x << ", " << params.color.y << ", " << params.color.z << ")" << std::endl;
 
   compressedData = ops->getObjects()[0].compressedData;  // Get compressed data from the first object
@@ -554,6 +556,45 @@ void GcodeViewer::initQuad() {
 void GcodeViewer::drawQuad() {
   initQuad();
 
+  glm::vec3 direction = getCameraDirection();
+  glm::vec3 cameraPos = cameraTarget - direction * cameraDistance;
+  int width, height;
+  glfwGetFramebufferSize(window, &width, &height);
+
+  shader_raymarching->use();
+
+  shader_raymarching->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
+  shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn);
+  shader_raymarching->setFloat("normalizedZSpan", params.zSpan);
+
+  // Compute model matrix %%%%%%
+  glm::mat4 model = glm::mat4(1.0f);
+  if (true) {
+    // if (params.projectionType == GcodeViewerParams::ProjectionType::ORTHOGRAPHIC) {
+    model = glm::scale(model, glm::vec3(1.0f / params.scale));
+  }
+
+  // shader_raymarching->setMat4("uModel", model);
+
+  // Calculate inverse view-projection matrix
+  // glm::mat4 invViewProj = glm::inverse(projection * view);
+  glm::mat4 invViewProj = glm::inverse(projection * view * model);  //%%%
+  shader_raymarching->setMat4("invViewProj", invViewProj);
+
+  shader_raymarching->setVec3("cameraPos", cameraPos);
+  shader_raymarching->setIVec2("screenResolution", glm::ivec2(width, height));
+  shader_raymarching->setVec3("color", params.color);
+
+  glBindVertexArray(quadVAO);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+
+  glUseProgram(0);
+}
+
+/*
+void GcodeViewer::drawQuad() {
+  initQuad();
+
   //@@@ DRAFT, IT IS A DUPLICATE OF THE SAME FUNCTIONS CALLED ELSEWHERE
   glm::vec3 direction = getCameraDirection();
   glm::vec3 cameraPos = cameraTarget - direction * cameraDistance;
@@ -562,9 +603,13 @@ void GcodeViewer::drawQuad() {
   //@@@
 
   shader_raymarching->use();
-  shader_raymarching->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));  //%%%
-  shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn);                                                   //%%%
-  shader_raymarching->setFloat("normalizedZSpan", params.zSpan);  // Add this line
+  shader_raymarching->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
+  shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn);
+  shader_raymarching->setFloat("normalizedZSpan", params.zSpan);
+
+  // Scaling
+  glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f / params.scale));
+  shader_raymarching->setMat4("uModel", model);
 
   // Calculate inverse view-projection matrix
   glm::mat4 invViewProj = glm::inverse(projection * view);
@@ -579,3 +624,4 @@ void GcodeViewer::drawQuad() {
 
   glUseProgram(0);
 }
+*/
