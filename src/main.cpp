@@ -127,11 +127,12 @@ int main(int argc, char** argv) {
     }
     // Loads object 2
     if (!ops->load("test/hemispheric_mill_10.bin")) {
+    // if (!ops->load("test/cyl_mill_12.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
 
     int index = 0;
-    for (float mov = 0.0f; mov < 400.0f; mov += 20.0f) {
+    for (float mov = 0.0f; mov < 40.0f; mov += 20.0f) {
       // Subtract the second object from the first with an offset
       ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(200.0f + mov, 200.0f + mov, -800.0f));
       index++;

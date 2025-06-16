@@ -133,6 +133,102 @@ bool BoolOps::load(const std::string& filename) {
   return true;
 }
 
+/*
+bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+    VoxelObject result;
+    result.params = obj1.params;
+    const glm::ivec3& res1 = obj1.params.resolutionXYZ;
+    const glm::ivec3& res2 = obj2.params.resolutionXYZ;
+
+    const auto index = [](int x, int y, int width) { return x + y * width; };
+
+    result.prefixSumData.resize(res1.x * res1.y);
+    std::vector<GLuint> outputTransitions;
+
+    for (int y = 0; y < res1.y; ++y) {
+        for (int x = 0; x < res1.x; ++x) {
+            uint idx1 = index(x, y, res1.x);
+            GLuint start1 = obj1.prefixSumData[idx1];
+            GLuint end1 = (idx1 + 1 < obj1.prefixSumData.size()) ? obj1.prefixSumData[idx1 + 1] : static_cast<GLuint>(obj1.compressedData.size());
+            std::vector<GLuint> z1;
+            if (end1 > start1) {
+                z1 = std::vector<GLuint>(obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
+            }
+
+            int x2 = x - offset.x;
+            int y2 = y - offset.y;
+            int initialBState = 0;  // State at Z=0- (before processing Z=0 events)
+            std::vector<GLuint> z2;
+
+            if (x2 >= 0 && y2 >= 0 && x2 < res2.x && y2 < res2.y) {
+                uint idx2 = index(x2, y2, res2.x);
+                GLuint start2 = obj2.prefixSumData[idx2];
+                GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : static_cast<GLuint>(obj2.compressedData.size());
+                if (end2 > start2) {
+                    for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
+                        int shifted_z = static_cast<int>(*it) + offset.z;
+                        if (shifted_z < 0) {
+                            initialBState = 1 - initialBState;  // Flip for negative Z
+                        } else if (shifted_z < res1.z) {
+                            z2.push_back(static_cast<GLuint>(shifted_z));
+                        }
+                    }
+                }
+            }
+
+            // Create combined event list
+            std::vector<std::pair<GLuint, int>> events;
+            for (GLuint z : z1) events.emplace_back(z, 0);  // obj1 transitions
+            for (GLuint z : z2) events.emplace_back(z, 1);  // obj2 transitions
+            std::sort(events.begin(), events.end());
+
+            // Process events to compute resulting transitions
+            int aState = 0;              // State for obj1
+            int bState = initialBState;   // State for obj2 at Z=0-
+            int currentResultState = (aState && !bState) ? 1 : 0; // State at Z=0-
+            std::vector<GLuint> merged;
+
+            size_t i = 0;
+            while (i < events.size()) {
+                GLuint current_z = events[i].first;
+
+                // Process all events at this Z-coordinate
+                int aCount = 0, bCount = 0;
+                while (i < events.size() && events[i].first == current_z) {
+                    if (events[i].second == 0) aCount++;
+                    else bCount++;
+                    i++;
+                }
+
+                // Update states based on transition counts
+                // Note: States are updated at 'current_z'
+                if (aCount % 2 == 1) aState = 1 - aState;
+                if (bCount % 2 == 1) bState = 1 - bState;
+
+                // Determine new result state after events at 'current_z'
+                int newResultState = (aState && !bState) ? 1 : 0;
+
+                // Record transition if state changed
+                if (newResultState != currentResultState) {
+                    merged.push_back(current_z);
+                    currentResultState = newResultState;
+                }
+            }
+
+            // Store results for this column
+            result.prefixSumData[idx1] = static_cast<GLuint>(outputTransitions.size());
+            outputTransitions.insert(outputTransitions.end(), merged.begin(), merged.end());
+        }
+    }
+
+    result.compressedData = std::move(outputTransitions);
+    const_cast<VoxelObject&>(obj1) = std::move(result);  // Update obj1 with result
+
+    return true;
+}
+*/
+
+/*
 bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   VoxelObject result;
   result.params = obj1.params;
@@ -163,6 +259,7 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
         uint idx2 = index(x2, y2, res2.x);
         GLuint start2 = obj2.prefixSumData[idx2];
         GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : static_cast<GLuint>(obj2.compressedData.size());
+
         if (end2 > start2) {
           for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
             int shifted_z = static_cast<int>(*it) + offset.z;
@@ -224,6 +321,105 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
   result.compressedData = std::move(outputTransitions);
 
   const_cast<VoxelObject&>(obj1) = std::move(result);  // Update obj1 with the result of the subtraction
+
+  return true;
+}
+*/
+
+bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+  VoxelObject result;
+  result.params = obj1.params;
+  const glm::ivec3& res1 = obj1.params.resolutionXYZ;
+  const glm::ivec3& res2 = obj2.params.resolutionXYZ;
+
+  const auto index = [](int x, int y, int width) { return x + y * width; };
+
+  result.prefixSumData.resize(res1.x * res1.y);
+  std::vector<GLuint> outputTransitions;
+
+  for (int y = 0; y < res1.y; ++y) {
+    for (int x = 0; x < res1.x; ++x) {
+      uint idx1 = index(x, y, res1.x);
+      GLuint start1 = obj1.prefixSumData[idx1];
+      GLuint end1 = (idx1 + 1 < obj1.prefixSumData.size()) ? obj1.prefixSumData[idx1 + 1] : static_cast<GLuint>(obj1.compressedData.size());
+
+      std::vector<GLuint> z1;
+      if (end1 > start1) {
+        z1.assign(obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
+      }
+
+      int x2 = x - offset.x;
+      int y2 = y - offset.y;
+
+      int initialBState = 0;
+      std::vector<GLuint> z2;
+
+      if (x2 >= 0 && y2 >= 0 && x2 < res2.x && y2 < res2.y) {
+        uint idx2 = index(x2, y2, res2.x);
+        GLuint start2 = obj2.prefixSumData[idx2];
+        GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : static_cast<GLuint>(obj2.compressedData.size());
+
+        if (end2 > start2) {
+          int transitionsBelowGridBottom = 0;
+          for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
+            int shifted_z = static_cast<int>(*it) + offset.z;
+
+            if (shifted_z < 1) {
+              // This transition is below the grid bottom → affects initial B state
+              transitionsBelowGridBottom++;
+            }
+
+            if (shifted_z >= 0 && shifted_z < res1.z) {
+              // This transition is within the grid → keep
+              z2.push_back(static_cast<GLuint>(shifted_z));
+            }
+          }
+
+          // Determine initial B state at Z = -1
+          initialBState = (transitionsBelowGridBottom % 2 == 1) ? 1 : 0;
+        }
+      }
+
+      std::vector<std::pair<GLuint, int>> events;
+      for (GLuint z : z1) events.emplace_back(z, 0);
+      for (GLuint z : z2) events.emplace_back(z, 1);
+      std::sort(events.begin(), events.end());
+
+      int aState = 0;
+      int bState = initialBState;
+      int currentResultState = (aState && !bState) ? 1 : 0;
+      std::vector<GLuint> merged;
+
+      size_t i = 0;
+      while (i < events.size()) {
+        GLuint current_z = events[i].first;
+        int aCount = 0, bCount = 0;
+
+        while (i < events.size() && events[i].first == current_z) {
+          if (events[i].second == 0)
+            aCount++;
+          else
+            bCount++;
+          i++;
+        }
+
+        if (aCount % 2 == 1) aState = 1 - aState;
+        if (bCount % 2 == 1) bState = 1 - bState;
+
+        int newResultState = (aState && !bState) ? 1 : 0;
+        if (newResultState != currentResultState) {
+          merged.push_back(current_z);
+          currentResultState = newResultState;
+        }
+      }
+
+      result.prefixSumData[idx1] = static_cast<GLuint>(outputTransitions.size());
+      outputTransitions.insert(outputTransitions.end(), merged.begin(), merged.end());
+    }
+  }
+
+  result.compressedData = std::move(outputTransitions);
+  const_cast<VoxelObject&>(obj1) = std::move(result);
 
   return true;
 }
