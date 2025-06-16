@@ -168,11 +168,14 @@ void GcodeViewer::drawFrame() {
   shader_flat->setMat4("uView", view);
   shader_flat->setMat4("uModel", IDENTITY_MODEL);  // Identity model matrix for static objects
 
-  drawAxes();       // shader_flat
-  drawToolpath();   // shader_flat
-  drawTool();       // shader
-  drawWorkpiece();  // shader
-  drawQuad();       // shader_raymarching
+  glDepthMask(GL_FALSE);  // %%%% Don't write to depth buffer
+  drawQuad();             // shader_raymarching
+  glDepthMask(GL_TRUE);   // %%%% Re-enable depth writes
+
+  drawAxes();      // shader_flat
+  drawToolpath();  // shader_flat
+  drawTool();      // shader
+  // drawWorkpiece();            // shader
 
   glfwSwapBuffers(window);
 }
@@ -507,14 +510,14 @@ void GcodeViewer::initQuad() {
   // Extract workpiece object data
   params = ops->getObjects()[0].params;  // Get voxelization parameters from the first object
 
-  //%%%%%%
+#ifdef DEBUG_OUTPUT_GCODE
   std::cout << "Voxel Params:" << std::endl;
-  std::cout << "  resolutionXYZ: (" << params.resolutionXYZ.x << ", " << params.resolutionXYZ.y << ", " << params.resolutionXYZ.z << ")"
-            << std::endl;
+  std::cout << "  resolutionXYZ: (" << params.resolutionXYZ.x << ", " << params.resolutionXYZ.y << ", " << params.resolutionXYZ.z << ")" << std::endl;
   std::cout << "  maxTransitionsPerZColumn: " << params.maxTransitionsPerZColumn << std::endl;
   std::cout << "  zSpan: " << params.zSpan << std::endl;
   std::cout << "  scale: " << params.scale << std::endl;
   std::cout << "  color: (" << params.color.x << ", " << params.color.y << ", " << params.color.z << ")" << std::endl;
+#endif
 
   compressedData = ops->getObjects()[0].compressedData;  // Get compressed data from the first object
   prefixSumData = ops->getObjects()[0].prefixSumData;    // Get prefix sum data from the first object
@@ -538,8 +541,8 @@ void GcodeViewer::initQuad() {
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 
-  glGenBuffers(1, &compressedBuffer);  //%%%
-  glGenBuffers(1, &prefixSumBuffer);   //%%%
+  glGenBuffers(1, &compressedBuffer);
+  glGenBuffers(1, &prefixSumBuffer);
 
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, compressedBuffer);
   glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
@@ -567,18 +570,17 @@ void GcodeViewer::drawQuad() {
   shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn);
   shader_raymarching->setFloat("normalizedZSpan", params.zSpan);
 
-  // Compute model matrix %%%%%%
+  // Compute model matrix, scaling back based on params.scale
   glm::mat4 model = glm::mat4(1.0f);
-  if (true) {
-    // if (params.projectionType == GcodeViewerParams::ProjectionType::ORTHOGRAPHIC) {
+  if (this->projectionType == ProjectionType::ORTHOGRAPHIC) {
     model = glm::scale(model, glm::vec3(1.0f / params.scale));
+    model = glm::translate(model, params.center * params.scale);  // Center the model, considering that params.center is in world coordinates
+    // Note: the x coordinate is flipped in the fragment shader, so we flip the model matrix here
+    model = glm::scale(model, glm::vec3(-1.0f, 1.0f, -1.0f));  // Flip both X and Z axes
   }
 
-  // shader_raymarching->setMat4("uModel", model);
-
   // Calculate inverse view-projection matrix
-  // glm::mat4 invViewProj = glm::inverse(projection * view);
-  glm::mat4 invViewProj = glm::inverse(projection * view * model);  //%%%
+  glm::mat4 invViewProj = glm::inverse(projection * view * model);
   shader_raymarching->setMat4("invViewProj", invViewProj);
 
   shader_raymarching->setVec3("cameraPos", cameraPos);
@@ -590,38 +592,3 @@ void GcodeViewer::drawQuad() {
 
   glUseProgram(0);
 }
-
-/*
-void GcodeViewer::drawQuad() {
-  initQuad();
-
-  //@@@ DRAFT, IT IS A DUPLICATE OF THE SAME FUNCTIONS CALLED ELSEWHERE
-  glm::vec3 direction = getCameraDirection();
-  glm::vec3 cameraPos = cameraTarget - direction * cameraDistance;
-  int width, height;
-  glfwGetFramebufferSize(window, &width, &height);
-  //@@@
-
-  shader_raymarching->use();
-  shader_raymarching->setIVec3("resolution", glm::ivec3(params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z));
-  shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn);
-  shader_raymarching->setFloat("normalizedZSpan", params.zSpan);
-
-  // Scaling
-  glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f / params.scale));
-  shader_raymarching->setMat4("uModel", model);
-
-  // Calculate inverse view-projection matrix
-  glm::mat4 invViewProj = glm::inverse(projection * view);
-
-  shader_raymarching->setMat4("invViewProj", invViewProj);
-  shader_raymarching->setVec3("cameraPos", cameraPos);
-  shader_raymarching->setIVec2("screenResolution", glm::ivec2(width, height));
-  shader_raymarching->setVec3("color", params.color);  //%%%
-
-  glBindVertexArray(quadVAO);
-  glDrawArrays(GL_TRIANGLES, 0, 6);
-
-  glUseProgram(0);
-}
-*/

@@ -150,9 +150,9 @@ void Voxelizer::normalizeMesh() {
   #endif
 
   glm::vec3 size = maxExtents - minExtents;
-  //this->scale = 1.0f / std::max(size.x, size.y);
   this->params.scale = 1.0f / std::max(size.x, size.y);
   glm::vec3 center = (maxExtents + minExtents) * 0.5f;
+  this->params.center = center; // Modify params passed in constructor by reference
 
   #ifdef DEBUG_OUTPUT
   std::cout << "Size: (" << size.x << ", " << size.y << ", " << size.z << ")\n";

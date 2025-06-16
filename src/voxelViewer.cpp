@@ -77,15 +77,13 @@ void VoxelViewer::initGL() {
 
   // Mouse callbacks
   glfwSetWindowUserPointer(window, this);
-  glfwSetCursorPosCallback(window, [](GLFWwindow* win, double xpos, double ypos) {
-    static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onMouseMove(xpos, ypos);
-  });
+  glfwSetCursorPosCallback(
+      window, [](GLFWwindow* win, double xpos, double ypos) { static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onMouseMove(xpos, ypos); });
   glfwSetMouseButtonCallback(window, [](GLFWwindow* win, int button, int action, int mods) {
     static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onMouseButton(button, action, mods);
   });
-  glfwSetScrollCallback(window, [](GLFWwindow* win, double xoffset, double yoffset) {
-    static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onScroll(xoffset, yoffset);
-  });
+  glfwSetScrollCallback(
+      window, [](GLFWwindow* win, double xoffset, double yoffset) { static_cast<VoxelViewer*>(glfwGetWindowUserPointer(win))->onScroll(xoffset, yoffset); });
 
   glfwSwapInterval(1);
   glViewport(0, 0, params.resolutionXYZ.x, params.resolutionXYZ.y);

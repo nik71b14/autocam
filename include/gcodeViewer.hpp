@@ -3,25 +3,30 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <vector>
-#include "gcode.hpp"
-#include "shader.hpp"
-#include "gcode_params.hpp"
-#include "voxelizer.hpp"
-#include "boolOps.hpp"
 
-struct GLFWwindow; // Forward declaration for GLFW window to avoid prbles with glad/glad.h
+#include "boolOps.hpp"
+#include "gcode.hpp"
+#include "gcode_params.hpp"
+#include "shader.hpp"
+#include "voxelizer.hpp"
+
+// Projection type enum
+enum class ProjectionType { ORTHOGRAPHIC, PERSPECTIVE };
+
+struct GLFWwindow;  // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
 class GcodeViewer {
-public:
+ public:
   GcodeViewer(const std::vector<GcodePoint>& toolpath);
   ~GcodeViewer();
 
   void setToolPosition(const glm::vec3& pos);
+  void setProjectionType(ProjectionType type) { projectionType = type; };
   bool shouldClose() const;
   void pollEvents();
   void drawFrame();
 
-private:
+ private:
   void init();
 
   Shader* shader = nullptr;
@@ -30,20 +35,21 @@ private:
   GLFWwindow* window = nullptr;
   glm::vec3 toolPosition;
   glm::mat4 projection, view;
+  ProjectionType projectionType = ProjectionType::ORTHOGRAPHIC;  // Default to orthographic projection
 
   void createShaders();
 
   // Mouse management for camera control
-  bool orthographicMode = true;                          // Use orthographic projection if true
-  glm::vec3 cameraPosition = INITIAL_CAMERA_POSITION;    // Initial camera position
-  glm::vec3 cameraTarget = INITIAL_CAMERA_TARGET;        // Point camera is looking at
-  float cameraDistance = INITIAL_CAMERA_DISTANCE;        // Distance from camera to target (for zoom)
-  float pitch = INITIAL_PITCH;                           // Up/down angle
-  float yaw = INITIAL_YAW;                               // Left/right angle
+  bool orthographicMode = true;                        // Use orthographic projection if true
+  glm::vec3 cameraPosition = INITIAL_CAMERA_POSITION;  // Initial camera position
+  glm::vec3 cameraTarget = INITIAL_CAMERA_TARGET;      // Point camera is looking at
+  float cameraDistance = INITIAL_CAMERA_DISTANCE;      // Distance from camera to target (for zoom)
+  float pitch = INITIAL_PITCH;                         // Up/down angle
+  float yaw = INITIAL_YAW;                             // Left/right angle
 
   // Vars for orthographic projection
-  glm::vec2 viewCenter = INITIAL_VIEW_CENTER;            // Center of orthographic projection
-  float viewWidth = INITIAL_VIEW_WIDTH;                  // Width of orthographic view
+  glm::vec2 viewCenter = INITIAL_VIEW_CENTER;  // Center of orthographic projection
+  float viewWidth = INITIAL_VIEW_WIDTH;        // Width of orthographic view
 
   glm::vec2 lastMousePos;
   bool leftButtonDown = false;

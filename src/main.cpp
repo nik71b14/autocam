@@ -49,7 +49,9 @@ int main(int argc, char** argv) {
 
     // Extract full toolpath for initial rendering
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
+
     GcodeViewer gCodeViewer(toolpath);
+    gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
 
     interpreter.setSpeedFactor(SPEED_FACTOR);  // Run 2x faster than real time
     interpreter.run();
