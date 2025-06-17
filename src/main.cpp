@@ -25,8 +25,7 @@ int main(int argc, char** argv) {
   std::cout << "Using STL path: " << stlPath << std::endl;
 
 #ifdef TEST
-  // analizeVoxelizedObject("test/workpiece_100_100_50.bin");
-  analizeVoxelizedObject("test/hemispheric_mill_10_mod.bin");
+  analizeVoxelizedObject("test/point_mill_10.bin");
   exit(EXIT_SUCCESS);
 #endif
 
@@ -131,11 +130,11 @@ int main(int argc, char** argv) {
     BoolOps* ops = new BoolOps();
     // Loads object 1
     // if (!ops->load("test/workpiece_100_100_50.bin")) {
-    if (!ops->load("test/cube.bin")) {
+    if (!ops->load("test/cube100.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
     // Loads object 2
-    if (!ops->load("test/hemispheric_mill_10_mod.bin")) {
+    if (!ops->load("test/mill10.bin")) {
       // if (!ops->load("test/cube.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
@@ -147,7 +146,8 @@ int main(int argc, char** argv) {
     //   index++;
     //   std::cout << "Subtraction operation " << index << " completed." << std::endl;
     // }
-    ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(100.0f, 100.0f, -1200.0f));
+    // ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(0.0f, 0.0f, -1200.0f));
+    ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(200.0f, 200.0f, 0.0f));
 
     // this->objects[0].params.color = glm::vec3(1.0f, 0.8f, 0.6f);
     VoxelViewer viewer(ops->getObjects()[0].compressedData, ops->getObjects()[0].prefixSumData, ops->getObjects()[0].params);

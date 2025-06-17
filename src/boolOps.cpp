@@ -133,9 +133,7 @@ bool BoolOps::load(const std::string& filename) {
   return true;
 }
 
-
 bool BoolOps::save(const std::string& filename, int idx) {
-
   if (idx < 0 || idx >= static_cast<int>(this->objects.size())) {
     std::cerr << "Invalid object index: " << idx << ". Valid range is [0, " << this->objects.size() - 1 << "]." << std::endl;
     return false;
@@ -181,7 +179,6 @@ bool BoolOps::save(const std::string& filename, int idx) {
 
   return true;
 }
-
 
 /*
 bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
@@ -476,6 +473,7 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
 }
 */
 
+/*
 #include <algorithm>
 #include <cmath>
 
@@ -494,8 +492,8 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
         for (int x = 0; x < res1.x; ++x) {
             uint idx1 = index(x, y, res1.x);
             GLuint start1 = obj1.prefixSumData[idx1];
-            GLuint end1 = (idx1 + 1 < obj1.prefixSumData.size()) 
-                        ? obj1.prefixSumData[idx1 + 1] 
+            GLuint end1 = (idx1 + 1 < obj1.prefixSumData.size())
+                        ? obj1.prefixSumData[idx1 + 1]
                         : static_cast<GLuint>(obj1.compressedData.size());
 
             std::vector<GLuint> z1;
@@ -512,8 +510,8 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
             if (x2 >= 0 && y2 >= 0 && x2 < res2.x && y2 < res2.y) {
                 uint idx2 = index(x2, y2, res2.x);
                 GLuint start2 = obj2.prefixSumData[idx2];
-                GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size()) 
-                            ? obj2.prefixSumData[idx2 + 1] 
+                GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size())
+                            ? obj2.prefixSumData[idx2 + 1]
                             : static_cast<GLuint>(obj2.compressedData.size());
 
                 if (end2 > start2) {
@@ -525,7 +523,7 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
                         if (shifted_z < 0) {
                             transitionsBelowGridBottom++;
                         }
-                        
+
                         // Clamp to grid boundaries and add if within range
                         if (shifted_z >= 0 && shifted_z < res1.z) {
                             z2.push_back(static_cast<GLuint>(shifted_z));
@@ -538,7 +536,7 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
             std::vector<std::pair<GLuint, int>> events;
             for (GLuint z : z1) events.emplace_back(z, 0);  // Type 0 = obj1 (A)
             for (GLuint z : z2) events.emplace_back(z, 1);  // Type 1 = obj2 (B)
-            
+
             // Critical fix: Sort by Z then by type to break ties consistently
             std::sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
                 if (a.first != b.first) return a.first < b.first;
@@ -582,4 +580,157 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
     const_cast<VoxelObject&>(obj1) = std::move(result);
 
     return true;
+}
+
+*/
+
+bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+  VoxelObject result;
+  result.params = obj1.params;
+  const glm::ivec3& res1 = obj1.params.resolutionXYZ;
+  const glm::ivec3& res2 = obj2.params.resolutionXYZ;
+
+  // Lambda for 2D to 1D index mapping
+  const auto index = [](int x, int y, int width) { return x + y * width; };
+
+  // Resize prefix sum data for the result object
+  result.prefixSumData.resize(res1.x * res1.y);
+  std::vector<GLuint> outputTransitions;  // Stores all compressed Z-transitions
+
+  // Iterate through each (x,y) column of the result grid
+  for (int y = 0; y < res1.y; ++y) {
+    for (int x = 0; x < res1.x; ++x) {
+      // Determine the 1D index for obj1's data
+      uint idx1 = index(x, y, res1.x);
+      GLuint start1 = obj1.prefixSumData[idx1];
+      GLuint end1 = (idx1 + 1 < obj1.prefixSumData.size()) ? obj1.prefixSumData[idx1 + 1] : static_cast<GLuint>(obj1.compressedData.size());
+
+      // Extract obj1's Z-transitions for the current column
+      std::vector<GLuint> z1;
+      if (end1 > start1) {
+        z1.assign(obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
+      }
+
+      // Calculate obj2's local (x,y) coordinates relative to obj1's offset
+      int x2 = x - offset.x;
+      int y2 = y - offset.y;
+
+      // --- DEBUG START ---
+      bool debug_column = (x == 128 && y == 128);
+      if (debug_column) {
+        std::cout << "\n--- Debugging Column (" << x << ", " << y << ") ---\n";
+        std::cout << "Obj1 Resolution: " << res1.x << "x" << res1.y << "x" << res1.z << std::endl;
+        std::cout << "Obj2 Resolution: " << res2.x << "x" << res2.y << "x" << res2.z << std::endl;
+        std::cout << "Offset: (" << offset.x << ", " << offset.y << ", " << offset.z << ")\n";
+        std::cout << "Obj2 Local Coords (x2, y2): (" << x2 << ", " << y2 << ")\n";
+        std::cout << "Obj1 Transitions (z1): [";
+        for (GLuint z_val : z1) std::cout << z_val << " ";
+        std::cout << "]\n";
+      }
+      // --- DEBUG END ---
+
+      int initialBState = 0;
+      std::vector<GLuint> z2_filtered_for_grid;
+
+      if (x2 >= 0 && y2 >= 0 && x2 < res2.x && y2 < res2.y) {
+        uint idx2 = index(x2, y2, res2.x);
+        GLuint start2 = obj2.prefixSumData[idx2];
+        GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : static_cast<GLuint>(obj2.compressedData.size());
+
+        if (end2 > start2) {
+          if (debug_column) { /* ... debug output ... */
+          }
+
+          for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
+            int shifted_z = static_cast<int>(*it) + offset.z;
+            if (shifted_z < 0) {
+              initialBState = 1 - initialBState;
+            } else {
+              break;
+            }
+          }
+          if (debug_column) { /* ... debug output ... */
+          }
+
+          for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
+            int shifted_z = static_cast<int>(*it) + offset.z;
+            if (shifted_z >= 0 && shifted_z < res1.z) {
+              z2_filtered_for_grid.push_back(static_cast<GLuint>(shifted_z));
+            }
+          }
+        }
+      }
+      std::vector<GLuint> z2 = std::move(z2_filtered_for_grid);
+
+      std::vector<std::pair<GLuint, int>> events;
+      for (GLuint z : z1) events.emplace_back(z, 0);  // Type 0 = obj1 (A)
+      for (GLuint z : z2) events.emplace_back(z, 1);  // Type 1 = obj2 (B)
+
+      std::sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first) return a.first < b.first;
+        return a.second < b.second;
+      });
+
+      // ========================================================================
+      // --- START OF CORRECTED LOGIC ---
+      // ========================================================================
+
+      std::vector<GLuint> merged;  // Final list of transitions for the result object
+      int aState = 0;              // Current state of obj1 (A) for this column
+      int bState = initialBState;  // Current state of obj2 (B) for this column
+
+      // Initialize the result's state based on the state BEFORE the first event.
+      int currentResultState = (aState && !bState) ? 1 : 0;
+
+      if (debug_column) {
+        std::cout << "Initial states (at z<0): aState=" << aState << ", bState=" << bState << ", currentResultState=" << currentResultState << std::endl;
+        std::cout << "Processing events...\n";
+      }
+
+      size_t i = 0;
+      while (i < events.size()) {
+        GLuint current_z = events[i].first;
+
+        // Process each event at current_z individually, respecting the sort order.
+        // This is the core fix: no more batching with aCount/bCount.
+        while (i < events.size() && events[i].first == current_z) {
+          if (events[i].second == 0) {  // Type A event
+            aState = 1 - aState;
+          } else {  // Type B event
+            bState = 1 - bState;
+          }
+          i++;  // Move to the next event
+        }
+
+        // Calculate the new result state AFTER all events on this Z-plane are handled
+        int newResultState = (aState && !bState) ? 1 : 0;
+
+        // If the resulting state is different from the state before this Z-plane,
+        // it means a net transition occurred and we should record it.
+        if (newResultState != currentResultState) {
+          merged.push_back(current_z);
+          currentResultState = newResultState;  // Update the running state for the next plane
+        }
+      }
+
+      // ========================================================================
+      // --- END OF CORRECTED LOGIC ---
+      // ========================================================================
+
+      result.prefixSumData[idx1] = static_cast<GLuint>(outputTransitions.size());
+      outputTransitions.insert(outputTransitions.end(), merged.begin(), merged.end());
+
+      if (debug_column) {
+        std::cout << "Final merged transitions for (" << x << "," << y << "): [";
+        for (GLuint z_val : merged) std::cout << z_val << " ";
+        std::cout << "]\n";
+        std::cout << "--- End Debugging Column (" << x << ", " << y << ") ---\n";
+      }
+    }
+  }
+
+  result.compressedData = std::move(outputTransitions);
+  const_cast<VoxelObject&>(obj1) = std::move(result);
+
+  return true;
 }
