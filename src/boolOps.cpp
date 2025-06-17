@@ -133,6 +133,56 @@ bool BoolOps::load(const std::string& filename) {
   return true;
 }
 
+
+bool BoolOps::save(const std::string& filename, int idx) {
+
+  if (idx < 0 || idx >= static_cast<int>(this->objects.size())) {
+    std::cerr << "Invalid object index: " << idx << ". Valid range is [0, " << this->objects.size() - 1 << "]." << std::endl;
+    return false;
+  }
+
+  const VoxelObject& obj = this->objects[idx];
+
+  if (obj.compressedData.empty() || obj.prefixSumData.empty()) {
+    std::cerr << "No data to save. Run voxelization first." << std::endl;
+    return false;
+  }
+
+  std::ofstream file(filename, std::ios::binary);
+  if (!file) {
+    std::cerr << "Failed to open file for writing: " << filename << std::endl;
+    return false;
+  }
+
+  // Save params first
+  file.write(reinterpret_cast<const char*>(&obj.params), sizeof(VoxelizationParams));
+  if (!file) {
+    std::cerr << "Failed to write params to file: " << filename << std::endl;
+    return false;
+  }
+
+  size_t dataSize = obj.compressedData.size() * sizeof(GLuint);
+  size_t prefixSize = obj.prefixSumData.size() * sizeof(GLuint);
+
+  std::cout << "Data size write (compressedData): " << dataSize << " bytes\n";
+  std::cout << "Prefix size write (prefixSumData): " << prefixSize << " bytes\n";
+
+  file.write(reinterpret_cast<const char*>(&dataSize), sizeof(size_t));
+  file.write(reinterpret_cast<const char*>(&prefixSize), sizeof(size_t));
+
+  file.write(reinterpret_cast<const char*>(obj.compressedData.data()), dataSize);
+  file.write(reinterpret_cast<const char*>(obj.prefixSumData.data()), prefixSize);
+
+  if (!file) {
+    throw std::runtime_error("Failed to write data to file: " + filename);
+  }
+
+  file.close();
+
+  return true;
+}
+
+
 /*
 bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
     VoxelObject result;
@@ -326,6 +376,7 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
 }
 */
 
+/*
 bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   VoxelObject result;
   result.params = obj1.params;
@@ -422,4 +473,113 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
   const_cast<VoxelObject&>(obj1) = std::move(result);
 
   return true;
+}
+*/
+
+#include <algorithm>
+#include <cmath>
+
+bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+    VoxelObject result;
+    result.params = obj1.params;
+    const glm::ivec3& res1 = obj1.params.resolutionXYZ;
+    const glm::ivec3& res2 = obj2.params.resolutionXYZ;
+
+    const auto index = [](int x, int y, int width) { return x + y * width; };
+
+    result.prefixSumData.resize(res1.x * res1.y);
+    std::vector<GLuint> outputTransitions;
+
+    for (int y = 0; y < res1.y; ++y) {
+        for (int x = 0; x < res1.x; ++x) {
+            uint idx1 = index(x, y, res1.x);
+            GLuint start1 = obj1.prefixSumData[idx1];
+            GLuint end1 = (idx1 + 1 < obj1.prefixSumData.size()) 
+                        ? obj1.prefixSumData[idx1 + 1] 
+                        : static_cast<GLuint>(obj1.compressedData.size());
+
+            std::vector<GLuint> z1;
+            if (end1 > start1) {
+                z1.assign(obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
+            }
+
+            int x2 = x - offset.x;
+            int y2 = y - offset.y;
+
+            int initialBState = 0;
+            std::vector<GLuint> z2;
+
+            if (x2 >= 0 && y2 >= 0 && x2 < res2.x && y2 < res2.y) {
+                uint idx2 = index(x2, y2, res2.x);
+                GLuint start2 = obj2.prefixSumData[idx2];
+                GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size()) 
+                            ? obj2.prefixSumData[idx2 + 1] 
+                            : static_cast<GLuint>(obj2.compressedData.size());
+
+                if (end2 > start2) {
+                    int transitionsBelowGridBottom = 0;
+                    for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
+                        int shifted_z = static_cast<int>(*it) + offset.z;
+
+                        // Handle transitions below grid
+                        if (shifted_z < 0) {
+                            transitionsBelowGridBottom++;
+                        }
+                        
+                        // Clamp to grid boundaries and add if within range
+                        if (shifted_z >= 0 && shifted_z < res1.z) {
+                            z2.push_back(static_cast<GLuint>(shifted_z));
+                        }
+                    }
+                    initialBState = (transitionsBelowGridBottom % 2);
+                }
+            }
+
+            std::vector<std::pair<GLuint, int>> events;
+            for (GLuint z : z1) events.emplace_back(z, 0);  // Type 0 = obj1 (A)
+            for (GLuint z : z2) events.emplace_back(z, 1);  // Type 1 = obj2 (B)
+            
+            // Critical fix: Sort by Z then by type to break ties consistently
+            std::sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
+                if (a.first != b.first) return a.first < b.first;
+                return a.second < b.second;  // A comes before B at same Z
+            });
+
+            int aState = 0;
+            int bState = initialBState;
+            int currentResultState = (aState && !bState) ? 1 : 0;
+            std::vector<GLuint> merged;
+
+            size_t i = 0;
+            while (i < events.size()) {
+                GLuint current_z = events[i].first;
+                int aCount = 0, bCount = 0;
+
+                // Process all events at current_z
+                while (i < events.size() && events[i].first == current_z) {
+                    if (events[i].second == 0) aCount++;
+                    else bCount++;
+                    i++;
+                }
+
+                // Update states based on transition counts
+                if (aCount % 2) aState = 1 - aState;
+                if (bCount % 2) bState = 1 - bState;
+
+                int newResultState = (aState && !bState) ? 1 : 0;
+                if (newResultState != currentResultState) {
+                    merged.push_back(current_z);
+                    currentResultState = newResultState;
+                }
+            }
+
+            result.prefixSumData[idx1] = static_cast<GLuint>(outputTransitions.size());
+            outputTransitions.insert(outputTransitions.end(), merged.begin(), merged.end());
+        }
+    }
+
+    result.compressedData = std::move(outputTransitions);
+    const_cast<VoxelObject&>(obj1) = std::move(result);
+
+    return true;
 }

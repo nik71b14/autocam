@@ -8,19 +8,27 @@
 #include "gcodeViewer.hpp"
 #include "main_params.hpp"
 #include "meshLoader.hpp"
+#include "test.hpp"
 #include "utils.hpp"
 #include "voxelViewer.hpp"
 #include "voxelizer.hpp"
 #include "voxelizerUtils.hpp"
 
-//  #define GCODE_TESTING
-//  #define VOXELIZATION_TESTING
+// #define GCODE_TESTING
+// #define VOXELIZATION_TESTING
 #define BOOLEAN_OPERATIONS_TESTING
-//  #define VOXEL_VIEWER_TESTING
+// #define VOXEL_VIEWER_TESTING
+// #define TEST
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
   std::cout << "Using STL path: " << stlPath << std::endl;
+
+#ifdef TEST
+  // analizeVoxelizedObject("test/workpiece_100_100_50.bin");
+  analizeVoxelizedObject("test/hemispheric_mill_10_mod.bin");
+  exit(EXIT_SUCCESS);
+#endif
 
   try {
     // VOXELIZATION PARAMETERS ------------------------------------------------
@@ -29,8 +37,8 @@ int main(int argc, char** argv) {
     params.color = WHITE;
     params.maxMemoryBudgetBytes = MEM_512MB;
     params.slicesPerBlock = chooseOptimalPowerOfTwoSlicesPerBlock(params);
-// params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
-//  params.preview = true; // Enable preview during voxelization
+    //  params.slicesPerBlock = chooseOptimalSlicesPerBlock(params.resolution, params.resolutionXYZ.z, params.maxMemoryBudgetBytes);
+    params.preview = true;  // Enable preview during voxelization
 //  ------------------------------------------------------------------------
 
 // GCODE INTERPRETER TESTING ----------------------------------------------
@@ -122,23 +130,24 @@ int main(int argc, char** argv) {
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
     // Loads object 1
-    if (!ops->load("test/workpiece_100_100_50.bin")) {
+    // if (!ops->load("test/workpiece_100_100_50.bin")) {
+    if (!ops->load("test/cube.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
     // Loads object 2
-    if (!ops->load("test/hemispheric_mill_10.bin")) {
-    // if (!ops->load("test/cyl_mill_12.bin")) {
+    if (!ops->load("test/hemispheric_mill_10_mod.bin")) {
+      // if (!ops->load("test/cube.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
 
-    int index = 0;
-    for (float mov = 0.0f; mov < 40.0f; mov += 20.0f) {
-      // Subtract the second object from the first with an offset
-      ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(200.0f + mov, 200.0f + mov, -800.0f));
-      index++;
-      std::cout << "Subtraction operation " << index << " completed." << std::endl;
-    }
-    // ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(200.0f, 200.0f, -1000.0f));
+    // int index = 0;
+    // for (float mov = 0.0f; mov < 40.0f; mov += 20.0f) {
+    //   // Subtract the second object from the first with an offset
+    //   ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(200.0f + mov, 200.0f + mov, -800.0f));
+    //   index++;
+    //   std::cout << "Subtraction operation " << index << " completed." << std::endl;
+    // }
+    ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(100.0f, 100.0f, -1200.0f));
 
     // this->objects[0].params.color = glm::vec3(1.0f, 0.8f, 0.6f);
     VoxelViewer viewer(ops->getObjects()[0].compressedData, ops->getObjects()[0].prefixSumData, ops->getObjects()[0].params);

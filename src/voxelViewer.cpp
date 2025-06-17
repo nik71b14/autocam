@@ -222,26 +222,6 @@ void VoxelViewer::run() {
       proj = glm::perspective(glm::radians(fov), windowAspect, 0.1f, distance * 4.0f);
     }
 
-    //%%%
-    // glm::mat4 proj;
-    // if (this->ortho) {
-    //   // Use symmetric frustum that matches window aspect ratio
-    //   proj = glm::ortho(-viewWidth / 2.0f, viewWidth / 2.0f, -viewHeight / 2.0f, viewHeight / 2.0f,
-    //                     -params.zSpan * 0.6f,  // Near plane (negative to include behind camera)
-    //                     params.zSpan * 1.4f    // Far plane
-    //   );
-    // } else {
-    //   // Calculate dynamic FOV for better framing
-    //   float fov = glm::clamp(static_cast<float>(glm::degrees(2.0f * std::atan(1.0f / distance))), 30.0f, 90.0f);
-    //   proj = glm::perspective(glm::radians(fov), windowAspect, 0.1f, distance * 4.0f);
-    // }
-
-    // Camera setup
-    // glm::vec3 cameraPos(0, 0, 2.0);
-    // glm::vec3 pointToLookAt(0, 0, 0);
-    // glm::vec3 upVector(0, 1, 0);
-    // glm::mat4 view = glm::lookAt(cameraPos, pointToLookAt, upVector);
-
     // Calculate camera position based on pitch, yaw, distance and target (mouse interaction)
     glm::vec3 dir;
     dir.x = -sin(glm::radians(yaw)) * cos(glm::radians(pitch));  // Changed sign

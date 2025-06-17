@@ -23,6 +23,8 @@ class BoolOps {
 
   // Load a voxel object from file and store it internally
   bool load(const std::string& filename);
+  bool save(const std::string& filename, int idx = 0);
+
 
   // Accessor
   const std::vector<VoxelObject>& getObjects() const { return objects; }
