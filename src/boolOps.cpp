@@ -615,20 +615,6 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
       int x2 = x - offset.x;
       int y2 = y - offset.y;
 
-      // --- DEBUG START ---
-      bool debug_column = (x == 128 && y == 128);
-      if (debug_column) {
-        std::cout << "\n--- Debugging Column (" << x << ", " << y << ") ---\n";
-        std::cout << "Obj1 Resolution: " << res1.x << "x" << res1.y << "x" << res1.z << std::endl;
-        std::cout << "Obj2 Resolution: " << res2.x << "x" << res2.y << "x" << res2.z << std::endl;
-        std::cout << "Offset: (" << offset.x << ", " << offset.y << ", " << offset.z << ")\n";
-        std::cout << "Obj2 Local Coords (x2, y2): (" << x2 << ", " << y2 << ")\n";
-        std::cout << "Obj1 Transitions (z1): [";
-        for (GLuint z_val : z1) std::cout << z_val << " ";
-        std::cout << "]\n";
-      }
-      // --- DEBUG END ---
-
       int initialBState = 0;
       std::vector<GLuint> z2_filtered_for_grid;
 
@@ -638,9 +624,6 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
         GLuint end2 = (idx2 + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : static_cast<GLuint>(obj2.compressedData.size());
 
         if (end2 > start2) {
-          if (debug_column) { /* ... debug output ... */
-          }
-
           for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
             int shifted_z = static_cast<int>(*it) + offset.z;
             if (shifted_z < 0) {
@@ -648,8 +631,6 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
             } else {
               break;
             }
-          }
-          if (debug_column) { /* ... debug output ... */
           }
 
           for (auto it = obj2.compressedData.begin() + start2; it != obj2.compressedData.begin() + end2; ++it) {
@@ -671,21 +652,12 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
         return a.second < b.second;
       });
 
-      // ========================================================================
-      // --- START OF CORRECTED LOGIC ---
-      // ========================================================================
-
       std::vector<GLuint> merged;  // Final list of transitions for the result object
       int aState = 0;              // Current state of obj1 (A) for this column
       int bState = initialBState;  // Current state of obj2 (B) for this column
 
       // Initialize the result's state based on the state BEFORE the first event.
       int currentResultState = (aState && !bState) ? 1 : 0;
-
-      if (debug_column) {
-        std::cout << "Initial states (at z<0): aState=" << aState << ", bState=" << bState << ", currentResultState=" << currentResultState << std::endl;
-        std::cout << "Processing events...\n";
-      }
 
       size_t i = 0;
       while (i < events.size()) {
@@ -713,19 +685,8 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
         }
       }
 
-      // ========================================================================
-      // --- END OF CORRECTED LOGIC ---
-      // ========================================================================
-
       result.prefixSumData[idx1] = static_cast<GLuint>(outputTransitions.size());
       outputTransitions.insert(outputTransitions.end(), merged.begin(), merged.end());
-
-      if (debug_column) {
-        std::cout << "Final merged transitions for (" << x << "," << y << "): [";
-        for (GLuint z_val : merged) std::cout << z_val << " ";
-        std::cout << "]\n";
-        std::cout << "--- End Debugging Column (" << x << ", " << y << ") ---\n";
-      }
     }
   }
 

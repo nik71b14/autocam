@@ -115,7 +115,7 @@ void Voxelizer::run() {
   float zSpan = computeZSpan();
   params.zSpan = zSpan;  // Modify params passed in constructor by reference
 
-  auto [data, prefix] = this->voxelizerZ(vertices, indices, zSpan /* * 1.05*/, params); //%%%%%%%%%
+  auto [data, prefix] = this->voxelizerZ(vertices, indices, zSpan /* * 1.05*/, params);  //%%%%%%%%%
 
   this->compressedData = std::move(data);
   this->prefixSumData = std::move(prefix);
@@ -368,8 +368,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ_OLD(co
     int slicesThisBlock = std::min(params.slicesPerBlock, params.resolutionXYZ.z - zStart);
 
     // Render SLICES_PER_BLOCK + 1 slices, overlapping one with previous block
-    for (int i = 0; i <= slicesThisBlock; ++i) {
-      float z = zSpan / 2.0f - (zStart + i - 1) * deltaZ;  // slice 0 is black for i = 0
+    for (int i = 0; i <= slicesThisBlock; ++i) {           //%%%%%
+      float z = zSpan / 2.0f - (zStart + i - 1) * deltaZ;  // slice 0 is black for i = 0 <====== THAT'S WHY 1 999 1 999 when i have a 1000 voxels cube
       glm::vec4 clipPlane(0, 0, -1, z);
 
       glBindFramebuffer(GL_FRAMEBUFFER, fbo);  // Rebind the custom FBO
@@ -823,7 +823,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ_OLD(co
 }
 
 std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const std::vector<float>& vertices, const std::vector<unsigned int>& indices,
-                                                                              float zSpan, const VoxelizationParams& params) {
+                                                                          float zSpan, const VoxelizationParams& params) {
   GLFWwindow* window;
   Shader* drawShader;
   Shader* computeShader;
@@ -838,23 +838,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
 
 #ifdef DEBUG_GPU
   queryGPULimits();
-#endif
-
-// Enable OpenGL debug output
-#ifdef DEBUG_GPU
-  glEnable(GL_DEBUG_OUTPUT);
-  glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-  glDebugMessageCallback(
-      [](GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) {
-        (void)source;
-        (void)type;
-        (void)id;
-        (void)severity;
-        (void)length;
-        (void)userParam;  // Suppress unused parameters warning
-        std::cerr << "GL DEBUG: " << message << std::endl;
-      },
-      nullptr);
 #endif
 
   // Load mesh and upload to GPU
@@ -881,6 +864,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
   glGenTextures(1, &sliceTex);
   glBindTexture(GL_TEXTURE_2D_ARRAY, sliceTex);
   glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolutionXYZ.x, params.resolutionXYZ.y, params.slicesPerBlock + 1);
+  // glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, params.resolutionXYZ.x, params.resolutionXYZ.y, params.slicesPerBlock + 2);  //%%%%
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -965,22 +949,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
     std::cerr << "Framebuffer not complete! Error code: 0x" << std::hex << status << std::endl;
   }
 
-#ifdef DEBUG_GPU
-  // Check if the shader program compiled and linked successfully
-  GLint linkStatus = 0;
-  glGetProgramiv(drawShader->ID, GL_LINK_STATUS, &linkStatus);
-  if (linkStatus == GL_FALSE) {
-    char log[1024];
-    glGetProgramInfoLog(drawShader->ID, sizeof(log), nullptr, log);
-    std::cerr << "Shader program link error: " << log << std::endl;
-  }
-
-  // Check if the context is current
-  if (glfwGetCurrentContext() != window) {
-    std::cerr << "OpenGL context is not current!" << std::endl;
-  }
-#endif
-
   auto startTime = std::chrono::high_resolution_clock::now();
 
   for (int block = 0; block < totalBlocks; ++block) {
@@ -989,7 +957,9 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
 
     // Render SLICES_PER_BLOCK + 1 slices, overlapping one with previous block
     for (int i = 0; i <= slicesThisBlock; ++i) {
-      float z = zSpan / 2.0f - (zStart + i - 1) * deltaZ;  // slice 0 is black for i = 0
+      // float z = zSpan / 2.0f - (zStart + i - 1) * deltaZ;  // slice 0 is black for i = 0 <========= THAT'S WHY 1 999 1 999 when i have a 1000 voxels cube
+      float z = zSpan / 2.0f - (zStart + i) * deltaZ;  // slice 0 is black for i = 0 <====== MODIFIED TO GET THE CORRECT SPAN
+
       glm::vec4 clipPlane(0, 0, -1, z);
 
       glBindFramebuffer(GL_FRAMEBUFFER, fbo);  // Rebind the custom FBO
@@ -1027,6 +997,8 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
 
         glfwSwapBuffers(window);
 
+        std::cout << "" << std::endl;  //%%%
+
         // Introduce a delay to slow down the slicing process
         // std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
@@ -1059,91 +1031,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
   std::chrono::duration<double> elapsedTime = endTime - startTime;
   std::cout << "Voxelization complete. Execution time: " << elapsedTime.count() << " seconds\n";
 
-// Read back the overflow buffer to check for overflow
-#ifdef DEBUG_GPU
-  std::vector<GLuint> overflowFlags(totalPixels);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, overflowBuffer);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, overflowFlags.size() * sizeof(GLuint), overflowFlags.data());
-
-  for (size_t i = 0; i < totalPixels; ++i) {
-    if (overflowFlags[i]) {
-      std::cout << "Overflow at pixel column " << i << "\n";
-    }
-  }
-#endif
-
-// Graphical output of the voxelization results
-#ifdef DEBUG_GPU
-  std::vector<GLuint> counts(totalPixels);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, countBuffer);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, counts.size() * sizeof(GLuint), counts.data());
-
-  // Read back the transition buffer, i.e. Z transitions for each pixel column
-  std::vector<GLuint> hostTransitions(totalPixels * params.maxTransitionsPerZColumn);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, transitionBuffer);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, hostTransitions.size() * sizeof(GLuint), hostTransitions.data());
-
-  // Plot a transition map as seen from above, where each pixel column is represented by a character # if it has at least one transition, or . if it has no
-  // transitions.
-  const int maxCols = 50;
-  const int maxRows = 50;
-  int strideX = std::max(1, params.resolutionXYZ.x / maxCols);
-  int strideY = std::max(1, params.resolutionXYZ.y / maxRows);
-
-  std::cout << "XY transition map (# = has transition):\n";
-  for (int row = 0; row < maxRows; ++row) {
-    int y = row * strideY;
-    if (y >= params.XYZ.y) break;
-    for (int col = 0; col < maxCols; ++col) {
-      int x = col * strideX;
-      if (x >= params.resolutionXYZ.x) break;
-      int idx = y * params.resolutionXYZ.x + x;
-      bool hasTransition = false;
-      for (uint t = 0; t < counts[idx]; ++t) {
-        if (hostTransitions[idx * params.maxTransitionsPerZColumn + t] != 0) {
-          hasTransition = true;
-          break;
-        }
-      }
-      std::cout << (hasTransition ? '#' : '.');
-    }
-    std::cout << '\n';
-  }
-
-  std::cout << "XY transition count map (0=., 1=+, 2=*, 3=#, >=4=@):\n";
-  for (int row = 0; row < maxRows; ++row) {
-    int y = row * strideY;
-    if (y >= params.resolutionXYZ.y) break;
-    for (int col = 0; col < maxCols; ++col) {
-      int x = col * strideX;
-      if (x >= params.resolutionXYZ.x) break;
-      int idx = y * params.resolutionXYZ.x + x;
-      GLuint count = counts[idx];
-      char c = '.';
-      if (count == 1)
-        c = '+';
-      else if (count == 2)
-        c = '*';
-      else if (count == 3)
-        c = '#';
-      else if (count >= 4)
-        c = '@';
-      std::cout << c;
-    }
-    std::cout << '\n';
-  }
-
-#endif
-
   // ---------------------------> I HAVE A PROBLEM UP TO HERE IF THE NUMBER OF POINTS IS TOO HIGH
-
-  // #########################################################################
-  // exit(0); // Exit the program after voxelization is complete
-  // #########################################################################
-
-  // °°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
-  // EVERYTHING OK UP TO HERE
-  // °°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
 
   // COMPRESSION OF THE TRANSITIONS BUFFER ====================================
 
@@ -1175,87 +1063,6 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
   // prefix[4] = 3 + 1 + 4 + 0
   //
   // Result: prefix = [0, 3, 4, 8, 8], which is what i we need (prefix is the offset in the compressed buffer where each pixel's transitions start).
-
-  /*
-  // ALL THIS WORKS UP TO numBlocks = 1024, WHICH IS THE MAXIMUM NUMBER OF WORKGROUPS ALLOWED IN OPENGL *************************
-  // Use a Blelloch scan with two passes
-  const int WORKGROUP_SIZE = 1024; // Max local workgroup size
-  const int numBlocks = (totalPixels + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE; // Number of workgroups needed (rounded up)
-
-  if (numBlocks > 1024) {
-    std::cerr << "ERROR: blockSums too large (" << numBlocks << ") for local shared memory. Max 1024 entries allowed." << std::endl;
-    exit(EXIT_FAILURE);
-  }
-
-  // 1. Create prefix sum output buffer (same size as countBuffer)
-  GLuint prefixSumBuffer;
-  glGenBuffers(1, &prefixSumBuffer);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-  //glBufferData(GL_SHADER_STORAGE_BUFFER, totalPixels * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3
-  glBufferData(GL_SHADER_STORAGE_BUFFER, (totalPixels + 1) * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1 and pass 3 (totalPixels + 1 to
-  handle exclusive prefix sum) //$$$$$
-
-  // 2. Create blockSums buffer (one entry per block)
-  GLuint blockSumsBuffer;
-  glGenBuffers(1, &blockSumsBuffer);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockSumsBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, numBlocks * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 1, input to pass 2
-
-  // 3. Create blockOffsets buffer (also one entry per block)
-  GLuint blockOffsetsBuffer;
-  glGenBuffers(1, &blockOffsetsBuffer);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, blockOffsetsBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, numBlocks * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY); // Output from pass 2, input to pass 3
-
-  // Load and build the prefix sum shaders
-  Shader* prefixPass1 = new Shader("shaders/prefix_sum_pass1.comp");
-  Shader* prefixPass2 = new Shader("shaders/prefix_sum_pass2.comp");
-  Shader* prefixPass3 = new Shader("shaders/prefix_sum_pass3.comp");
-
-  // Dispatch sequence
-  // Pass 1: Local scan and blockSums
-  prefixPass1->use();
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, countBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, blockSumsBuffer);
-  glDispatchCompute(numBlocks, 1, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-  // Pass 2: Scan blockSums into blockOffsets
-  prefixPass2->use();
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, blockSumsBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, blockOffsetsBuffer);
-  glDispatchCompute(1, 1, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-  // Pass 3: Add blockOffsets
-  prefixPass3->use();
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, prefixSumBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, blockOffsetsBuffer);
-  glDispatchCompute(numBlocks, 1, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-  // Final checks
-  #ifdef DEBUG_GPU
-  // Download result from GPU
-  std::vector<GLuint> prefixSumResult(totalPixels);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, prefixSumBuffer);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalPixels * sizeof(GLuint), prefixSumResult.data());
-
-  // Print 100 values uniformly taken from prefixSumResult
-  std::cout << "Graphical representation of prefixSumResult:\n";
-  size_t step = totalPixels / 10;
-  for (size_t i = 0; i < totalPixels; i += step) {
-    int barLength = prefixSumResult[i] / 100000; // Scale down for terminal display
-    std::cout << "[" << i << "] ";
-    for (int j = 0; j < barLength; ++j) {
-      std::cout << ".";
-    }
-    std::cout << " (" << prefixSumResult[i] << ")\n";
-  }
-  #endif
-  // ****************************************************************************************************************************
-  */
 
   // ALGORITHM FOR ARBITRARY NUMBER OF WORKGROUPS (e.g. 2048, 4096, etc.) *******************************************************
 
@@ -1441,4 +1248,3 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
 
   return {compressedData, prefixSumData};
 }
-

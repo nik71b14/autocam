@@ -24,17 +24,6 @@ VoxelViewer::VoxelViewer(const std::vector<unsigned int>& compressed, const std:
   initGL();
   setupShaderAndBuffers();
 
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  // // Compute distance ONCE after setup
-  // float voxelScale = 1.0f / std::max({
-  //   params.resolutionXYZ.x,
-  //   params.resolutionXYZ.y,
-  //   params.resolutionXYZ.z
-  // });
-  // float radius = 0.5f * glm::length(glm::vec3(params.resolutionXYZ) * voxelScale);
-  // distance = radius / std::tan(glm::radians(45.0f / 2.0f)) + radius;
-  // std::cout << "Initial computed distance = " << distance << std::endl;
-
   // Compute distance based on actual bounding box dimensions
   float halfX = 0.5f;
   float halfY = 0.5f;
@@ -45,9 +34,6 @@ VoxelViewer::VoxelViewer(const std::vector<unsigned int>& compressed, const std:
 
   // Calculate distance to fit object in view
   distance = radius / std::tan(glm::radians(45.0f / 2.0f)) + radius;
-
-  std::cout << "Initial computed distance = " << distance << std::endl;
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 }
 
 VoxelViewer::~VoxelViewer() {
