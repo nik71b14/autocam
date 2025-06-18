@@ -1,0 +1,236 @@
+#version 460
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// Using image3D for 'slices' means the Z coordinate in imageLoad/Store
+// maps directly to the Z-layer of the 3D texture.
+// Your C++ code uses GL_TEXTURE_2D_ARRAY for sliceTex,
+// so this binding should be image2DArray, not image3D.
+// This is a CRITICAL mismatch.
+// If your C++ code binds sliceTex (GL_TEXTURE_2D_ARRAY) to binding 0,
+// then the shader must reflect that.
+layout (binding = 0, rgba8) readonly uniform image2DArray slices; // CHANGE THIS TO image2DArray
+
+layout (binding = 1, std430) buffer TransitionBuffer { uint transitions[]; };
+layout (binding = 2, std430) buffer CountBuffer { uint transitionCount[]; };
+layout (binding = 3, std430) buffer OverflowBuffer { uint overflowFlags[]; };
+
+uniform int resolutionX;
+uniform int resolutionY;
+uniform int resolutionZ;
+uniform int sliceCount;  // This uniform should represent the number of *layers* in the slices texture
+                         // i.e., params.slicesPerBlock + 1 for each block.
+                         // Or, if z is meant to go up to resolutionZ, it must be handled differently.
+uniform int zStart;      // Absolute Z start index for the current block
+
+const uint MAX_TRANSITIONS_PER_PIXEL = 32u;
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    int localZ = int(gl_GlobalInvocationID.z); // Renamed to localZ to avoid confusion with global Z
+
+    // Calculate the global Z index for the current slice
+    int globalZ = zStart + localZ;
+
+    // Early exit if out of bounds for XY
+    if (xy.x >= resolutionX || xy.y >= resolutionY)
+        return;
+
+    // We process 'sliceCount' pairs of images (current and next)
+    // to detect transitions.
+    // The number of dispatches in Z for glDispatchCompute should be the number of transitions
+    // we expect to compute, which is `params.slicesInCurrentBlock` (from the C++ side).
+    // So, `localZ` will go from 0 to `params.slicesInCurrentBlock - 1`.
+    if (localZ >= sliceCount) // This 'sliceCount' should be params.slicesInCurrentBlock
+        return;
+
+    // Current slice index in the texture array for this block
+    ivec3 currentTexCoord = ivec3(xy.x, xy.y, localZ);
+    // Next slice index in the texture array for this block
+    ivec3 nextTexCoord = ivec3(xy.x, xy.y, localZ + 1);
+
+    // Get current slice status
+    bool isSolidCurrent = (imageLoad(slices, currentTexCoord).r == 1.0);
+
+    // Determine next slice status.
+    // The `z + 1 >= sliceCount` check means: if the *next* slice index
+    // is beyond the layers rendered for this block, consider it empty.
+    // This is problematic for the very last slice of the *entire* object.
+    // We need to know if `globalZ` is the actual last slice of the model.
+
+    bool isSolidNext;
+
+    // Condition 1: If the next slice is within the *current block's rendered layers*
+    // (i.e., localZ + 1 is less than or equal to params.slicesInCurrentBlock which is sliceCount here)
+    // AND if the global Z index of the next slice is still within the total resolutionZ of the model
+    if ((localZ + 1 < (sliceCount + 1)) && (globalZ + 1 < resolutionZ)) { // (+1 because sliceCount refers to number of transitions, so sliceCount+1 layers were rendered)
+        isSolidNext = (imageLoad(slices, nextTexCoord).r == 1.0);
+    }
+    // Condition 2: If the current slice is the very last slice of the *entire* model
+    // AND it's solid, then it should also be recorded as a transition
+    // (e.g., solid inside, empty outside).
+    else if (globalZ == (resolutionZ - 1)) { // Check if this is the last global Z slice
+        isSolidNext = false; // Assume outside is empty
+    }
+    // Condition 3: Otherwise, it's outside the model's Z range or at the boundary where it ends
+    else {
+        isSolidNext = false; // Default to not solid for regions beyond the model's bounds
+    }
+
+    // Detect transition (including final boundary)
+    if (isSolidCurrent != isSolidNext) {
+        int columnIndex = xy.y * resolutionX + xy.x;
+        // Use atomicAdd to safely increment and get the previous count
+        uint count = atomicAdd(transitionCount[columnIndex], 1u); // Increment first, then check
+
+        if (count < MAX_TRANSITIONS_PER_PIXEL) {
+            uint offset = columnIndex * MAX_TRANSITIONS_PER_PIXEL + count;
+            // Store the actual global z position of the transition
+            // The transition is associated with the 'z' slice that *becomes* solid or *becomes* empty.
+            // If isSolidCurrent is false and isSolidNext is true, it's an "in" transition at globalZ + 1.
+            // If isSolidCurrent is true and isSolidNext is false, it's an "out" transition at globalZ.
+            // For a cube, if current slice is solid and next is empty, the transition is at current globalZ.
+            // If current is empty and next is solid, the transition is at next globalZ.
+            // Your current code `transitions[offset] = uint(zStart + z);` stores the current slice's global Z.
+            // This defines whether the transition refers to the 'start' of a solid block or the 'end'.
+            // Let's assume it means the Z coordinate *at which* the property changes.
+            // If you want it to be the Z index *of the slice where it becomes solid*,
+            // or the Z index *of the slice where it becomes empty*, you need to be precise.
+            // For "1, 500", it implies the voxel is solid from slice 1 to slice 500.
+            // This means an IN transition at slice 1 and an OUT transition at slice 501 (or 500 if inclusive).
+
+            // Let's stick to your current interpretation that the transition is stored at the current Z index.
+            transitions[offset] = uint(globalZ); // Store the global Z index where the transition occurs
+        } else {
+            overflowFlags[columnIndex] = 1u;
+        }
+    }
+}
+
+/* #version 460
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout (binding = 0, rgba8) readonly uniform image2DArray slices; // Keep this as image2DArray, it's crucial
+
+layout (binding = 1, std430) buffer TransitionBuffer { uint transitions[]; };
+layout (binding = 2, std430) buffer CountBuffer { uint transitionCount[]; };
+layout (binding = 3, std430) buffer OverflowBuffer { uint overflowFlags[]; };
+
+uniform int resolutionX;
+uniform int resolutionY;
+uniform int resolutionZ; // Total Z resolution of the entire object
+uniform int sliceCount;  // Number of transitions to compute in this block (C++ params.slicesInCurrentBlock)
+uniform int zStart;      // Absolute Z start index for the current block
+
+const uint MAX_TRANSITIONS_PER_PIXEL = 32u;
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    int localZ = int(gl_GlobalInvocationID.z); // Local Z index within the current block of layers
+
+    // Calculate the global Z index for the current slice
+    int globalZ = zStart + localZ;
+
+    // Early exit if out of bounds for XY
+    if (xy.x >= resolutionX || xy.y >= resolutionY) {
+        return;
+    }
+
+    // This shader is dispatched for `sliceCount` z-layers (transitions).
+    // So, localZ will range from 0 to sliceCount - 1.
+    if (localZ >= sliceCount) {
+        return;
+    }
+
+    // Texture coordinates for the current slice in the 2D array texture
+    ivec3 currentTexCoord = ivec3(xy.x, xy.y, localZ);
+
+    // Get current slice status
+    bool isSolidCurrent = (imageLoad(slices, currentTexCoord).r == 1.0);
+
+    bool isSolidNext;
+
+    // Check if we are at the very last global Z slice of the entire model
+    // AND if the next texture layer for the current block is out of bounds
+    // (meaning this is the last layer provided by the C++ rendering loop for this block)
+    if (globalZ == (resolutionZ - 1)) {
+        // If it's the very last slice of the object and it's solid,
+        // assume the next state (outside the object) is non-solid (black).
+        isSolidNext = false;
+    }
+    // Otherwise, try to read from the next slice in the texture array
+    else {
+        // We can safely read localZ + 1 because the C++ rendering loop
+        // renders `sliceCount + 1` layers into the `slices` texture array for this block.
+        // `localZ` goes up to `sliceCount - 1`. So `localZ + 1` goes up to `sliceCount`.
+        // This means `nextTexCoord.z` will be `0` to `sliceCount`. All are valid texture layers.
+        ivec3 nextTexCoord = ivec3(xy.x, xy.y, localZ + 1);
+        isSolidNext = (imageLoad(slices, nextTexCoord).r == 1.0);
+    }
+
+    // Detect transition
+    if (isSolidCurrent != isSolidNext) {
+        int columnIndex = xy.y * resolutionX + xy.x;
+        // Use atomicAdd to safely increment and get the previous count
+        uint count = atomicAdd(transitionCount[columnIndex], 1u); // Increment first, then check
+
+        if (count < MAX_TRANSITIONS_PER_PIXEL) {
+            uint offset = columnIndex * MAX_TRANSITIONS_PER_PIXEL + count;
+            // Store the global Z index where the transition occurs.
+            // If it's solid -> empty transition, this is `globalZ`.
+            // If it's empty -> solid transition, this is `globalZ` (representing the Z before it became solid).
+            transitions[offset] = uint(globalZ);
+        } else {
+            overflowFlags[columnIndex] = 1u;
+        }
+    }
+} */
+
+/* #version 460
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout (binding = 0, rgba8) readonly uniform image3D slices;
+layout (binding = 1, std430) buffer TransitionBuffer { uint transitions[]; };
+layout (binding = 2, std430) buffer CountBuffer { uint transitionCount[]; };
+layout (binding = 3, std430) buffer OverflowBuffer { uint overflowFlags[]; };
+
+uniform int resolutionX;
+uniform int resolutionY;
+uniform int resolutionZ;
+uniform int sliceCount;  // Note: This now includes the extra comparison
+uniform int zStart;
+
+const uint MAX_TRANSITIONS_PER_PIXEL = 32u;
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    int z = int(gl_GlobalInvocationID.z);
+
+    // Early exit if out of bounds
+    if (xy.x >= resolutionX || xy.y >= resolutionY || z >= sliceCount)
+        return;
+
+    ivec3 currentSlice = ivec3(xy.x, xy.y, z);
+    ivec3 nextSlice = ivec3(xy.x, xy.y, z + 1);
+
+    // Get current and next slice status
+    bool isSolidCurrent = (imageLoad(slices, currentSlice).r == 1.0);
+    bool isSolidNext = (z + 1 >= sliceCount) ? false : (imageLoad(slices, nextSlice).r == 1.0);
+
+    // Detect transition (including final boundary)
+    if (isSolidCurrent != isSolidNext) {
+        int columnIndex = xy.y * resolutionX + xy.x;
+        uint count = transitionCount[columnIndex];
+
+        if (count < MAX_TRANSITIONS_PER_PIXEL) {
+            uint offset = columnIndex * MAX_TRANSITIONS_PER_PIXEL + count;
+            // Store the actual z position (not slice index)
+            transitions[offset] = uint(zStart + z);
+            transitionCount[columnIndex]++;
+        } else {
+            overflowFlags[columnIndex] = 1u;
+        }
+    }
+} */

@@ -59,6 +59,8 @@ class Voxelizer {
   void normalizeMesh();
   glm::ivec3 calculateResolutionPx(const std::vector<float>& vertices);
 
+  std::pair<std::vector<GLuint>, std::vector<GLuint>> voxelizerZ_OLD(const std::vector<float>& vertices, const std::vector<unsigned int>& indices, float zSpan,
+                                                                 const VoxelizationParams& params);
   std::pair<std::vector<GLuint>, std::vector<GLuint>> voxelizerZ(const std::vector<float>& vertices, const std::vector<unsigned int>& indices, float zSpan,
                                                                  const VoxelizationParams& params);
 

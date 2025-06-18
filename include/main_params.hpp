@@ -21,8 +21,8 @@
 // #define STL_PATH "models/workpiece_rotated.stl"
 // #define STL_PATH "models/mill10.stl"
 // #define STL_PATH "models/cube100.stl"
-// #define STL_PATH "models/FreeCAD/subtraction/obj1.stl"
-#define STL_PATH "models/FreeCAD/subtraction/obj2.stl"
+#define STL_PATH "models/FreeCAD/subtraction/obj1.stl"
+// #define STL_PATH "models/FreeCAD/subtraction/obj2.stl"
 
 // #define GCODE_PATH "gcode/star_pocket.gcode"
 #define GCODE_PATH "gcode/pocket.gcode"
