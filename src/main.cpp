@@ -16,16 +16,17 @@
 
 // #define GCODE_TESTING
 // #define VOXELIZATION_TESTING
-#define BOOLEAN_OPERATIONS_TESTING
+// #define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
-// #define TEST
+#define TEST
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
   std::cout << "Using STL path: " << stlPath << std::endl;
 
 #ifdef TEST
-  analizeVoxelizedObject("test/point_mill_10.bin");
+  // analizeVoxelizedObject("test/point_mill_10.bin");
+  subtract("test/obj1.bin", "test/obj2.bin", glm::ivec3(0, 0, 0));
   exit(EXIT_SUCCESS);
 #endif
 

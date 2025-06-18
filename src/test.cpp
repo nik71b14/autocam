@@ -1,5 +1,6 @@
 #include "test.hpp"
 
+#include <glm/glm.hpp>
 #include <iostream>
 #include <string>
 
@@ -58,7 +59,7 @@ void analizeVoxelizedObject(const std::string& filename) {
   std::cout << "Columns with transitions at max Z (" << (res.z - 1) << "): " << columnsWithMaxZ << std::endl;
 
   return;
-  
+
   // Modify the compressed data to remove max Z transitions,
   // then save the modified object appending "_mod" to the filename
   if (columnsWithMaxZ > 0) {
@@ -86,6 +87,111 @@ void analizeVoxelizedObject(const std::string& filename) {
       std::cout << "Modified file saved as: " << outFilename << std::endl;
     } else {
       std::cerr << "Failed to save modified file." << std::endl;
+    }
+  }
+}
+
+void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ivec3 offset) {
+  BoolOps ops;
+  if (!ops.load(obj1Path)) {
+    std::cerr << "Failed to load first voxelized object." << std::endl;
+    return;
+  }
+  if (!ops.load(obj2Path)) {
+    std::cerr << "Failed to load second voxelized object." << std::endl;
+    return;
+  }
+
+  const auto& obj1 = ops.getObjects()[0];  // Get the last loaded object
+  const auto& obj2 = ops.getObjects()[1];  // Get the second last loaded object
+
+  // Each "obj" is a VoxelObject struct containing voxelization parameters and data.
+  // It is supposed, at the moment that the real size of each voxel (obj1.params.scale) is the same for both objects
+  // Each object has dimensions in voxels (obj.params.resolutionXYZ.x, obj.params.resolutionXYZ.y, obj.params.resolutionXYZ.z)
+  // The reference object in whose coordinate system the subtraction is performed is obj1
+  // The second object is obj2, which is subtracted from obj1
+  // obj2 is offset by the given offset vector, whose value is in voxels
+  // Each voxel object is represented by a VoxelObject struct, which contains the voxelization parameters and the data
+  // The data is composed by the coordinate of a transition in the Z axis, i.e. a passage from empty to filled voxel or vice versa
+  // The data is compressed, and the prefix sum data is used to access the data for each column in the voxel grid
+  //   - The params are stored as object.params, which contains the resolution, scale, center, color, and other parameters
+  //   - The compressed data is stored as object.compressedData, which is a vector of GLuints
+  //   - The prefix sum data is stored as object.prefixSumData, which is a vector of GLuints
+  // The obj are voxelized by "cutting" slices in the xy plane, at acertain Z coordinate, and storing the transitions in the compressed data
+  // The dimensions of the slice are such that Xmax = Ymax (it is a square slice), and during the voxelization process the slices dimensions
+  // are normalizet to a 1x1 square centered at the origin (0, 0) of the voxel grid
+  // The dimension along the Z axis is free, and thus can be >, < or = to 1. The normalization factor is the same as that used
+  // for the X and Y axes, i.e. the scale parameter in the voxelization parameters.
+  //
+  //    ______________
+  //   |obj1          |
+  //   |              |
+  //   |              |
+  //   |          ____|_
+  //   |         |obj2| |
+  //   |_________|____| |
+  //             |______|
+  //
+  // The Area of Interest (AOI) for the subtraction is given by (obj1 AND obj2) in the XY plane, in the coordinate system of obj1.
+  // Each pixel in the AOI can be identified by its (x, y) coordinates in the XY plane of obj1, so that its index in the prefix sum data is given by:
+  // int idx1 = x + y * obj1.params.resolutionXYZ.y;
+  // Now, i want a loop over the X,Y values of idx1 that belongs to the AOI, i.e. that for which (X >= offset.x && Y >= offset.y && belonging to obj1)
+  //
+  // In our test case, obj1 will be a 100x100x100 cube, obj2 will be a 50x50x50 cube
+
+  long h1 = static_cast<long>(obj1.params.resolutionXYZ.y);
+  long w1 = static_cast<long>(obj1.params.resolutionXYZ.x);
+  std::cout << "obj1 width: " << w1 << ", height: " << h1 << std::endl;
+  long h2 = static_cast<long>(obj2.params.resolutionXYZ.y);
+  long w2 = static_cast<long>(obj2.params.resolutionXYZ.x);
+  std::cout << "obj2 width: " << w2 << ", height: " << h2 << std::endl;
+
+  long minX = glm::clamp((w1 / 2 + offset.x - w2 / 2), 0L, w1);
+  long maxX = glm::clamp(w1 / 2 + offset.x + w2 / 2, 0L, w1);
+  long minY = glm::clamp(h1 / 2 + offset.y - h2 / 2, 0L, h1);
+  long maxY = glm::clamp(h1 / 2 + offset.y + h2 / 2, 0L, h1);
+  long AOIWidth = maxX - minX;
+  long AOIHeight = maxY - minY;
+
+  if (AOIWidth == 0 || AOIHeight == 0) {
+    std::cerr << "AOI is empty, no pixels to process." << std::endl;
+    return;
+  }
+
+  std::cout << "AOI X: [" << minX << ", " << maxX << "), AOI Y: [" << minY << ", " << maxY << ")" << std::endl;
+  std::cout << "AOI width: " << AOIWidth << ", AOI height: " << AOIHeight << std::endl;
+
+  for (int y = minY; y < maxY; y++) {
+    for (int x = minX; x < maxX; x++) {
+      int idx1 = x + y * h1;
+      // Here we would perform the subtraction logic
+      // std::cout << "Subtracting at index: " << idx1 << " with offset: (" << offset.x << ", " << offset.y << ", " << offset.z << ")" << std::endl;
+      size_t startIdx = obj1.prefixSumData[idx1];
+      // The "packet" for column idx1 in obj1.compressedData spans from startIdx (inclusive) to endIdx (exclusive).
+      // So, the last index belonging to the packet is actually endIdx - 1.
+      size_t endIdx =
+          (static_cast<size_t>(idx1 + 1) < obj1.prefixSumData.size()) ? obj1.prefixSumData[static_cast<size_t>(idx1 + 1)] : obj1.compressedData.size();
+      // The valid range is [startIdx, endIdx), i.e., startIdx <= i < endIdx.
+      // Now start1 and end1 define the range of compressedData for this column in obj1
+
+      // Extract the packet of compressed data for this column in obj1
+      std::vector<GLuint> packetZ(obj1.compressedData.begin() + startIdx, obj1.compressedData.begin() + endIdx);
+      // Now 'packet' contains the compressed data for column (x, y) in obj1
+
+      if (x == 500 && y == 500) {
+        std::cout << "First 50 values of obj1.compressedData: ";
+        for (size_t i = 0; i < 50 && i < obj1.compressedData.size(); ++i) {
+          std::cout << obj1.compressedData[i] << " ";
+        }
+        std::cout << std::endl;
+
+        std::cout << obj1.prefixSumData[idx1] << " - " << obj1.prefixSumData[idx1 + 1] << std::endl;
+        std::cout << "packetZ for (x=500, y=500): ";
+        for (const auto& val : packetZ) {
+          std::cout << val << " ";
+        }
+        std::cout << std::endl;
+      }
     }
   }
 }

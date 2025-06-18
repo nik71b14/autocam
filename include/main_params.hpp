@@ -20,7 +20,9 @@
 // #define STL_PATH "models/cube.stl"
 // #define STL_PATH "models/workpiece_rotated.stl"
 // #define STL_PATH "models/mill10.stl"
-#define STL_PATH "models/cube100.stl"
+// #define STL_PATH "models/cube100.stl"
+// #define STL_PATH "models/FreeCAD/subtraction/obj1.stl"
+#define STL_PATH "models/FreeCAD/subtraction/obj2.stl"
 
 // #define GCODE_PATH "gcode/star_pocket.gcode"
 #define GCODE_PATH "gcode/pocket.gcode"
@@ -29,7 +31,7 @@
 #define WHITE glm::vec3(1.0f, 1.0f, 1.0f)
 #define MEM_512MB 512 * 1024 * 1024  // 512 MB memory budget for voxelization
 #define MEM_1GB 1024 * 1024 * 1024   // 1 GB memory budget for voxelization
-#define RESOLUTION 0.05              // Voxel resolution in object units (e.g., mm)
+#define RESOLUTION 0.1               // Voxel resolution in object units (e.g., mm)
 
 // CAM
 #define SPEED_FACTOR 20.0  // Speed factor for simulation
