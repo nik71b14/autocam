@@ -141,19 +141,29 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
 
   long h1 = static_cast<long>(obj1.params.resolutionXYZ.y);
   long w1 = static_cast<long>(obj1.params.resolutionXYZ.x);
-  std::cout << "obj1 width: " << w1 << ", height: " << h1 << std::endl;
+  long z1 = static_cast<long>(obj1.params.resolutionXYZ.z);
+  std::cout << "obj1 X span: " << w1 << ", Y span: " << h1 << ", Z height" << z1 << std::endl;
   long h2 = static_cast<long>(obj2.params.resolutionXYZ.y);
   long w2 = static_cast<long>(obj2.params.resolutionXYZ.x);
-  std::cout << "obj2 width: " << w2 << ", height: " << h2 << std::endl;
+  long z2 = static_cast<long>(obj2.params.resolutionXYZ.z);
+  std::cout << "obj2 X span: " << w2 << ", Y span: " << h2 << ", Z height" << z2 << std::endl;
 
-  long minX = glm::clamp((w1 / 2 + offset.x - w2 / 2), 0L, w1);
-  long maxX = glm::clamp(w1 / 2 + offset.x + w2 / 2, 0L, w1);
-  long minY = glm::clamp(h1 / 2 + offset.y - h2 / 2, 0L, h1);
-  long maxY = glm::clamp(h1 / 2 + offset.y + h2 / 2, 0L, h1);
+  long translateX = w1 / 2 + offset.x;
+  long translateY = h1 / 2 + offset.y;
+  long translateZ = z1 / 2 + offset.z;
+
+  long minX = glm::clamp(translateX - w2 / 2, 0L, w1 - 1);
+  long maxX = glm::clamp(translateX + w2 / 2, 0L, w1) - 1;
+  long minY = glm::clamp(translateY - h2 / 2, 0L, h1 - 1);
+  long maxY = glm::clamp(translateY + h2 / 2, 0L, h1 - 1);
+  long minZ = glm::clamp(translateZ - z2 / 2, 0L, z1 - 1);
+  long maxZ = glm::clamp(translateZ + z2 / 2, 0L, z1 - 1);
+
   long AOIWidth = maxX - minX;
   long AOIHeight = maxY - minY;
+  long AOIHeightZ = maxZ - minZ;
 
-  if (AOIWidth == 0 || AOIHeight == 0) {
+  if (AOIWidth == 0 || AOIHeight == 0 || AOIHeightZ == 0) {
     std::cerr << "AOI is empty, no pixels to process." << std::endl;
     return;
   }
@@ -161,9 +171,13 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
   std::cout << "AOI X: [" << minX << ", " << maxX << "), AOI Y: [" << minY << ", " << maxY << ")" << std::endl;
   std::cout << "AOI width: " << AOIWidth << ", AOI height: " << AOIHeight << std::endl;
 
-  for (int y = minY; y < maxY; y++) {
-    for (int x = minX; x < maxX; x++) {
-      int idx1 = x + y * h1;
+  long x2, y2 = 0;
+
+  y2 = 0;  // Reset y2 for the outer loop
+  for (long y1 = minY; y1 < maxY; y1++) {
+    x2 = 0;  // Reset x2 for each row
+    for (long x1 = minX; x1 < maxX; x1++) {
+      long idx1 = x1 + y1 * w1;
       // Here we would perform the subtraction logic
       // std::cout << "Subtracting at index: " << idx1 << " with offset: (" << offset.x << ", " << offset.y << ", " << offset.z << ")" << std::endl;
       size_t startIdx = obj1.prefixSumData[idx1];
@@ -175,23 +189,39 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
       // Now start1 and end1 define the range of compressedData for this column in obj1
 
       // Extract the packet of compressed data for this column in obj1
-      std::vector<GLuint> packetZ(obj1.compressedData.begin() + startIdx, obj1.compressedData.begin() + endIdx);
+      std::vector<long> packetZ1(obj1.compressedData.begin() + startIdx, obj1.compressedData.begin() + endIdx);
       // Now 'packet' contains the compressed data for column (x, y) in obj1
 
-      if (x == 500 && y == 500) {
-        std::cout << "First 50 values of obj1.compressedData: ";
-        for (size_t i = 0; i < 50 && i < obj1.compressedData.size(); ++i) {
-          std::cout << obj1.compressedData[i] << " ";
+      long idx2 = x2 + y2 * w2;
+      size_t startIdx2 = obj2.prefixSumData[idx2];
+      size_t endIdx2 =
+          (static_cast<size_t>(idx2 + 1) < obj2.prefixSumData.size()) ? obj2.prefixSumData[static_cast<size_t>(idx2 + 1)] : obj2.compressedData.size();
+      std::vector<long> packetZ2(obj2.compressedData.begin() + startIdx2, obj2.compressedData.begin() + endIdx2);
+
+      // Move the values in packetZ2 to the coordinate system of obj1
+      for (size_t i = 0; i < packetZ2.size(); ++i) {
+        packetZ2[i] += translateZ - z2 / 2;                 // Shift the Z values by the offset.z
+        packetZ2[i] = glm::clamp(packetZ2[i], 0L, h1 - 1);  // Clamp to valid Z range
+      }
+
+      //@@@ DEBUG
+      if (x2 == 100 && y2 == 100) {  // Center of the test obj1
+        std::cout << "packetZ1: ";
+        for (size_t i = 0; i < packetZ1.size(); ++i) {
+          std::cout << packetZ1[i] << " ";
         }
         std::cout << std::endl;
 
-        std::cout << obj1.prefixSumData[idx1] << " - " << obj1.prefixSumData[idx1 + 1] << std::endl;
-        std::cout << "packetZ for (x=500, y=500): ";
-        for (const auto& val : packetZ) {
-          std::cout << val << " ";
+        std::cout << "packetZ2: ";
+        for (size_t i = 0; i < packetZ2.size(); ++i) {
+          std::cout << packetZ2[i] << " ";
         }
         std::cout << std::endl;
       }
+      //@@@ END DEBUG
+
+      x2 += 1;
     }
+    y2 += 1;
   }
 }
