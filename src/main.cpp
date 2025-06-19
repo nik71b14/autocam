@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
 
 #ifdef TEST
   // analizeVoxelizedObject("test/point_mill_10.bin");
-  subtract("test/obj1.bin", "test/obj2.bin", glm::ivec3(0, 0, 300));
+  subtract("test/obj1.bin", "test/obj2.bin", glm::ivec3(500, 500, 500));
   exit(EXIT_SUCCESS);
 #endif
 

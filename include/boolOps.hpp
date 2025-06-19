@@ -28,6 +28,8 @@ class BoolOps {
 
   // Accessor
   const std::vector<VoxelObject>& getObjects() const { return objects; }
+  std::vector<VoxelObject>& getObjects() { return objects; }
+
 
   // Optional: clear loaded objects
   void clear() { objects.clear(); }

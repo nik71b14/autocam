@@ -1,10 +1,12 @@
 #include "test.hpp"
 
+#include <chrono>
 #include <glm/glm.hpp>
 #include <iostream>
 #include <string>
 
 #include "boolOps.hpp"
+#include "voxelViewer.hpp"
 
 void analizeVoxelizedObject(const std::string& filename) {
   BoolOps ops;
@@ -91,6 +93,155 @@ void analizeVoxelizedObject(const std::string& filename) {
   }
 }
 
+void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ivec3 offset) {
+  BoolOps ops;
+  if (!ops.load(obj1Path)) {
+    std::cerr << "Failed to load first voxelized object." << std::endl;
+    return;
+  }
+  if (!ops.load(obj2Path)) {
+    std::cerr << "Failed to load second voxelized object." << std::endl;
+    return;
+  }
+
+  auto& obj1 = ops.getObjects()[0];
+  const auto& obj2 = ops.getObjects()[1];
+
+  //@@@ Exection time measurement
+  auto startTime = std::chrono::high_resolution_clock::now();
+
+  long w1 = static_cast<long>(obj1.params.resolutionXYZ.x);
+  long h1 = static_cast<long>(obj1.params.resolutionXYZ.y);
+  long z1 = static_cast<long>(obj1.params.resolutionXYZ.z);
+  long w2 = static_cast<long>(obj2.params.resolutionXYZ.x);
+  long h2 = static_cast<long>(obj2.params.resolutionXYZ.y);
+  long z2 = static_cast<long>(obj2.params.resolutionXYZ.z);
+
+  long translateX = w1 / 2 + offset.x;
+  long translateY = h1 / 2 + offset.y;
+  long translateZ = z1 / 2 + offset.z;
+
+  long minX = glm::clamp(translateX - w2 / 2, 0L, w1);
+  long maxX = glm::clamp(translateX + w2 / 2, 0L, w1);
+  long minY = glm::clamp(translateY - h2 / 2, 0L, h1);
+  long maxY = glm::clamp(translateY + h2 / 2, 0L, h1);
+
+  if (minX >= maxX || minY >= maxY) {
+    std::cerr << "AOI is empty, no pixels to process." << std::endl;
+    return;
+  }
+
+  std::vector<GLuint> compressedDataNew;
+  std::vector<GLuint> prefixSumDataNew(obj1.prefixSumData.size(), 0);
+  size_t currentOffset = 0;
+
+  for (long y1 = 0; y1 < h1; ++y1) {
+    for (long x1 = 0; x1 < w1; ++x1) {
+      long idx1 = x1 + y1 * w1;
+
+      if (x1 >= minX && x1 < maxX && y1 >= minY && y1 < maxY) {
+        // AOI: perform subtraction
+        size_t start1 = obj1.prefixSumData[idx1];
+        size_t end1 = (static_cast<size_t>(idx1) + 1 < obj1.prefixSumData.size()) ? obj1.prefixSumData[idx1 + 1] : obj1.compressedData.size();
+        std::vector<long> packetZ1(obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
+
+        long x2 = x1 - (translateX - w2 / 2);
+        long y2 = y1 - (translateY - h2 / 2);
+        long idx2 = x2 + y2 * w2;
+
+        std::vector<long> packetZ2;
+        if (x2 >= 0 && x2 < w2 && y2 >= 0 && y2 < h2) {
+          size_t start2 = obj2.prefixSumData[idx2];
+          size_t end2 = (static_cast<size_t>(idx2) + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : obj2.compressedData.size();
+          packetZ2.assign(obj2.compressedData.begin() + start2, obj2.compressedData.begin() + end2);
+
+          for (auto& z : packetZ2) {
+            z += translateZ - z2 / 2;
+            z = glm::clamp(z, 0L, z1 - 1);
+          }
+        }
+
+        // Combine transitions
+        std::vector<std::pair<long, int>> combined;
+        for (auto z : packetZ1) combined.emplace_back(z, 0);
+        for (auto z : packetZ2) combined.emplace_back(z, 1);
+        std::sort(combined.begin(), combined.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first || (a.first == b.first && a.second > b.second); });
+
+        std::vector<GLuint> result;
+        bool blackOn = false;
+        bool redOn = false;
+        size_t i = 0;
+        while (i < combined.size()) {
+          long z = combined[i].first;
+          bool hasBlack = false, hasRed = false;
+          while (i < combined.size() && combined[i].first == z) {
+            if (combined[i].second == 0) hasBlack = true;
+            if (combined[i].second == 1) hasRed = true;
+            ++i;
+          }
+
+          bool prevBlackOn = blackOn;
+          bool prevRedOn = redOn;
+
+          if (hasBlack) blackOn = !blackOn;
+          if (hasRed) redOn = !redOn;
+
+          if (hasBlack && hasRed) {
+            bool blackWasOnToOff = prevBlackOn && !blackOn;
+            bool blackWasOffToOn = !prevBlackOn && blackOn;
+            bool redWasOnToOff = prevRedOn && !redOn;
+            bool redWasOffToOn = !prevRedOn && redOn;
+
+            if ((blackWasOffToOn && redWasOffToOn) || (blackWasOnToOff && redWasOnToOff)) {
+              continue;  // discard
+            } else {
+              result.push_back(z);
+            }
+          } else if (hasBlack) {
+            if (!prevBlackOn) {
+              if (!prevRedOn) result.push_back(z);
+            } else {
+              if (!prevRedOn) result.push_back(z);
+            }
+          } else if (hasRed) {
+            if (!prevRedOn) {
+              if (prevBlackOn) result.push_back(z);
+            } else {
+              if (prevBlackOn) result.push_back(z);
+            }
+          }
+        }
+
+        prefixSumDataNew[idx1] = currentOffset;
+        compressedDataNew.insert(compressedDataNew.end(), result.begin(), result.end());
+        currentOffset += result.size();
+
+      } else {
+        // Non-AOI → copy existing data
+        size_t start1 = obj1.prefixSumData[idx1];
+        size_t end1 = (static_cast<size_t>(idx1) + 1 < obj1.prefixSumData.size()) ? obj1.prefixSumData[idx1 + 1] : obj1.compressedData.size();
+        prefixSumDataNew[idx1] = currentOffset;
+        compressedDataNew.insert(compressedDataNew.end(), obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
+        currentOffset += (end1 - start1);
+      }
+    }
+  }
+
+  obj1.compressedData = std::move(compressedDataNew);
+  obj1.prefixSumData = std::move(prefixSumDataNew);
+
+  std::cout << "Subtraction completed. New compressed data size: " << obj1.compressedData.size() << std::endl;
+  auto endTime = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+  std::cout << "Execution time: " << duration << " ms" << std::endl;
+
+  VoxelViewer viewer(obj1.compressedData, obj1.prefixSumData, obj1.params);
+  viewer.setOrthographic(true);  // Set orthographic projection
+  viewer.run();
+}
+
+/*
 void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ivec3 offset) {
   BoolOps ops;
   if (!ops.load(obj1Path)) {
@@ -204,8 +355,97 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
         packetZ2[i] = glm::clamp(packetZ2[i], 0L, h1 - 1);  // Clamp to valid Z range
       }
 
+      // SUBTRACTION LOGIC ----------------------------------------------------
+      // ✅ Sorting:
+      //  First by increasing Z.
+      //  When transitions coincide at the same Z, we handle red (obj2) transitions first, so subtraction happens cleanly.
+      // ✅ Flags:
+      //  blackOn: Are we inside a filled region of obj1?
+      //  redOn: Are we inside a region to subtract (obj2)?
+      // ✅ Conditions for Keeping a Transition:
+      //  Red toggling on → if blackOn → keep (we're starting to subtract in filled region)
+      //  Red toggling off → if blackOn → keep (we're ending subtraction in filled region)
+      //  Black toggling on → if not redOn → keep (entering filled region, no subtraction here)
+      //  Black toggling off → if not redOn → keep (exiting filled region, no subtraction here)
+      // ✅ Coincident Transitions:
+      //  Same type (both off→on or both on→off): discard → net effect zero.
+      //  Mixed: merge → net subtraction boundary change → keep single transition.
+
+      std::vector<std::pair<long, int>> combinedTransitions;
+      for (const auto& z : packetZ1) {
+        combinedTransitions.emplace_back(z, 0);  // black
+      }
+      for (const auto& z : packetZ2) {
+        combinedTransitions.emplace_back(z, 1);  // red
+      }
+
+      // Sort by Z
+      std::sort(combinedTransitions.begin(), combinedTransitions.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first || (a.first == b.first && a.second > b.second);
+        // red before black on tie
+      });
+
+      std::vector<long> resultTransitions;
+      bool blackOn = false;
+      bool redOn = false;
+
+      size_t i = 0;
+      while (i < combinedTransitions.size()) {
+        long z = combinedTransitions[i].first;
+
+        // Collect all transitions at this z
+        bool hasBlack = false;
+        bool hasRed = false;
+
+        while (i < combinedTransitions.size() && combinedTransitions[i].first == z) {
+          if (combinedTransitions[i].second == 0) hasBlack = true;
+          if (combinedTransitions[i].second == 1) hasRed = true;
+          ++i;
+        }
+
+        // Save previous states
+        bool prevBlackOn = blackOn;
+        bool prevRedOn = redOn;
+
+        // Toggle flags for those present at this z
+        if (hasBlack) blackOn = !blackOn;
+        if (hasRed) redOn = !redOn;
+
+        if (hasBlack && hasRed) {
+          // Both transitions at this Z
+          bool blackWasOnToOff = prevBlackOn && !blackOn;
+          bool blackWasOffToOn = !prevBlackOn && blackOn;
+          bool redWasOnToOff = prevRedOn && !redOn;
+          bool redWasOffToOn = !prevRedOn && redOn;
+
+          if ((blackWasOffToOn && redWasOffToOn) || (blackWasOnToOff && redWasOnToOff)) {
+            // Same type -> discard both
+            continue;
+          } else {
+            // Mixed → keep one merged transition
+            resultTransitions.push_back(z);
+          }
+        } else if (hasBlack) {
+          // Only black transition at this z
+          if (!prevBlackOn) {  // black off -> on
+            if (!redOn) resultTransitions.push_back(z);
+          } else {  // black on -> off
+            if (!redOn) resultTransitions.push_back(z);
+          }
+        } else if (hasRed) {
+          // Only red transition at this z
+          if (!prevRedOn) {  // red off -> on
+            if (blackOn) resultTransitions.push_back(z);
+          } else {  // red on -> off
+            if (blackOn) resultTransitions.push_back(z);
+          }
+        }
+      }
+
+      // END SUBTRACTION LOGIC ------------------------------------------------
+
       //@@@ DEBUG
-      if (x2 == 100 && y2 == 100) {  // Center of the test obj1
+      if (x2 == 0 && y2 == 0) {
         std::cout << "packetZ1: ";
         for (size_t i = 0; i < packetZ1.size(); ++i) {
           std::cout << packetZ1[i] << " ";
@@ -216,6 +456,11 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
         for (size_t i = 0; i < packetZ2.size(); ++i) {
           std::cout << packetZ2[i] << " ";
         }
+
+        std::cout << "resultTransitions: ";
+        for (size_t i = 0; i < resultTransitions.size(); ++i) {
+          std::cout << resultTransitions[i] << " ";
+        }
         std::cout << std::endl;
       }
       //@@@ END DEBUG
@@ -225,3 +470,4 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
     y2 += 1;
   }
 }
+*/
