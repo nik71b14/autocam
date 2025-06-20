@@ -17,9 +17,9 @@
 
 // #define GCODE_TESTING
 // #define VOXELIZATION_TESTING
-#define BOOLEAN_OPERATIONS_TESTING
+// #define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
-// #define TEST
+#define TEST
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
@@ -27,27 +27,28 @@ int main(int argc, char** argv) {
 
 #ifdef TEST
   // analizeVoxelizedObject("test/point_mill_10.bin");
-  BoolOps ops;
-  if (!ops.load("test/obj1.bin")) {
-    std::cerr << "Failed to load voxelized object." << std::endl;
-    return 1;
-  }
-  if (!ops.load("test/obj2.bin")) {
-    std::cerr << "Failed to load voxelized object." << std::endl;
-    return 1;
-  }
-  // Perform subtraction
-  if (!ops.subtract(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 700))) {
-    std::cerr << "Subtraction failed." << std::endl;
-    return 1;
-  }
 
-  VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
-  // viewer.setOrthographic(true);  // Set orthographic projection
-  viewer.run();
+  subtract("test/workpiece_100_100_50.bin", "test/hemispheric_mill_10.bin", glm::ivec3(0, 0, 820));
 
-  // Save the result
-  // subtract("test/workpiece_100_100_50.bin", "test/hemispheric_mill_10.bin", glm::ivec3(0, 0, -600));
+  /*   BoolOps ops;
+    if (!ops.load("test/workpiece_100_100_50.bin")) {
+      std::cerr << "Failed to load voxelized object." << std::endl;
+      return 1;
+    }
+    if (!ops.load("test/hemispheric_mill_10.bin")) {
+      std::cerr << "Failed to load voxelized object." << std::endl;
+      return 1;
+    }
+    // Perform subtraction
+    if (!ops.subtract(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
+      std::cerr << "Subtraction failed." << std::endl;
+      return 1;
+    }
+
+    VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
+    // viewer.setOrthographic(true);  // Set orthographic projection
+    viewer.run(); */
+
   exit(EXIT_SUCCESS);
 #endif
 
@@ -190,7 +191,7 @@ int main(int argc, char** argv) {
       int offsetX = static_cast<int>(sineVal / std::sqrt(2.0f));  // normalize the vector (-1,1)
       int offsetY = static_cast<int>(-sineVal / std::sqrt(2.0f));
 
-      glm::ivec3 offsetPos(baseX + offsetX, baseY + offsetY, 700);
+      glm::ivec3 offsetPos(baseX + offsetX, baseY + offsetY, 770);
 
       //@@@ SE LA SOTTRAZIONE RESTITUISCE FALSE, VEDERE COSA SUCCEDE
 

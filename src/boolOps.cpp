@@ -302,7 +302,7 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
 
   long translateX = w1 / 2 + offset.x;
   long translateY = h1 / 2 + offset.y;
-  // long translateZ = z1 / 2 + offset.z; //%%%%%
+  // long translateZ = z1 / 2 + offset.z;  //%%%%%
   long translateZ = z1 / 2 - offset.z;  // This is a convention change to match the original logic used during voxelization.
 
   long minX = glm::clamp(translateX - w2 / 2, 0L, w1);
@@ -310,7 +310,10 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
   long minY = glm::clamp(translateY - h2 / 2, 0L, h1);
   long maxY = glm::clamp(translateY + h2 / 2, 0L, h1);
 
-  if (minX >= maxX || minY >= maxY) {
+  long minZ = glm::clamp(translateZ - z2 / 2, 0L, z1 - 1);
+  long maxZ = glm::clamp(translateZ + z2 / 2, 0L, z1 - 1);
+
+  if (minX >= maxX || minY >= maxY || minZ >= maxZ) {
     std::cerr << "AOI is empty, no pixels to process." << std::endl;
     return false;
   }

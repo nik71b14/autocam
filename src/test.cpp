@@ -119,7 +119,7 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
 
   long translateX = w1 / 2 + offset.x;
   long translateY = h1 / 2 + offset.y;
-  long translateZ = z1 / 2 + offset.z;
+  long translateZ = z1 / 2 - offset.z;
 
   long minX = glm::clamp(translateX - w2 / 2, 0L, w1);
   long maxX = glm::clamp(translateX + w2 / 2, 0L, w1);
@@ -141,24 +141,43 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
 
       if (x1 >= minX && x1 < maxX && y1 >= minY && y1 < maxY) {
         // AOI: perform subtraction
+
+        // Extract packetZ1 for the current column in obj1
         size_t start1 = obj1.prefixSumData[idx1];
         size_t end1 = (static_cast<size_t>(idx1) + 1 < obj1.prefixSumData.size()) ? obj1.prefixSumData[idx1 + 1] : obj1.compressedData.size();
         std::vector<long> packetZ1(obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
 
+        //%%%%%%
+        if (packetZ1.empty()) {
+          // No geometry in obj1 at this column → nothing to subtract → leave empty
+          prefixSumDataNew[idx1] = currentOffset;
+          continue;
+        }
+
+        // Extract packetZ2 for the current column in obj2
         long x2 = x1 - (translateX - w2 / 2);
         long y2 = y1 - (translateY - h2 / 2);
         long idx2 = x2 + y2 * w2;
 
         std::vector<long> packetZ2;
-        if (x2 >= 0 && x2 < w2 && y2 >= 0 && y2 < h2) {
-          size_t start2 = obj2.prefixSumData[idx2];
-          size_t end2 = (static_cast<size_t>(idx2) + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : obj2.compressedData.size();
-          packetZ2.assign(obj2.compressedData.begin() + start2, obj2.compressedData.begin() + end2);
 
-          for (auto& z : packetZ2) {
-            z += translateZ - z2 / 2;
-            z = glm::clamp(z, 0L, z1 - 1);
-          }
+        // start2 and end2-1 are the indices in obj2's compressedData for the current column
+        size_t start2 = obj2.prefixSumData[idx2];
+        size_t end2 = (static_cast<size_t>(idx2) + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : obj2.compressedData.size();
+        packetZ2.assign(obj2.compressedData.begin() + start2, obj2.compressedData.begin() + end2);
+
+        //%%%%%%
+        if (packetZ2.empty()) {
+          // No transitions in obj2 for this column, copy packetZ1
+          prefixSumDataNew[idx1] = currentOffset;
+          compressedDataNew.insert(compressedDataNew.end(), packetZ1.begin(), packetZ1.end());
+          currentOffset += packetZ1.size();
+          continue;
+        }
+
+        for (auto& z : packetZ2) {
+          z += translateZ - z2 / 2;
+          z = glm::clamp(z, 0L, z1 - 1);  // Clamp packetZ2 values to the valid Z range of obj1
         }
 
         // Combine transitions
@@ -241,8 +260,7 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
   viewer.run();
 }
 
-/*
-void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ivec3 offset) {
+void subtract_me(const std::string& obj1Path, const std::string& obj2Path, glm::ivec3 offset) {
   BoolOps ops;
   if (!ops.load(obj1Path)) {
     std::cerr << "Failed to load first voxelized object." << std::endl;
@@ -301,7 +319,7 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
 
   long translateX = w1 / 2 + offset.x;
   long translateY = h1 / 2 + offset.y;
-  long translateZ = z1 / 2 + offset.z;
+  long translateZ = z1 / 2 - offset.z;  //%%%%
 
   long minX = glm::clamp(translateX - w2 / 2, 0L, w1 - 1);
   long maxX = glm::clamp(translateX + w2 / 2, 0L, w1) - 1;
@@ -470,4 +488,3 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
     y2 += 1;
   }
 }
-*/

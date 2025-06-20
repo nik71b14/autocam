@@ -25,11 +25,9 @@ class BoolOps {
   bool load(const std::string& filename);
   bool save(const std::string& filename, int idx = 0);
 
-
   // Accessor
   const std::vector<VoxelObject>& getObjects() const { return objects; }
   std::vector<VoxelObject>& getObjects() { return objects; }
-
 
   // Optional: clear loaded objects
   void clear() { objects.clear(); }
