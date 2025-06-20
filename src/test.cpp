@@ -176,8 +176,7 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
         }
 
         for (auto& z : packetZ2) {
-          z += translateZ - z2 / 2;
-          z = glm::clamp(z, 0L, z1 - 1);  // Clamp packetZ2 values to the valid Z range of obj1
+          z += translateZ - z2 / 2;  //%%%%% Note: z can be also outside the range of obj1, so we need to filter it later!!!
         }
 
         // Combine transitions
@@ -187,10 +186,12 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
         std::sort(combined.begin(), combined.end(),
                   [](const auto& a, const auto& b) { return a.first < b.first || (a.first == b.first && a.second > b.second); });
 
-        std::vector<GLuint> result;
+        // Initialize flags for transitions
         bool blackOn = false;
         bool redOn = false;
+        std::vector<long> result;
         size_t i = 0;
+
         while (i < combined.size()) {
           long z = combined[i].first;
           bool hasBlack = false, hasRed = false;
@@ -232,9 +233,17 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
           }
         }
 
+        //%%%%% Filter out-of-bounds
+        std::vector<GLuint> filteredResult;
+        for (auto z : result) {
+          if (z >= 0 && z < z1) {
+            filteredResult.push_back(z);
+          }
+        }
+
         prefixSumDataNew[idx1] = currentOffset;
-        compressedDataNew.insert(compressedDataNew.end(), result.begin(), result.end());
-        currentOffset += result.size();
+        compressedDataNew.insert(compressedDataNew.end(), filteredResult.begin(), filteredResult.end());
+        currentOffset += filteredResult.size();
 
       } else {
         // Non-AOI → copy existing data

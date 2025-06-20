@@ -17,9 +17,9 @@
 
 // #define GCODE_TESTING
 // #define VOXELIZATION_TESTING
-// #define BOOLEAN_OPERATIONS_TESTING
+#define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
-#define TEST
+// #define TEST
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
@@ -174,13 +174,13 @@ int main(int argc, char** argv) {
     // }
 
     // SINE OSCILLATION SUBTRACTION TESTING
-    for (int mov = 0; mov < 200; mov += 10) {
+    for (int mov = 0; mov < 400; mov += 10) {
       // base position along 45° diagonal
       int baseX = -300 + mov;
       int baseY = -300 + mov;
 
       // sine oscillation parameters
-      float amplitude = 50.0f;  // adjust as needed
+      float amplitude = 30.0f;  // adjust as needed
       float frequency = 5.0f;   // adjust as needed
 
       // sine offset perpendicular to 45° line
@@ -191,7 +191,7 @@ int main(int argc, char** argv) {
       int offsetX = static_cast<int>(sineVal / std::sqrt(2.0f));  // normalize the vector (-1,1)
       int offsetY = static_cast<int>(-sineVal / std::sqrt(2.0f));
 
-      glm::ivec3 offsetPos(baseX + offsetX, baseY + offsetY, 770);
+      glm::ivec3 offsetPos(baseX + offsetX, baseY + offsetY, 700 + mov / 4);
 
       //@@@ SE LA SOTTRAZIONE RESTITUISCE FALSE, VEDERE COSA SUCCEDE
 

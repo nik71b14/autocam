@@ -332,6 +332,13 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
         size_t end1 = (static_cast<size_t>(idx1) + 1 < obj1.prefixSumData.size()) ? obj1.prefixSumData[idx1 + 1] : obj1.compressedData.size();
         std::vector<long> packetZ1(obj1.compressedData.begin() + start1, obj1.compressedData.begin() + end1);
 
+        //%%%%%%
+        if (packetZ1.empty()) {
+          // No geometry in obj1 at this column → nothing to subtract → leave empty
+          prefixSumDataNew[idx1] = currentOffset;
+          continue;
+        }
+
         long x2 = x1 - (translateX - w2 / 2);
         long y2 = y1 - (translateY - h2 / 2);
         long idx2 = x2 + y2 * w2;
@@ -342,9 +349,17 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
           size_t end2 = (static_cast<size_t>(idx2) + 1 < obj2.prefixSumData.size()) ? obj2.prefixSumData[idx2 + 1] : obj2.compressedData.size();
           packetZ2.assign(obj2.compressedData.begin() + start2, obj2.compressedData.begin() + end2);
 
+          //%%%%%%
+          if (packetZ2.empty()) {
+            // No transitions in obj2 for this column, copy packetZ1
+            prefixSumDataNew[idx1] = currentOffset;
+            compressedDataNew.insert(compressedDataNew.end(), packetZ1.begin(), packetZ1.end());
+            currentOffset += packetZ1.size();
+            continue;
+          }
+
           for (auto& z : packetZ2) {
-            z += translateZ - z2 / 2;
-            z = glm::clamp(z, 0L, z1 - 1);
+            z += translateZ - z2 / 2;  // Note: z can be also outside the range of obj1, so we need to filter it later!!!
           }
         }
 
@@ -352,13 +367,15 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
         std::vector<std::pair<long, int>> combined;
         for (auto z : packetZ1) combined.emplace_back(z, 0);
         for (auto z : packetZ2) combined.emplace_back(z, 1);
+
         std::sort(combined.begin(), combined.end(),
                   [](const auto& a, const auto& b) { return a.first < b.first || (a.first == b.first && a.second > b.second); });
 
-        std::vector<GLuint> result;
+        std::vector<long> result;
         bool blackOn = false;
         bool redOn = false;
         size_t i = 0;
+
         while (i < combined.size()) {
           long z = combined[i].first;
           bool hasBlack = false, hasRed = false;
@@ -400,9 +417,17 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
           }
         }
 
+        // Filter out-of-bounds
+        std::vector<GLuint> filteredResult;
+        for (auto z : result) {
+          if (z >= 0 && z < z1) {
+            filteredResult.push_back(z);
+          }
+        }
+
         prefixSumDataNew[idx1] = currentOffset;
-        compressedDataNew.insert(compressedDataNew.end(), result.begin(), result.end());
-        currentOffset += result.size();
+        compressedDataNew.insert(compressedDataNew.end(), filteredResult.begin(), filteredResult.end());
+        currentOffset += filteredResult.size();
 
       } else {
         // Non-AOI → copy existing data
