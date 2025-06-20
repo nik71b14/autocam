@@ -11,6 +11,9 @@
 
 #include "voxelizer.hpp"
 
+#define AXES_LENGTH 1000.0f
+#define IDENTITY_MODEL glm::mat4(1.0f)  // Identity matrix for model transformations
+
 VoxelViewer::VoxelViewer(const std::string& compressedFile, const std::string& prefixSumFile, VoxelizationParams params) : params(params) {
   if (!loadBinaryFile(compressedFile, compressedData) || !loadBinaryFile(prefixSumFile, prefixSumData)) {
     throw std::runtime_error("Failed to load one or both input files");
@@ -81,7 +84,8 @@ void VoxelViewer::onMouseMove(double xpos, double ypos) {
 
   if (leftMousePressed) {
     yaw += delta.x * 0.3f;
-    pitch -= delta.y * 0.3f;
+    // pitch -= delta.y * 0.3f; //%%%%%%%
+    pitch += delta.y * 0.3f;
     pitch = glm::clamp(pitch, -89.0f, 89.0f);
   } else if (rightMousePressed) {
     panOffset += delta * 0.005f;
@@ -114,7 +118,9 @@ void VoxelViewer::onScroll(double xoffset, double yoffset) {
 }
 
 void VoxelViewer::setupShaderAndBuffers() {
+  flatShader = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
   raymarchingShader = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
+
   raymarchingShader->use();
 
   glDisable(GL_DEPTH_TEST);
@@ -218,14 +224,16 @@ void VoxelViewer::run() {
     float zCenter = 0.0f;  // Since we're symmetric in Z
     glm::vec3 actualCenter = glm::vec3(0.0f, 0.0f, zCenter);
 
-    glm::vec3 cameraPos = actualCenter + glm::vec3(panOffset, 0.0f) + (-dir * distance);
+    // glm::vec3 cameraPos = actualCenter + glm::vec3(panOffset, 0.0f) + (-dir * distance); //%%%%%%%
+    glm::vec3 cameraPos = actualCenter + glm::vec3(panOffset, 0.0f) + (dir * distance);
 
     // glm::vec3 up = glm::vec3(1.0f, 0.0f, 0.0f); // Up vector remains unchanged
     glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);  // Up vector remains unchanged
     glm::mat4 view = glm::lookAt(cameraPos, actualCenter + glm::vec3(panOffset, 0.0f), up);
 
-    // Calculate inverse view-projection matrix
-    glm::mat4 invViewProj = glm::inverse(proj * view);
+    // @@@ RENDER VOXEL
+    raymarchingShader->use();
+    glm::mat4 invViewProj = glm::inverse(proj * view);  // Calculate inverse view-projection matrix
 
     raymarchingShader->setMat4("invViewProj", invViewProj);
     raymarchingShader->setVec3("cameraPos", cameraPos);
@@ -233,6 +241,14 @@ void VoxelViewer::run() {
     raymarchingShader->setVec3("color", params.color);  //&&&
 
     renderFullScreenQuad();
+    // @@@ END RENDER VOXEL
+
+    flatShader->use();
+    flatShader->setMat4("uProj", proj);
+    flatShader->setMat4("uView", view);
+    flatShader->setMat4("uModel", IDENTITY_MODEL);  // Identity model matrix for static objects
+    drawAxes();                                     // Draw axes for reference
+
     glfwSwapBuffers(window);
   }
 }
@@ -260,4 +276,51 @@ bool VoxelViewer::loadBinaryFile(const std::string& filename, std::vector<unsign
   outData.resize(size / sizeof(unsigned int));
   file.read(reinterpret_cast<char*>(outData.data()), size);
   return file.good();
+}
+
+void VoxelViewer::drawAxes() {
+  initAxes();
+
+  flatShader->use();
+
+  glBindVertexArray(axesVAO);
+
+  // Red X axis
+  flatShader->setVec4("uColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+  glDrawArrays(GL_LINES, 0, 2);
+
+  // Green Y axis
+  flatShader->setVec4("uColor", glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+  glDrawArrays(GL_LINES, 2, 2);
+
+  // Blue Z axis
+  flatShader->setVec4("uColor", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+  glDrawArrays(GL_LINES, 4, 2);
+
+  glBindVertexArray(0);
+}
+
+void VoxelViewer::initAxes() {
+  if (axesInitialized) return;
+
+  // 3 axis segments, each from origin to positive direction
+  std::vector<float> axesVertices = {
+      0.0f, 0.0f, 0.0f, AXES_LENGTH, 0.0f,        0.0f,        // X (red)
+      0.0f, 0.0f, 0.0f, 0.0f,        AXES_LENGTH, 0.0f,        // Y (green)
+      0.0f, 0.0f, 0.0f, 0.0f,        0.0f,        AXES_LENGTH  // Z (blue)
+  };
+
+  glGenVertexArrays(1, &axesVAO);
+  glGenBuffers(1, &axesVBO);
+
+  glBindVertexArray(axesVAO);
+  glBindBuffer(GL_ARRAY_BUFFER, axesVBO);
+  glBufferData(GL_ARRAY_BUFFER, axesVertices.size() * sizeof(float), axesVertices.data(), GL_STATIC_DRAW);
+
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+  glEnableVertexAttribArray(0);
+
+  glBindVertexArray(0);
+
+  axesInitialized = true;
 }

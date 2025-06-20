@@ -17,9 +17,9 @@
 
 // #define GCODE_TESTING
 // #define VOXELIZATION_TESTING
-// #define BOOLEAN_OPERATIONS_TESTING
+#define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
-#define TEST
+// #define TEST
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
@@ -27,7 +27,27 @@ int main(int argc, char** argv) {
 
 #ifdef TEST
   // analizeVoxelizedObject("test/point_mill_10.bin");
-  subtract("test/obj1.bin", "test/obj2.bin", glm::ivec3(500, 500, 500));
+  BoolOps ops;
+  if (!ops.load("test/obj1.bin")) {
+    std::cerr << "Failed to load voxelized object." << std::endl;
+    return 1;
+  }
+  if (!ops.load("test/obj2.bin")) {
+    std::cerr << "Failed to load voxelized object." << std::endl;
+    return 1;
+  }
+  // Perform subtraction
+  if (!ops.subtract(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 700))) {
+    std::cerr << "Subtraction failed." << std::endl;
+    return 1;
+  }
+
+  VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
+  // viewer.setOrthographic(true);  // Set orthographic projection
+  viewer.run();
+
+  // Save the result
+  // subtract("test/workpiece_100_100_50.bin", "test/hemispheric_mill_10.bin", glm::ivec3(0, 0, -600));
   exit(EXIT_SUCCESS);
 #endif
 
@@ -91,7 +111,7 @@ int main(int argc, char** argv) {
 // ------------------------------------------------------------------------
 
 // VOXELIZATION TESTING ---------------------------------------------------
-#if defined(VOXELIZATION_TESTING) || defined(VOXEL_VIEWER_TESTING)
+#if defined(VOXELIZATION_TESTING)
     Mesh mesh = loadMesh(stlPath);
 
     // 1. Stack-allocate the Voxelizer object, run the voxelization, and save results
@@ -131,19 +151,18 @@ int main(int argc, char** argv) {
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
     // Loads object 1
-    // if (!ops->load("test/workpiece_100_100_50.bin")) {
-    if (!ops->load("test/cube100.bin")) {
+    if (!ops->load("test/workpiece_100_100_50.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
     // Loads object 2
-    if (!ops->load("test/mill10.bin")) {
-      // if (!ops->load("test/cube.bin")) {
+    if (!ops->load("test/hemispheric_mill_10.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
 
     int index = 0;
     // BASIC SUBTRACTION TESTING
-    ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(500.0f, 500.0f, -400.0f));
+    // ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(500.0f, 500.0f, -400.0f));
+    // ops->subtract(ops->getObjects()[0], ops->getObjects()[1], glm::ivec3(0, 0, 600));
 
     // STRAIGHT LINE SUBTRACTION TESTING
     // for (float mov = 0.0f; mov < 200.0f; mov += 20.0f) {
@@ -154,30 +173,32 @@ int main(int argc, char** argv) {
     // }
 
     // SINE OSCILLATION SUBTRACTION TESTING
-    // for (float mov = 0.0f; mov < 800.0f; mov += 10.0f) {
-    //   // base position along 45° diagonal
-    //   float baseX = 100.0f + mov;
-    //   float baseY = 100.0f + mov;
+    for (int mov = 0; mov < 200; mov += 10) {
+      // base position along 45° diagonal
+      int baseX = -300 + mov;
+      int baseY = -300 + mov;
 
-    //   // sine oscillation parameters
-    //   float amplitude = 50.0f;  // adjust as needed
-    //   float frequency = 5.0f;   // adjust as needed
+      // sine oscillation parameters
+      float amplitude = 50.0f;  // adjust as needed
+      float frequency = 5.0f;   // adjust as needed
 
-    //   // sine offset perpendicular to 45° line
-    //   float sineVal = amplitude * std::sin(frequency * mov);
+      // sine offset perpendicular to 45° line
+      float sineVal = amplitude * std::sin(frequency * mov);
 
-    //   // since we want to offset along the vector perpendicular to (1,1) -> (-1,1)
-    //   // we can compute:
-    //   float offsetX = sineVal / std::sqrt(2.0f);  // normalize the vector (-1,1)
-    //   float offsetY = -sineVal / std::sqrt(2.0f);
+      // since we want to offset along the vector perpendicular to (1,1) -> (-1,1)
+      // we can compute:
+      int offsetX = static_cast<int>(sineVal / std::sqrt(2.0f));  // normalize the vector (-1,1)
+      int offsetY = static_cast<int>(-sineVal / std::sqrt(2.0f));
 
-    //   glm::ivec3 offsetPos(static_cast<int>(baseX + offsetX), static_cast<int>(baseY + offsetY), -500 + mov / 5.0f);
+      glm::ivec3 offsetPos(baseX + offsetX, baseY + offsetY, 700);
 
-    //   ops->subtract(ops->getObjects()[0], ops->getObjects()[1], offsetPos);
-    //   index++;
-    //   std::cout << "Subtraction operation " << index << " completed at "
-    //             << "X=" << offsetPos.x << " Y=" << offsetPos.y << " Z=" << offsetPos.z << std::endl;
-    // }
+      //@@@ SE LA SOTTRAZIONE RESTITUISCE FALSE, VEDERE COSA SUCCEDE
+
+      ops->subtract(ops->getObjects()[0], ops->getObjects()[1], offsetPos);
+      index++;
+      std::cout << "Subtraction operation " << index << " completed at "
+                << "X=" << offsetPos.x << " Y=" << offsetPos.y << " Z=" << offsetPos.z << std::endl;
+    }
 
     // this->objects[0].params.color = glm::vec3(1.0f, 0.8f, 0.6f);
     VoxelViewer viewer(ops->getObjects()[0].compressedData, ops->getObjects()[0].prefixSumData, ops->getObjects()[0].params);
@@ -191,10 +212,14 @@ int main(int argc, char** argv) {
 
 // VOXEL VIEWER TESTING----------------------------------------------------
 #ifdef VOXEL_VIEWER_TESTING
-    // params.resolutionXYZ = voxelizer->getResolutionPx(); // Not needed since params.resolutionXYZ is already set in the
-    // VoxelizationParams constructor
-    VoxelViewer viewer(compressedData, prefixSumData, params);
-    viewer.setOrthographic(true);  // Set orthographic projection
+    BoolOps ops;
+    if (!ops.load(BIN_PATH)) {
+      std::cerr << "Failed to load voxelized object." << std::endl;
+      return 1;
+    }
+    VoxelObject obj = ops.getObjects()[0];
+    VoxelViewer viewer(obj.compressedData, obj.prefixSumData, obj.params);
+    // viewer.setOrthographic(true);  // Set orthographic projection
     viewer.run();
 
     exit(EXIT_SUCCESS);

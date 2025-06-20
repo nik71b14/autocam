@@ -23,8 +23,11 @@
 // #define STL_PATH "models/cube100.stl"
 
 // For TEST route
-// #define STL_PATH "models/FreeCAD/subtraction/obj1.stl"
-#define STL_PATH "models/FreeCAD/subtraction/obj2.stl"
+#define STL_PATH "models/FreeCAD/subtraction/obj1.stl"
+// #define STL_PATH "models/FreeCAD/subtraction/obj2.stl"
+
+// For VOXEL_VIEWER_TESTING route
+#define BIN_PATH "test/obj1.bin"
 
 // #define GCODE_PATH "gcode/star_pocket.gcode"
 #define GCODE_PATH "gcode/pocket.gcode"

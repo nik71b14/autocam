@@ -129,7 +129,8 @@ void main() {
   for (int i = 0; i < maxSteps; ++i) {
     vec3 boxSize = boxMax - boxMin;
     vec3 normalizedPos = (pos - boxMin) / boxSize;
-    normalizedPos.x = 1.0 - normalizedPos.x;  // Flip X if needed
+    // normalizedPos.x = 1.0 - normalizedPos.x;  // Flip X if needed
+    normalizedPos.z = 1.0 - normalizedPos.z;
 
     ivec3 ipos = ivec3(floor(normalizedPos * vec3(resolution)));
 

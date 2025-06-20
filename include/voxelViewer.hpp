@@ -47,6 +47,7 @@ private:
   GLuint prefixSumBuffer = 0;
 
   Shader* raymarchingShader = nullptr;
+  Shader* flatShader = nullptr;
 
   // Mouse interaction
   glm::vec2 lastMousePos;
@@ -70,5 +71,13 @@ private:
   void setupShaderAndBuffers();
   void renderFullScreenQuad();
   bool loadBinaryFile(const std::string& filename, std::vector<unsigned int>& outData);
+
+  // Axes
+  GLuint axesVAO = 0;
+  GLuint axesVBO = 0;
+  bool axesInitialized = false;
+
+  void initAxes();
+  void drawAxes();
 };
 
