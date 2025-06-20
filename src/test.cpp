@@ -269,7 +269,7 @@ void subtract(const std::string& obj1Path, const std::string& obj2Path, glm::ive
   viewer.run();
 }
 
-void subtract_me(const std::string& obj1Path, const std::string& obj2Path, glm::ivec3 offset) {
+void subtract_old(const std::string& obj1Path, const std::string& obj2Path, glm::ivec3 offset) {
   BoolOps ops;
   if (!ops.load(obj1Path)) {
     std::cerr << "Failed to load first voxelized object." << std::endl;

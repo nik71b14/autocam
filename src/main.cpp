@@ -17,9 +17,9 @@
 
 // #define GCODE_TESTING
 // #define VOXELIZATION_TESTING
-#define BOOLEAN_OPERATIONS_TESTING
+// #define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
-// #define TEST
+#define TEST
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
@@ -28,26 +28,38 @@ int main(int argc, char** argv) {
 #ifdef TEST
   // analizeVoxelizedObject("test/point_mill_10.bin");
 
-  subtract("test/workpiece_100_100_50.bin", "test/hemispheric_mill_10.bin", glm::ivec3(0, 0, 820));
+  // subtract("test/workpiece_100_100_50.bin", "test/hemispheric_mill_10.bin", glm::ivec3(0, 0, 820));
 
-  /*   BoolOps ops;
-    if (!ops.load("test/workpiece_100_100_50.bin")) {
-      std::cerr << "Failed to load voxelized object." << std::endl;
-      return 1;
-    }
-    if (!ops.load("test/hemispheric_mill_10.bin")) {
-      std::cerr << "Failed to load voxelized object." << std::endl;
-      return 1;
-    }
-    // Perform subtraction
-    if (!ops.subtract(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
-      std::cerr << "Subtraction failed." << std::endl;
-      return 1;
-    }
+  BoolOps ops;
 
-    VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
-    // viewer.setOrthographic(true);  // Set orthographic projection
-    viewer.run(); */
+  // if (!ops.load("test/workpiece_100_100_50.bin")) {
+  if (!ops.load("test/obj1.bin")) {
+    std::cerr << "Failed to load voxelized object." << std::endl;
+    return 1;
+  }
+
+  // if (!ops.load("test/hemispheric_mill_10.bin")) {
+  if (!ops.load("test/obj2.bin")) {
+    std::cerr << "Failed to load voxelized object." << std::endl;
+    return 1;
+  }
+
+  // Perform subtraction
+  if (!ops.subtract(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
+    std::cerr << "Subtraction failed." << std::endl;
+    return 1;
+  }
+
+  // Perform subtraction using GPU
+  // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
+  // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
+  //   std::cerr << "Subtraction failed." << std::endl;
+  //   return 1;
+  // }
+
+  VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
+  // viewer.setOrthographic(true);  // Set orthographic projection
+  viewer.run();
 
   exit(EXIT_SUCCESS);
 #endif

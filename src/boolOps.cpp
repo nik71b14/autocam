@@ -1,5 +1,8 @@
 #include "boolOps.hpp"
 
+#include <GLFW/glfw3.h>
+#include <glad/glad.h>
+
 #include "voxelViewer.hpp"
 #include "voxelizer.hpp"
 
@@ -446,4 +449,264 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
   const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixSumDataNew);
 
   return true;
+}
+
+bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+  // The subtract() CPU code:
+  // ✅ Iterates over each (x,y) column.
+  // ✅ Gathers Z transitions for both objects.
+  // ✅ Merges/sorts/evaluates transitions.
+  // ✅ Generates a new compressed result.
+
+  // 💡 All of this is highly parallelizable. Each (x,y) column’s subtraction is independent → perfect for a compute shader!
+
+  // Create execution context
+  GLFWwindow* window = nullptr;
+  if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_DEPTH_BITS, 24);       // Add this line
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);  // Create a hidden window just for context creation
+  glfwWindowHint(GLFW_DEPTH_BITS, 0);
+
+  window = glfwCreateWindow(1, 1, "Subtract", nullptr, nullptr);  // 1 x 1 window size doesn't matter since we won't render anything
+  if (!window) throw std::runtime_error("Failed to create window");
+
+  glfwMakeContextCurrent(window);
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to initialize GLAD");
+
+  long w1 = obj1.params.resolutionXYZ.x;
+  long h1 = obj1.params.resolutionXYZ.y;
+  long z1 = obj1.params.resolutionXYZ.z;
+  long w2 = obj2.params.resolutionXYZ.x;
+  long h2 = obj2.params.resolutionXYZ.y;
+  long z2 = obj2.params.resolutionXYZ.z;
+
+  long translateX = w1 / 2 + offset.x;
+  long translateY = h1 / 2 + offset.y;
+  long translateZ = z1 / 2 - offset.z;
+
+  size_t prefixCount = w1 * h1;
+
+  Shader* subtractShader = new Shader("shaders/subtract.comp");
+
+  // --- Create and fill SSBOs ---
+  GLuint ssboObj1Comp, ssboObj1Prefix, ssboObj2Comp, ssboObj2Prefix;
+  GLuint ssboOutComp, ssboOutPrefix;
+
+  // Input buffers
+  glGenBuffers(1, &ssboObj1Comp);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Comp);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.compressedData.size() * sizeof(GLuint), obj1.compressedData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboObj1Comp);  // Binding 0: obj1_compressedData
+
+  glGenBuffers(1, &ssboObj1Prefix);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Prefix);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.prefixSumData.size() * sizeof(GLuint), obj1.prefixSumData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboObj1Prefix);  // Binding 1: obj1_prefixSumData
+
+  glGenBuffers(1, &ssboObj2Comp);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Comp);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.compressedData.size() * sizeof(GLuint), obj2.compressedData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssboObj2Comp);  // Binding 2: obj2_compressedData
+
+  glGenBuffers(1, &ssboObj2Prefix);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Prefix);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.prefixSumData.size() * sizeof(GLuint), obj2.prefixSumData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssboObj2Prefix);  // Binding 3: obj2_prefixSumData
+
+  // Output buffers
+  size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();
+
+  glGenBuffers(1, &ssboOutComp);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, outSizeEstimate * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssboOutComp);  // Binding 4: out_compressedData
+
+  glGenBuffers(1, &ssboOutPrefix);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboOutPrefix);  // Binding 5: out_prefixSumData
+
+  // Atomic counter (now only one buffer at binding 6)
+  GLuint atomicBuffer;
+  glGenBuffers(1, &atomicBuffer);
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
+  glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
+
+  // Reset counter to 0
+  GLuint zero = 0;
+  glBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &zero);
+
+  // Bind to both ATOMIC_COUNTER_BUFFER and SHADER_STORAGE_BUFFER binding point 6
+  glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 0, atomicBuffer);  // For atomicCounter functions
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, atomicBuffer);  // For buffer access
+
+  // --- Use shader ---
+  subtractShader->use();
+
+  // --- Set uniforms ---
+  subtractShader->setLong("w1", w1);
+  subtractShader->setLong("h1", h1);
+  subtractShader->setLong("z1", z1);
+  subtractShader->setLong("w2", w2);
+  subtractShader->setLong("h2", h2);
+  subtractShader->setLong("z2", z2);
+  subtractShader->setLong("translateX", translateX);
+  subtractShader->setLong("translateY", translateY);
+  subtractShader->setLong("translateZ", translateZ);
+  subtractShader->setUInt("maxTransitions", 256);  // Increased from 128
+
+  // --- Dispatch ---
+  GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
+  GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
+  glDispatchCompute(groupsX, groupsY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  // --- Read back data ---
+  // Read final offset from atomic counter
+  GLuint finalOffset = 0;
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
+  glGetBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &finalOffset);
+
+  // Read output buffers
+  std::vector<GLuint> compressedOut(finalOffset);
+  std::vector<GLuint> prefixOut(prefixCount);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, finalOffset * sizeof(GLuint), compressedOut.data());
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixCount * sizeof(GLuint), prefixOut.data());
+
+  // --- Overwrite obj1 ---
+  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
+  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
+
+  // --- Cleanup ---
+  glDeleteBuffers(1, &ssboObj1Comp);
+  glDeleteBuffers(1, &ssboObj1Prefix);
+  glDeleteBuffers(1, &ssboObj2Comp);
+  glDeleteBuffers(1, &ssboObj2Prefix);
+  glDeleteBuffers(1, &ssboOutComp);
+  glDeleteBuffers(1, &ssboOutPrefix);
+  glDeleteBuffers(1, &atomicBuffer);
+  glDeleteProgram(subtractShader->ID);
+
+  glfwTerminate();
+  return true;
+
+  /*
+  // --- Create and fill SSBOs ---
+  GLuint ssboObj1Comp, ssboObj1Prefix, ssboObj2Comp, ssboObj2Prefix;
+  GLuint ssboOutComp, ssboOutPrefix, ssboOutOffsets;
+
+  glGenBuffers(1, &ssboObj1Comp);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Comp);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.compressedData.size() * sizeof(GLuint), obj1.compressedData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboObj1Comp);
+
+  glGenBuffers(1, &ssboObj1Prefix);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Prefix);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.prefixSumData.size() * sizeof(GLuint), obj1.prefixSumData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboObj1Prefix);
+
+  glGenBuffers(1, &ssboObj2Comp);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Comp);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.compressedData.size() * sizeof(GLuint), obj2.compressedData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssboObj2Comp);
+
+  glGenBuffers(1, &ssboObj2Prefix);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Prefix);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.prefixSumData.size() * sizeof(GLuint), obj2.prefixSumData.data(), GL_STATIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssboObj2Prefix);
+
+  size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();  // Conservative estimate for output size
+
+  GLuint zero = 0; // Used to reset atomic counters
+
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  // Create atomic counter buffer
+  GLuint atomicBuffer;
+  glGenBuffers(1, &atomicBuffer);
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
+  glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 0, atomicBuffer);
+
+  // Reset atomic counter
+  glBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &zero);
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+  glGenBuffers(1, &ssboOutComp);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, outSizeEstimate * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssboOutComp);
+
+  glGenBuffers(1, &ssboOutPrefix);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboOutPrefix);
+
+  glGenBuffers(1, &ssboOutOffsets);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutOffsets);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboOutOffsets);
+
+  // --- Use shader ---
+
+  subtractShader->use();
+
+  // --- Set uniforms ---
+  subtractShader->setLong("w1", w1);
+  subtractShader->setLong("h1", h1);
+  subtractShader->setLong("z1", z1);
+  subtractShader->setLong("w2", w2);
+  subtractShader->setLong("h2", h2);
+  subtractShader->setLong("z2", z2);
+  subtractShader->setLong("translateX", translateX);
+  subtractShader->setLong("translateY", translateY);
+  subtractShader->setLong("translateZ", translateZ);
+  subtractShader->setUInt("maxTransitions", 256); // Increased from 128
+
+  // --- Dispatch ---
+  GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
+  GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
+  glDispatchCompute(groupsX, groupsY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+  // --- Read back output offset to know size ---
+  GLuint finalOffset = 0;
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutOffsets);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &finalOffset);
+
+  // --- Read back data ---
+  std::vector<GLuint> compressedOut(finalOffset);
+  std::vector<GLuint> prefixOut(prefixCount);
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, finalOffset * sizeof(GLuint), compressedOut.data());
+
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixCount * sizeof(GLuint), prefixOut.data());
+
+  // --- Overwrite obj1 ---
+  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
+  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
+
+  // --- Cleanup ---
+  glDeleteBuffers(1, &ssboObj1Comp);
+  glDeleteBuffers(1, &ssboObj1Prefix);
+  glDeleteBuffers(1, &ssboObj2Comp);
+  glDeleteBuffers(1, &ssboObj2Prefix);
+  glDeleteBuffers(1, &ssboOutComp);
+  glDeleteBuffers(1, &ssboOutPrefix);
+  glDeleteBuffers(1, &ssboOutOffsets);
+  glDeleteProgram(subtractShader->ID);
+
+  glfwTerminate();  // Terminate GLFW context
+
+  return true;
+  */
 }
