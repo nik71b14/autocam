@@ -45,10 +45,10 @@ int main(int argc, char** argv) {
   }
 
   // Perform subtraction
-  if (!ops.subtract(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
-    std::cerr << "Subtraction failed." << std::endl;
-    return 1;
-  }
+  // if (!ops.subtract(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
+  //   std::cerr << "Subtraction failed." << std::endl;
+  //   return 1;
+  // }
 
   // Perform subtraction using GPU
   // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
   //   std::cerr << "Subtraction failed." << std::endl;
   //   return 1;
   // }
+  ops.test();
 
   VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
   // viewer.setOrthographic(true);  // Set orthographic projection

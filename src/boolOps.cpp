@@ -451,15 +451,179 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
   return true;
 }
 
-bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
-  // The subtract() CPU code:
-  // ✅ Iterates over each (x,y) column.
-  // ✅ Gathers Z transitions for both objects.
-  // ✅ Merges/sorts/evaluates transitions.
-  // ✅ Generates a new compressed result.
+GLuint BoolOps::createBuffer(GLsizeiptr size, GLuint binding, GLenum usage) {
+  GLuint buffer;
+  glGenBuffers(1, &buffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, buffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, size, nullptr, usage);
+  return buffer;
+}
 
-  // 💡 All of this is highly parallelizable. Each (x,y) column’s subtraction is independent → perfect for a compute shader!
+GLuint BoolOps::createAtomicCounter(GLuint binding) {
+  GLuint buffer;
+  glGenBuffers(1, &buffer);
+  glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, binding, buffer);
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, buffer);
+  GLuint zero = 0;
+  glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_DRAW);
+  return buffer;
+}
 
+void BoolOps::test() {
+  if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  GLFWwindow* window = glfwCreateWindow(1, 1, "Hidden", nullptr, nullptr);
+  if (!window) throw std::runtime_error("Failed to create GLFW window");
+  glfwMakeContextCurrent(window);
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to init GLAD");
+
+  // Load and compile shader using Shader class
+  Shader shader("shaders/subtract.comp");  // Path to your compute shader file
+  shader.use();
+
+  // Create buffers
+  GLuint obj1Compressed = createBuffer(1024 * sizeof(GLuint), 0, GL_DYNAMIC_DRAW);
+  GLuint obj1Prefix = createBuffer(1024 * sizeof(GLuint), 1, GL_DYNAMIC_DRAW);
+  GLuint obj2Compressed = createBuffer(1024 * sizeof(GLuint), 2, GL_DYNAMIC_DRAW);
+  GLuint obj2Prefix = createBuffer(1024 * sizeof(GLuint), 3, GL_DYNAMIC_DRAW);
+  GLuint outCompressed = createBuffer(1024 * sizeof(GLuint), 4, GL_DYNAMIC_READ);
+  GLuint outPrefix = createBuffer(1024 * sizeof(GLuint), 5, GL_DYNAMIC_READ);
+  GLuint atomicCounter = createAtomicCounter(6);
+
+  // Set uniforms
+  shader.setInt("w1", 8);
+  shader.setInt("h1", 8);
+  shader.setInt("z1", 64);
+  shader.setInt("w2", 8);
+  shader.setInt("h2", 8);
+  shader.setInt("z2", 64);
+  shader.setInt("translateX", 0);
+  shader.setInt("translateY", 0);
+  shader.setInt("translateZ", 0);
+  shader.setUInt("maxTransitions", 256);
+
+  // Dispatch compute shader
+  // glDispatchCompute(1, 1, 1);  // Just one workgroup for (0,0)
+  long w1 = 1000;
+  long h1 = 1000;
+  GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
+  GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
+  std::cout << "Dispatching " << groupsX << " x " << groupsY << " work groups (" << w1 << "x" << h1 << " pixels)\n";
+  glDispatchCompute(groupsX, groupsY, 1);
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+
+  // Read output
+  std::vector<GLuint> outData(1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
+
+  std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
+
+  // Cleanup
+  glDeleteBuffers(1, &obj1Compressed);
+  glDeleteBuffers(1, &obj1Prefix);
+  glDeleteBuffers(1, &obj2Compressed);
+  glDeleteBuffers(1, &obj2Prefix);
+  glDeleteBuffers(1, &outCompressed);
+  glDeleteBuffers(1, &outPrefix);
+  glDeleteBuffers(1, &atomicCounter);
+
+  glfwDestroyWindow(window);
+  glfwTerminate();
+
+  /* // A little more complex test to verify that the compute shader works correctly
+  // --- Init context ---
+  if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+  glfwWindowHint(GLFW_OPENGL_CORE_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  GLFWwindow* window = glfwCreateWindow(1, 1, "Hidden", nullptr, nullptr);
+  if (!window) throw std::runtime_error("Failed to create GLFW window");
+  glfwMakeContextCurrent(window);
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to init GLAD");
+
+  std::cout << "OpenGL: " << glGetString(GL_VERSION) << "\n";
+  std::cout << "GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << "\n";
+
+  // --- Create buffers ---
+  const int w = 16;
+  const int h = 16;
+  const int prefixCount = w * h;
+  const int maxOut = 1024;
+
+  GLuint ssboOutComp, ssboOutPrefix, atomicBuffer;
+
+  // Compressed data buffer
+  glGenBuffers(1, &ssboOutComp);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, maxOut * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssboOutComp);
+
+  // Prefix sum buffer
+  glGenBuffers(1, &ssboOutPrefix);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboOutPrefix);
+
+  // Atomic counter buffer
+  glGenBuffers(1, &atomicBuffer);
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
+  GLuint zero = 0;
+  glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_COPY);
+  glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 6, atomicBuffer);
+
+  // --- Load shader ---
+  Shader* shader = new Shader("shaders/subtract.comp");  // your file path
+
+  // --- Dispatch ---
+  GLuint groupsX = (w + 7) / 8;
+  GLuint groupsY = (h + 7) / 8;
+  shader->use();
+  glDispatchCompute(groupsX, groupsY, 1);
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+
+  // --- Read atomic counter ---
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
+  GLuint writtenCount = 0;
+  glGetBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &writtenCount);
+  std::cout << "Total written: " << writtenCount << "\n";
+
+  // --- Read compressed data ---
+  std::vector<GLuint> compressedOut(writtenCount);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, writtenCount * sizeof(GLuint), compressedOut.data());
+
+  // --- Read prefix sum data ---
+  std::vector<GLuint> prefixOut(prefixCount);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixCount * sizeof(GLuint), prefixOut.data());
+
+  // --- Dump ---
+  std::cout << "Compressed data:\n";
+  for (size_t i = 0; i < compressedOut.size(); ++i) {
+    std::cout << " [" << i << "] 0x" << std::hex << compressedOut[i] << std::dec << "\n";
+  }
+
+  std::cout << "Prefix sum data:\n";
+  for (size_t i = 0; i < prefixOut.size(); ++i) {
+    std::cout << " [" << i << "] " << prefixOut[i] << "\n";
+  }
+
+  // --- Cleanup ---
+  glDeleteBuffers(1, &ssboOutComp);
+  glDeleteBuffers(1, &ssboOutPrefix);
+  glDeleteBuffers(1, &atomicBuffer);
+  delete shader;
+  glfwDestroyWindow(window);
+  glfwTerminate(); */
+
+  /* // Ultra-simple test to verify that the compute shader works correctly
   // Create execution context
   GLFWwindow* window = nullptr;
   if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
@@ -477,6 +641,70 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   glfwMakeContextCurrent(window);
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to initialize GLAD");
 
+  std::cout << "OpenGL version: " << glGetString(GL_VERSION) << "\n";
+  std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << "\n";
+
+  Shader* subtractShader = new Shader("shaders/subtract.comp");
+
+  GLint linked = 0;
+  glGetProgramiv(subtractShader->ID, GL_LINK_STATUS, &linked);
+  if (!linked) {
+    GLchar infoLog[1024];
+    glGetProgramInfoLog(subtractShader->ID, 1024, NULL, infoLog);
+    std::cerr << "Shader linking failed:\n" << infoLog << "\n";
+    return;
+  }
+
+  // Debug using ultra-simple shader -------------------------------
+  subtractShader->use();
+  GLuint debugBuffer;
+  glGenBuffers(1, &debugBuffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, debugBuffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), nullptr, GL_DYNAMIC_READ);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, debugBuffer);
+
+  // Dispatch just 1 work group
+  glDispatchCompute(1, 1, 1);
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+
+  // Check result
+  GLuint result;
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &result);
+  std::cout << "Debug buffer value: 0x" << std::hex << result << std::endl;
+  // End debug ------------------------------------------------------
+
+  // Cleanup
+  glDeleteBuffers(1, &debugBuffer);
+  glfwDestroyWindow(window);
+  glfwTerminate();
+  std::cout << "Test completed successfully." << std::endl; */
+}
+
+bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+  // The subtract() CPU code:
+  // ✅ Iterates over each (x,y) column.
+  // ✅ Gathers Z transitions for both objects.
+  // ✅ Merges/sorts/evaluates transitions.
+  // ✅ Generates a new compressed result.
+
+  // 💡 All of this is highly parallelizable. Each (x,y) column’s subtraction is independent → perfect for a compute shader!
+
+  // Create execution context
+  if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  GLFWwindow* window = glfwCreateWindow(1, 1, "Hidden", nullptr, nullptr);
+  if (!window) throw std::runtime_error("Failed to create GLFW window");
+  glfwMakeContextCurrent(window);
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to init GLAD");
+
+  // Load and compile shader using Shader class
+  Shader shader("shaders/subtract.comp");  // Path to your compute shader file
+  shader.use();
+
   long w1 = obj1.params.resolutionXYZ.x;
   long h1 = obj1.params.resolutionXYZ.y;
   long z1 = obj1.params.resolutionXYZ.z;
@@ -489,8 +717,6 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   long translateZ = z1 / 2 - offset.z;
 
   size_t prefixCount = w1 * h1;
-
-  Shader* subtractShader = new Shader("shaders/subtract.comp");
 
   // --- Create and fill SSBOs ---
   GLuint ssboObj1Comp, ssboObj1Prefix, ssboObj2Comp, ssboObj2Prefix;
@@ -545,25 +771,52 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, atomicBuffer);  // For buffer access
 
   // --- Use shader ---
-  subtractShader->use();
 
   // --- Set uniforms ---
-  subtractShader->setLong("w1", w1);
-  subtractShader->setLong("h1", h1);
-  subtractShader->setLong("z1", z1);
-  subtractShader->setLong("w2", w2);
-  subtractShader->setLong("h2", h2);
-  subtractShader->setLong("z2", z2);
-  subtractShader->setLong("translateX", translateX);
-  subtractShader->setLong("translateY", translateY);
-  subtractShader->setLong("translateZ", translateZ);
-  subtractShader->setUInt("maxTransitions", 256);  // Increased from 128
+  shader.setInt("w1", w1);
+  shader.setInt("h1", h1);
+  shader.setInt("z1", z1);
+  shader.setInt("w2", w2);
+  shader.setInt("h2", h2);
+  shader.setInt("z2", z2);
+  shader.setInt("translateX", translateX);
+  shader.setInt("translateY", translateY);
+  shader.setInt("translateZ", translateZ);
+  shader.setUInt("maxTransitions", 256);  // Increased from 128
 
   // --- Dispatch ---
   GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
   GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
+  std::cout << "Dispatching " << groupsX << " x " << groupsY << " work groups (" << w1 << "x" << h1 << " pixels)\n";
   glDispatchCompute(groupsX, groupsY, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  // Check atomic counter
+  GLuint finalOffsetx;
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
+  glGetBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &finalOffsetx);
+  std::cout << "Final offset: " << finalOffsetx << std::endl;
+
+  // Check first few values
+  std::vector<uint> debugOutput(std::min(finalOffsetx, 10u));
+  if (finalOffsetx > 0) {
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, debugOutput.size() * sizeof(uint), debugOutput.data());
+
+    std::cout << "First " << debugOutput.size() << " output values:";
+    for (auto val : debugOutput) {
+      std::cout << " 0x" << std::hex << val;
+    }
+    std::cout << std::endl;
+
+    if (std::find(debugOutput.begin(), debugOutput.end(), 0xDEADBEEF) != debugOutput.end()) {
+      std::cout << "SUCCESS: Shader executed and wrote debug marker!" << std::endl;
+    } else {
+      std::cout << "Shader executed but debug marker not found" << std::endl;
+    }
+  }
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
   // --- Read back data ---
   // Read final offset from atomic counter
@@ -581,6 +834,27 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixCount * sizeof(GLuint), prefixOut.data());
 
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  std::cout << "finalOffset: " << finalOffset << std::endl;
+  std::cout << "compressedOut.size(): " << compressedOut.size() << std::endl;
+  std::cout << "First 30-40 values of compressedOut:" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(compressedOut.size(), 40); ++i) {
+    std::cout << compressedOut[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
+
+  // Buffer write test
+  GLuint testValue;
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &testValue);
+  if (testValue == 0xDEADBEEF) {
+    std::cout << "Shader is executing and writing to buffers\n";
+  } else {
+    std::cout << "Shader NOT writing to buffers - check execution\n";
+  }
+  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
   // --- Overwrite obj1 ---
   const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
   const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
@@ -593,7 +867,7 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   glDeleteBuffers(1, &ssboOutComp);
   glDeleteBuffers(1, &ssboOutPrefix);
   glDeleteBuffers(1, &atomicBuffer);
-  glDeleteProgram(subtractShader->ID);
+  glDeleteProgram(shader.ID);
 
   glfwTerminate();
   return true;

@@ -33,10 +33,15 @@ class BoolOps {
   void clear() { objects.clear(); }
 
   // Subtract two voxel objects
+  void test();
   bool subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
 
  private:
   std::vector<VoxelObject> objects;
+
+  // OpenGL utilities
+  GLuint createBuffer(GLsizeiptr size, GLuint binding, GLenum usage);
+  GLuint createAtomicCounter(GLuint binding);
 };

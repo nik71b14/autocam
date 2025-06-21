@@ -13,7 +13,57 @@
 // // ✅ We use atomic counter output_offsets[0] to manage output writes safely.
 // // ✅ We filter Z at the final stage.
 
+/* @@@ Ultra-simple shader
+#version 460
+#extension GL_ARB_shader_storage_buffer_object : require
 
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer DebugBuffer {
+    uint data[1];
+};
+
+void main() {
+    data[0] = 0xDEADBEEFu;
+}
+@@@ End of ultra-simple shader */
+
+
+/* //@@@ DEBUG SHADER
+#version 460
+#extension GL_ARB_shader_storage_buffer_object : enable
+
+// Minimal buffer definitions matching your original structure
+layout(std430, binding = 4) buffer OutCompressedData {
+    uint out_compressedData[];
+};
+layout(std430, binding = 5) buffer OutPrefixSumData {
+    uint out_prefixSumData[];
+};
+layout(binding = 6, offset = 0) uniform atomic_uint out_offset_counter;
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+    uint idx = x + y * gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    
+    // Write debug marker to verify execution
+    if (x < 10 && y == 0) {  // Only write from first 10 threads in first row
+        uint writePos = atomicCounterAdd(out_offset_counter, 1);
+        out_compressedData[writePos] = 0xDEADBEEF;
+        out_prefixSumData[idx] = writePos;
+    }
+    
+    // For threads not writing markers, just write their index
+    else {
+        uint writePos = atomicCounterAdd(out_offset_counter, 1);
+        out_compressedData[writePos] = idx;
+        out_prefixSumData[idx] = writePos;
+    }
+}
+// @@@ END DEBUG SHADER */
 
 #version 460
 #extension GL_ARB_shader_storage_buffer_object : enable
@@ -61,10 +111,18 @@ void sortTransitions(inout Transition arr[256], uint count) {
 }
 
 void main() {
+
     uint x = gl_GlobalInvocationID.x;
     uint y = gl_GlobalInvocationID.y;
     if (x >= uint(w1)) return;
     if (y >= uint(h1)) return;
+
+    //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    if (x == 0 && y == 0) {
+        out_compressedData[0] = 0xDEADBEEF; // Test write
+        atomicCounterAdd(out_offset_counter, 1);
+    }
+    //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     uint idx = x + y * w1;
     
