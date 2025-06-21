@@ -460,6 +460,23 @@ GLuint BoolOps::createBuffer(GLsizeiptr size, GLuint binding, GLenum usage) {
   return buffer;
 }
 
+GLuint BoolOps::createBuffer(GLsizeiptr size, GLuint binding, GLenum usage, const GLuint* data) {
+  GLuint buffer;
+  glGenBuffers(1, &buffer);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, buffer);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, size, data, usage);
+  return buffer;
+}
+
+std::vector<GLuint> BoolOps::readBuffer(GLuint binding, size_t numElements) {
+  std::vector<GLuint> data(numElements);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, binding);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numElements * sizeof(GLuint), data.data());
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+  return data;
+}
+
 GLuint BoolOps::createAtomicCounter(GLuint binding) {
   GLuint buffer;
   glGenBuffers(1, &buffer);
@@ -468,6 +485,32 @@ GLuint BoolOps::createAtomicCounter(GLuint binding) {
   GLuint zero = 0;
   glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_DRAW);
   return buffer;
+}
+
+void BoolOps::zeroAtomicCounter(GLuint binding) {
+  GLuint zero = 0;
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, binding);
+  glBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &zero);
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
+}
+
+void BoolOps::zeroBuffer(GLuint binding) {
+  GLint size = 0;
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, binding);
+  glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &size);
+  if (size > 0) {
+    std::vector<GLuint> zeros(size / sizeof(GLuint), 0);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, size, zeros.data());
+  }
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+GLuint BoolOps::readAtomicCounter(GLuint binding) {
+  GLuint count = 0;
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, binding);
+  glGetBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &count);
+  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
+  return count;
 }
 
 void BoolOps::test(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
@@ -501,6 +544,9 @@ void BoolOps::test(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 
   long translateY = h1 / 2 + offset.y;
   long translateZ = z1 / 2 - offset.z;
 
+  size_t prefixCount = w1 * h1;
+  size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();
+
   // Set uniforms
   shader.setInt("w1", w1);
   shader.setInt("h1", h1);
@@ -514,28 +560,58 @@ void BoolOps::test(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 
   shader.setUInt("maxTransitions", 256);
 
   // Create buffers
-  GLuint obj1Compressed = createBuffer(1024 * sizeof(GLuint), 0, GL_DYNAMIC_DRAW);
-  GLuint obj1Prefix = createBuffer(1024 * sizeof(GLuint), 1, GL_DYNAMIC_DRAW);
-  GLuint obj2Compressed = createBuffer(1024 * sizeof(GLuint), 2, GL_DYNAMIC_DRAW);
-  GLuint obj2Prefix = createBuffer(1024 * sizeof(GLuint), 3, GL_DYNAMIC_DRAW);
-  GLuint outCompressed = createBuffer(1024 * sizeof(GLuint), 4, GL_DYNAMIC_READ);
-  GLuint outPrefix = createBuffer(1024 * sizeof(GLuint), 5, GL_DYNAMIC_READ);
+  // GLuint obj1Compressed = createBuffer(1024 * sizeof(GLuint), 0, GL_DYNAMIC_DRAW);
+  GLuint obj1Compressed = createBuffer(obj1.compressedData.size() * sizeof(GLuint), 0, GL_STATIC_READ, obj1.compressedData.data());
+  // GLuint obj1Prefix = createBuffer(1024 * sizeof(GLuint), 1, GL_DYNAMIC_DRAW);
+  GLuint obj1Prefix = createBuffer(obj1.prefixSumData.size() * sizeof(GLuint), 1, GL_STATIC_READ, obj1.prefixSumData.data());
+  // GLuint obj2Compressed = createBuffer(1024 * sizeof(GLuint), 2, GL_DYNAMIC_DRAW);
+  GLuint obj2Compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ, obj2.compressedData.data());
+  // GLuint obj2Prefix = createBuffer(1024 * sizeof(GLuint), 3, GL_DYNAMIC_DRAW);
+  GLuint obj2Prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ, obj2.prefixSumData.data());
+  // GLuint outCompressed = createBuffer(1024 * sizeof(GLuint), 4, GL_DYNAMIC_READ);
+  GLuint outCompressed = createBuffer(outSizeEstimate * sizeof(GLuint), 4, GL_DYNAMIC_COPY, nullptr);
+  zeroBuffer(4);  // Initialize output buffer to zero
+  // GLuint outPrefix = createBuffer(1024 * sizeof(GLuint), 5, GL_DYNAMIC_READ);
+  GLuint outPrefix = createBuffer(prefixCount * sizeof(GLuint), 5, GL_DYNAMIC_COPY, nullptr);
+  zeroBuffer(5);  // Initialize prefix sum buffer to zero
+
   GLuint atomicCounter = createAtomicCounter(6);
+  zeroAtomicCounter(6);  // Initialize atomic counter to zero
 
   // Dispatch compute shader
-  // glDispatchCompute(1, 1, 1);  // Just one workgroup for (0,0)
   GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
   GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
   std::cout << "Dispatching " << groupsX << " x " << groupsY << " work groups (" << w1 << "x" << h1 << " pixels)\n";
   glDispatchCompute(groupsX, groupsY, 1);
   glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
 
-  // Read output
+  //@@@ DEBUG: Read test output -----------------------------------------------
   std::vector<GLuint> outData(1);
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
   glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
-
   std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
+  //@@@ END DEBUG -------------------------------------------------------------
+
+  // Read atomic counter to get the number of written elements in outCompressed
+  GLuint writtenCount = readAtomicCounter(6);
+  std::cout << "Atomic counter (written elements): " << std::dec << writtenCount << std::endl;
+
+  // Read output buffers
+  std::vector<GLuint> compressedOut = readBuffer(outCompressed, writtenCount);
+  std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount);
+
+  //@@@ DEBUG: Print output data ----------------------------------------------
+  std::cout << "First 30-40 values of compressedOut:" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(compressedOut.size(), 40); ++i) {
+    std::cout << compressedOut[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
+  //@@@ END DEBUG -------------------------------------------------------------
+
+  // Overwrite obj1
+  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
+  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
 
   // Cleanup
   glDeleteBuffers(1, &obj1Compressed);
@@ -702,7 +778,6 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
 
   // 💡 All of this is highly parallelizable. Each (x,y) column’s subtraction is independent → perfect for a compute shader!
 
-  // Create execution context
   if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
 
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -714,10 +789,14 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   glfwMakeContextCurrent(window);
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to init GLAD");
 
+  std::cout << "OpenGL: " << glGetString(GL_VERSION) << "\n";
+  std::cout << "GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << "\n";
+
   // Load and compile shader using Shader class
   Shader shader("shaders/subtract.comp");  // Path to your compute shader file
   shader.use();
 
+  // Calculate parameters
   long w1 = obj1.params.resolutionXYZ.x;
   long h1 = obj1.params.resolutionXYZ.y;
   long z1 = obj1.params.resolutionXYZ.z;
@@ -730,62 +809,9 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   long translateZ = z1 / 2 - offset.z;
 
   size_t prefixCount = w1 * h1;
-
-  // --- Create and fill SSBOs ---
-  GLuint ssboObj1Comp, ssboObj1Prefix, ssboObj2Comp, ssboObj2Prefix;
-  GLuint ssboOutComp, ssboOutPrefix;
-
-  // Input buffers
-  glGenBuffers(1, &ssboObj1Comp);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Comp);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.compressedData.size() * sizeof(GLuint), obj1.compressedData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboObj1Comp);  // Binding 0: obj1_compressedData
-
-  glGenBuffers(1, &ssboObj1Prefix);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Prefix);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.prefixSumData.size() * sizeof(GLuint), obj1.prefixSumData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboObj1Prefix);  // Binding 1: obj1_prefixSumData
-
-  glGenBuffers(1, &ssboObj2Comp);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Comp);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.compressedData.size() * sizeof(GLuint), obj2.compressedData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssboObj2Comp);  // Binding 2: obj2_compressedData
-
-  glGenBuffers(1, &ssboObj2Prefix);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Prefix);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.prefixSumData.size() * sizeof(GLuint), obj2.prefixSumData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssboObj2Prefix);  // Binding 3: obj2_prefixSumData
-
-  // Output buffers
   size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();
 
-  glGenBuffers(1, &ssboOutComp);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, outSizeEstimate * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssboOutComp);  // Binding 4: out_compressedData
-
-  glGenBuffers(1, &ssboOutPrefix);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboOutPrefix);  // Binding 5: out_prefixSumData
-
-  // Atomic counter (now only one buffer at binding 6)
-  GLuint atomicBuffer;
-  glGenBuffers(1, &atomicBuffer);
-  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
-  glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
-
-  // Reset counter to 0
-  GLuint zero = 0;
-  glBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &zero);
-
-  // Bind to both ATOMIC_COUNTER_BUFFER and SHADER_STORAGE_BUFFER binding point 6
-  glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 0, atomicBuffer);  // For atomicCounter functions
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, atomicBuffer);  // For buffer access
-
-  // --- Use shader ---
-
-  // --- Set uniforms ---
+  // Set uniforms
   shader.setInt("w1", w1);
   shader.setInt("h1", h1);
   shader.setInt("z1", z1);
@@ -795,205 +821,71 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   shader.setInt("translateX", translateX);
   shader.setInt("translateY", translateY);
   shader.setInt("translateZ", translateZ);
-  shader.setUInt("maxTransitions", 256);  // Increased from 128
+  shader.setUInt("maxTransitions", 256);
 
-  // --- Dispatch ---
+  // Create buffers
+  // GLuint obj1Compressed = createBuffer(1024 * sizeof(GLuint), 0, GL_DYNAMIC_DRAW);
+  GLuint obj1Compressed = createBuffer(obj1.compressedData.size() * sizeof(GLuint), 0, GL_STATIC_READ, obj1.compressedData.data());
+  // GLuint obj1Prefix = createBuffer(1024 * sizeof(GLuint), 1, GL_DYNAMIC_DRAW);
+  GLuint obj1Prefix = createBuffer(obj1.prefixSumData.size() * sizeof(GLuint), 1, GL_STATIC_READ, obj1.prefixSumData.data());
+  // GLuint obj2Compressed = createBuffer(1024 * sizeof(GLuint), 2, GL_DYNAMIC_DRAW);
+  GLuint obj2Compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ, obj2.compressedData.data());
+  // GLuint obj2Prefix = createBuffer(1024 * sizeof(GLuint), 3, GL_DYNAMIC_DRAW);
+  GLuint obj2Prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ, obj2.prefixSumData.data());
+  // GLuint outCompressed = createBuffer(1024 * sizeof(GLuint), 4, GL_DYNAMIC_READ);
+  GLuint outCompressed = createBuffer(outSizeEstimate * sizeof(GLuint), 4, GL_DYNAMIC_COPY, nullptr);
+  // GLuint outPrefix = createBuffer(1024 * sizeof(GLuint), 5, GL_DYNAMIC_READ);
+  GLuint outPrefix = createBuffer(prefixCount * sizeof(GLuint), 5, GL_DYNAMIC_COPY, nullptr);
+
+  GLuint atomicCounter = createAtomicCounter(6);
+  zeroAtomicCounter(6);  // Initialize atomic counter to zero
+
+  // Dispatch compute shader
   GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
   GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
   std::cout << "Dispatching " << groupsX << " x " << groupsY << " work groups (" << w1 << "x" << h1 << " pixels)\n";
   glDispatchCompute(groupsX, groupsY, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
 
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  // Check atomic counter
-  GLuint finalOffsetx;
-  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
-  glGetBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &finalOffsetx);
-  std::cout << "Final offset: " << finalOffsetx << std::endl;
+  //@@@ DEBUG: Read test output -----------------------------------------------
+  std::vector<GLuint> outData(1);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
+  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
+  std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
+  //@@@ END DEBUG -------------------------------------------------------------
 
-  // Check first few values
-  std::vector<uint> debugOutput(std::min(finalOffsetx, 10u));
-  if (finalOffsetx > 0) {
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
-    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, debugOutput.size() * sizeof(uint), debugOutput.data());
-
-    std::cout << "First " << debugOutput.size() << " output values:";
-    for (auto val : debugOutput) {
-      std::cout << " 0x" << std::hex << val;
-    }
-    std::cout << std::endl;
-
-    if (std::find(debugOutput.begin(), debugOutput.end(), 0xDEADBEEF) != debugOutput.end()) {
-      std::cout << "SUCCESS: Shader executed and wrote debug marker!" << std::endl;
-    } else {
-      std::cout << "Shader executed but debug marker not found" << std::endl;
-    }
-  }
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  // --- Read back data ---
-  // Read final offset from atomic counter
-  GLuint finalOffset = 0;
-  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
-  glGetBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &finalOffset);
+  // Read atomic counter to get the number of written elements in outCompressed
+  GLuint writtenCount = readAtomicCounter(6);
+  std::cout << "Atomic counter (written elements): " << std::dec << writtenCount << std::endl;
 
   // Read output buffers
-  std::vector<GLuint> compressedOut(finalOffset);
-  std::vector<GLuint> prefixOut(prefixCount);
+  std::vector<GLuint> compressedOut = readBuffer(outCompressed, writtenCount);
+  std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount);
 
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, finalOffset * sizeof(GLuint), compressedOut.data());
-
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixCount * sizeof(GLuint), prefixOut.data());
-
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  std::cout << "finalOffset: " << finalOffset << std::endl;
-  std::cout << "compressedOut.size(): " << compressedOut.size() << std::endl;
+  //@@@ DEBUG: Print output data ----------------------------------------------
   std::cout << "First 30-40 values of compressedOut:" << std::endl;
   for (size_t i = 0; i < std::min<size_t>(compressedOut.size(), 40); ++i) {
     std::cout << compressedOut[i] << " ";
     if ((i + 1) % 10 == 0) std::cout << std::endl;
   }
   std::cout << std::endl;
+  //@@@ END DEBUG -------------------------------------------------------------
 
-  // Buffer write test
-  GLuint testValue;
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &testValue);
-  if (testValue == 0xDEADBEEF) {
-    std::cout << "Shader is executing and writing to buffers\n";
-  } else {
-    std::cout << "Shader NOT writing to buffers - check execution\n";
-  }
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  // --- Overwrite obj1 ---
+  // Overwrite obj1
   const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
   const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
 
-  // --- Cleanup ---
-  glDeleteBuffers(1, &ssboObj1Comp);
-  glDeleteBuffers(1, &ssboObj1Prefix);
-  glDeleteBuffers(1, &ssboObj2Comp);
-  glDeleteBuffers(1, &ssboObj2Prefix);
-  glDeleteBuffers(1, &ssboOutComp);
-  glDeleteBuffers(1, &ssboOutPrefix);
-  glDeleteBuffers(1, &atomicBuffer);
-  glDeleteProgram(shader.ID);
+  // Cleanup
+  glDeleteBuffers(1, &obj1Compressed);
+  glDeleteBuffers(1, &obj1Prefix);
+  glDeleteBuffers(1, &obj2Compressed);
+  glDeleteBuffers(1, &obj2Prefix);
+  glDeleteBuffers(1, &outCompressed);
+  glDeleteBuffers(1, &outPrefix);
+  glDeleteBuffers(1, &atomicCounter);
 
+  glfwDestroyWindow(window);
   glfwTerminate();
-  return true;
-
-  /*
-  // --- Create and fill SSBOs ---
-  GLuint ssboObj1Comp, ssboObj1Prefix, ssboObj2Comp, ssboObj2Prefix;
-  GLuint ssboOutComp, ssboOutPrefix, ssboOutOffsets;
-
-  glGenBuffers(1, &ssboObj1Comp);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Comp);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.compressedData.size() * sizeof(GLuint), obj1.compressedData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboObj1Comp);
-
-  glGenBuffers(1, &ssboObj1Prefix);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj1Prefix);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj1.prefixSumData.size() * sizeof(GLuint), obj1.prefixSumData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssboObj1Prefix);
-
-  glGenBuffers(1, &ssboObj2Comp);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Comp);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.compressedData.size() * sizeof(GLuint), obj2.compressedData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssboObj2Comp);
-
-  glGenBuffers(1, &ssboObj2Prefix);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboObj2Prefix);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, obj2.prefixSumData.size() * sizeof(GLuint), obj2.prefixSumData.data(), GL_STATIC_READ);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssboObj2Prefix);
-
-  size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();  // Conservative estimate for output size
-
-  GLuint zero = 0; // Used to reset atomic counters
-
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  // Create atomic counter buffer
-  GLuint atomicBuffer;
-  glGenBuffers(1, &atomicBuffer);
-  glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicBuffer);
-  glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
-  glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 0, atomicBuffer);
-
-  // Reset atomic counter
-  glBufferSubData(GL_ATOMIC_COUNTER_BUFFER, 0, sizeof(GLuint), &zero);
-  //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  glGenBuffers(1, &ssboOutComp);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, outSizeEstimate * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssboOutComp);
-
-  glGenBuffers(1, &ssboOutPrefix);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixCount * sizeof(GLuint), nullptr, GL_DYNAMIC_COPY);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssboOutPrefix);
-
-  glGenBuffers(1, &ssboOutOffsets);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutOffsets);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_COPY);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboOutOffsets);
-
-  // --- Use shader ---
-
-  subtractShader->use();
-
-  // --- Set uniforms ---
-  subtractShader->setLong("w1", w1);
-  subtractShader->setLong("h1", h1);
-  subtractShader->setLong("z1", z1);
-  subtractShader->setLong("w2", w2);
-  subtractShader->setLong("h2", h2);
-  subtractShader->setLong("z2", z2);
-  subtractShader->setLong("translateX", translateX);
-  subtractShader->setLong("translateY", translateY);
-  subtractShader->setLong("translateZ", translateZ);
-  subtractShader->setUInt("maxTransitions", 256); // Increased from 128
-
-  // --- Dispatch ---
-  GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
-  GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
-  glDispatchCompute(groupsX, groupsY, 1);
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-  // --- Read back output offset to know size ---
-  GLuint finalOffset = 0;
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutOffsets);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), &finalOffset);
-
-  // --- Read back data ---
-  std::vector<GLuint> compressedOut(finalOffset);
-  std::vector<GLuint> prefixOut(prefixCount);
-
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutComp);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, finalOffset * sizeof(GLuint), compressedOut.data());
-
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboOutPrefix);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, prefixCount * sizeof(GLuint), prefixOut.data());
-
-  // --- Overwrite obj1 ---
-  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
-  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
-
-  // --- Cleanup ---
-  glDeleteBuffers(1, &ssboObj1Comp);
-  glDeleteBuffers(1, &ssboObj1Prefix);
-  glDeleteBuffers(1, &ssboObj2Comp);
-  glDeleteBuffers(1, &ssboObj2Prefix);
-  glDeleteBuffers(1, &ssboOutComp);
-  glDeleteBuffers(1, &ssboOutPrefix);
-  glDeleteBuffers(1, &ssboOutOffsets);
-  glDeleteProgram(subtractShader->ID);
-
-  glfwTerminate();  // Terminate GLFW context
 
   return true;
-  */
 }

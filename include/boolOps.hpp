@@ -43,5 +43,10 @@ class BoolOps {
 
   // OpenGL utilities
   GLuint createBuffer(GLsizeiptr size, GLuint binding, GLenum usage);
+  GLuint createBuffer(GLsizeiptr size, GLuint binding, GLenum usage, const GLuint* data);
+  std::vector<GLuint> readBuffer(GLuint binding, size_t numElements);
   GLuint createAtomicCounter(GLuint binding);
+  void zeroAtomicCounter(GLuint binding);
+  void zeroBuffer(GLuint binding);
+  GLuint readAtomicCounter(GLuint binding);
 };

@@ -1,19 +1,236 @@
-// // ✅ We work with:
-// //  obj1_compressedData (input transitions)
-// //  obj1_prefixSumData (input prefix sums)
-// //  obj2_compressedData
-// //  obj2_prefixSumData
-// //  output_compressedData (new transitions after subtraction)
-// //  output_prefixSumData (new prefix sums)
-// //  output_offsets (atomic counter per column or global offset counter)
-// // ✅ Each workgroup invocation processes one (x,y) column.
-// // ✅ We'll use small local arrays (up to e.g. 64 transitions) → fits most cases.
+// ✅ We work with:
+//  obj1_compressedData (input transitions)
+//  obj1_prefixSumData (input prefix sums)
+//  obj2_compressedData
+//  obj2_prefixSumData
+//  _output_compressedData (new transitions after subtraction)
+//  _output_prefixSumData (new prefix sums)
+//  _output_offsets (atomic counter per column or global offset counter)
+// ✅ Each workgroup invocation processes one (x,y) column.
+// ✅ We'll use small local arrays (up to e.g. 64 transitions) → fits most cases.
 
-// // ✅ Each invocation processes one column → combine + sort + process transitions.
-// // ✅ We use atomic counter output_offsets[0] to manage output writes safely.
-// // ✅ We filter Z at the final stage.
+// ✅ Each invocation processes one column → combine + sort + process transitions.
+// ✅ We use atomic counter _output_offsets[0] to manage _output writes safely.
+// ✅ We filter Z at the final stage.
 
-/* @@@ Ultra-simple shader
+
+#version 460
+#extension GL_ARB_shader_storage_buffer_object : enable
+#extension GL_ARB_compute_variable_group_size : enable
+
+// Buffer bindings: unchanged so host code stays the same
+layout(std430, binding = 0) readonly buffer Obj1CompressedData { uint obj1_compressedData[]; };
+layout(std430, binding = 1) readonly buffer Obj1PrefixSumData { uint obj1_prefixSumData[]; };
+layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
+layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
+layout(std430, binding = 4) buffer OutCompressedData { uint out_compressedData[]; };
+layout(std430, binding = 5) buffer OutPrefixSumData { uint out_prefixSumData[]; };
+
+// Atomic counter: unchanged
+layout(binding = 6, offset = 0) uniform atomic_uint out_offset_counter;
+
+// Uniforms: unchanged (not all are used, but preserved for compatibility)
+uniform int w1, h1, z1;
+uniform int w2, h2, z2;
+uniform int translateX, translateY, translateZ;
+uniform uint maxTransitions;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= uint(w1) || y >= uint(h1)) return;
+
+    uint idx = x + y * uint(w1);
+
+    // Gather obj1 transition data
+    uint start = obj1_prefixSumData[idx];
+    uint end = (idx + 1 < uint(w1 * h1)) ? obj1_prefixSumData[idx + 1] : obj1_compressedData.length();
+    uint count = end - start;
+
+    // Reserve space in the output compressed buffer
+    uint offset = atomicCounterAdd(out_offset_counter, count);
+    out_prefixSumData[idx] = offset;
+
+    // Copy transitions
+    for (uint i = 0; i < count; ++i) {
+        out_compressedData[offset + i] = obj1_compressedData[start + i];
+    }
+
+    // Optional: ensure visibility for downstream GPU consumers
+    memoryBarrierBuffer();
+    barrier();
+}
+
+
+/* #version 460
+#extension GL_ARB_shader_storage_buffer_object : enable
+#extension GL_ARB_compute_variable_group_size : enable
+
+layout(std430, binding = 0) readonly buffer Obj1CompressedData { uint obj1_compressedData[]; };
+layout(std430, binding = 1) readonly buffer Obj1PrefixSumData { uint obj1_prefixSumData[]; };
+layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
+layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
+layout(std430, binding = 4) buffer OutCompressedData { uint out_compressedData[]; };
+layout(std430, binding = 5) buffer OutPrefixSumData { uint out_prefixSumData[]; };
+
+layout(binding = 6, offset = 0) uniform atomic_uint out_offset_counter;
+
+uniform int w1, h1, z1;
+uniform int w2, h2, z2;
+uniform int translateX, translateY, translateZ;
+uniform uint maxTransitions;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+struct Transition {
+    int z;
+    bool isObj2;
+};
+
+void sortTransitions(inout Transition arr[256], uint count) {
+    for (uint i = 1; i < count; ++i) {
+        Transition key = arr[i];
+        int j = int(i) - 1;
+        while (j >= 0 && (
+            arr[j].z > key.z ||
+            (arr[j].z == key.z && arr[j].isObj2 && !key.isObj2)
+        )) {
+            arr[j + 1] = arr[j];
+            j--;
+        }
+        arr[j + 1] = key;
+    }
+}
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= uint(w1) || y >= uint(h1)) return;
+
+    uint idx = x + y * uint(w1);
+
+    // Gather obj1 transitions
+    uint start1 = obj1_prefixSumData[idx];
+    uint end1 = (idx + 1 < uint(w1 * h1)) ? obj1_prefixSumData[idx + 1] : obj1_compressedData.length();
+    uint count1 = end1 - start1;
+
+    // Early exit if no obj1
+    if (count1 == 0) {
+        uint offset = atomicCounterIncrement(out_offset_counter);
+        out_prefixSumData[idx] = offset;
+        memoryBarrierBuffer();
+        barrier();
+        return;
+    }
+
+    // Gather obj2 transitions
+    int x2 = int(x) - (translateX - w2 / 2);
+    int y2 = int(y) - (translateY - h2 / 2);
+
+    uint start2 = 0, end2 = 0, count2 = 0;
+    bool obj2Valid = (x2 >= 0 && x2 < w2 && y2 >= 0 && y2 < h2);
+
+    if (obj2Valid) {
+        uint idx2 = uint(x2) + uint(y2) * uint(w2);
+        start2 = obj2_prefixSumData[idx2];
+        end2 = (idx2 + 1 < uint(w2 * h2)) ? obj2_prefixSumData[idx2 + 1] : obj2_compressedData.length();
+        count2 = end2 - start2;
+    }
+
+    // Early exit if no obj2
+    if (count2 == 0) {
+        uint offset = atomicCounterAdd(out_offset_counter, count1);
+        out_prefixSumData[idx] = offset;
+        for (uint i = 0; i < count1; i++) {
+            out_compressedData[offset + i] = obj1_compressedData[start1 + i];
+        }
+        memoryBarrierBuffer();
+        barrier();
+        return;
+    }
+
+    // Merge transitions
+    Transition transitions[256];
+    uint total = 0;
+
+    for (uint i = 0; i < count1 && total < maxTransitions; i++) {
+        transitions[total].z = int(obj1_compressedData[start1 + i]);
+        transitions[total].isObj2 = false;
+        total++;
+    }
+
+    for (uint i = 0; i < count2 && total < maxTransitions; i++) {
+        int z = int(obj2_compressedData[start2 + i]) + (translateZ - z2 / 2);
+        if (z >= 0 && z < z1) {
+            transitions[total].z = z;
+            transitions[total].isObj2 = true;
+            total++;
+        }
+    }
+
+    sortTransitions(transitions, total);
+
+    bool obj1On = false, obj2On = false;
+    uint outCount = 0;
+    uint outZ[256];
+
+    uint i = 0;
+    while (i < total) {
+        int currentZ = transitions[i].z;
+        bool hasObj1 = false, hasObj2 = false;
+
+        while (i < total && transitions[i].z == currentZ) {
+            if (transitions[i].isObj2) hasObj2 = true;
+            else hasObj1 = true;
+            i++;
+        }
+
+        bool prevObj1On = obj1On;
+        bool prevObj2On = obj2On;
+
+        if (hasObj1) obj1On = !obj1On;
+        if (hasObj2) obj2On = !obj2On;
+
+        bool _output = false;
+        if (hasObj1 && hasObj2) {
+            bool obj1Flip = (prevObj1On != obj1On);
+            bool obj2Flip = (prevObj2On != obj2On);
+            if (!(obj1Flip && obj2Flip)) _output = true;
+        } 
+        else if (hasObj1) {
+            if (obj1On != prevObj1On) _output = !obj2On;
+        } 
+        else if (hasObj2) {
+            if (obj2On != prevObj2On) _output = obj1On;
+        }
+
+        if (_output) {
+            outZ[outCount++] = uint(currentZ);
+        }
+    }
+
+    uint offset = atomicCounterAdd(out_offset_counter, outCount);
+    out_prefixSumData[idx] = offset;
+
+    for (uint j = 0; j < outCount; j++) {
+        out_compressedData[offset + j] = outZ[j];
+    }
+
+    // Ensure writes are visible
+    memoryBarrierBuffer();
+    barrier();
+} */
+
+
+
+
+
+/*
+@@@ Ultra-simple shader
 #version 460
 #extension GL_ARB_shader_storage_buffer_object : require
 
@@ -64,377 +281,3 @@ void main() {
     }
 }
 // @@@ END DEBUG SHADER */
-
-#version 460
-#extension GL_ARB_shader_storage_buffer_object : enable
-#extension GL_ARB_compute_variable_group_size : enable
-
-// Buffers (renamed to avoid reserved keywords)
-layout(std430, binding = 0) readonly buffer Obj1CompressedData { uint obj1_compressedData[]; };
-layout(std430, binding = 1) readonly buffer Obj1PrefixSumData { uint obj1_prefixSumData[]; };
-layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
-layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
-layout(std430, binding = 4) buffer OutCompressedData { uint out_compressedData[]; };  // Changed from output_compressedData
-layout(std430, binding = 5) buffer OutPrefixSumData { uint out_prefixSumData[]; };    // Changed from output_prefixSumData
-
-// Atomic counter for output offset
-layout(binding = 6, offset = 0) uniform atomic_uint out_offset_counter;  // Changed from output_offset
-
-// Uniforms (same as before)
-uniform int w1, h1, z1;
-uniform int w2, h2, z2;
-uniform int translateX, translateY, translateZ;
-uniform uint maxTransitions;
-
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-struct Transition {
-    int z;
-    bool isObj2;
-};
-
-// Efficient insertion sort for small arrays
-void sortTransitions(inout Transition arr[256], uint count) {
-    for (uint i = 1; i < count; ++i) {
-        Transition key = arr[i];
-        int j = int(i) - 1;
-        
-        while (j >= 0 && (
-            arr[j].z > key.z || 
-            (arr[j].z == key.z && arr[j].isObj2 && !key.isObj2)
-        )) {
-            arr[j + 1] = arr[j];
-            j--;
-        }
-        arr[j + 1] = key;
-    }
-}
-
-void main() {
-
-    uint x = gl_GlobalInvocationID.x;
-    uint y = gl_GlobalInvocationID.y;
-    if (x >= uint(w1)) return;
-    if (y >= uint(h1)) return;
-
-    //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    if (x == 0 && y == 0) {
-        out_compressedData[0] = 0xDEADBEEF; // Test write
-        atomicCounterAdd(out_offset_counter, 1);
-    }
-    //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-    uint idx = x + y * w1;
-    
-    // Get obj1 transitions
-    uint start1 = obj1_prefixSumData[idx];
-    uint end1 = (idx + 1 < uint(w1 * h1)) ? obj1_prefixSumData[idx + 1] : obj1_compressedData.length();
-    uint count1 = end1 - start1;
-    
-    // Early exit if no obj1 geometry
-    if (count1 == 0) {
-        out_prefixSumData[idx] = atomicCounterIncrement(out_offset_counter);
-        return;
-    }
-
-    // Get obj2 transitions (if any)
-    int x2 = int(x) - (translateX - w2 / 2);
-    int y2 = int(y) - (translateY - h2 / 2);
-    uint start2 = 0;
-    uint end2 = 0;
-    uint count2 = 0;
-    
-    bool obj2Valid = (x2 >= 0 && x2 < w2 && y2 >= 0 && y2 < h2);
-    if (obj2Valid) {
-        uint idx2 = uint(x2) + uint(y2) * w2;
-        start2 = obj2_prefixSumData[idx2];
-        end2 = (idx2 + 1 < uint(w2 * h2)) ? obj2_prefixSumData[idx2 + 1] : obj2_compressedData.length();
-        count2 = end2 - start2;
-    }
-
-    // Early exit if no obj2 geometry
-    if (count2 == 0) {
-        uint outOffset = atomicCounterIncrement(out_offset_counter);
-        out_prefixSumData[idx] = outOffset;
-        for (uint i = 0; i < count1; i++) {
-            out_compressedData[outOffset + i] = obj1_compressedData[start1 + i];
-        }
-        atomicCounterAdd(out_offset_counter, count1 - 1);
-        return;
-    }
-
-    // Load and combine transitions
-    Transition transitions[256];
-    uint total = 0;
-    
-    // Load obj1 transitions
-    for (uint i = 0; i < count1 && total < maxTransitions; i++) {
-        transitions[total].z = int(obj1_compressedData[start1 + i]);
-        transitions[total].isObj2 = false;
-        total++;
-    }
-    
-    // Load obj2 transitions with offset and clamping
-    for (uint i = 0; i < count2 && total < maxTransitions; i++) {
-        int z = int(obj2_compressedData[start2 + i]) + (translateZ - z2 / 2);
-        if (z >= 0 && z < z1) {
-            transitions[total].z = z;
-            transitions[total].isObj2 = true;
-            total++;
-        }
-    }
-    
-    // Sort transitions
-    sortTransitions(transitions, total);
-
-    // Process transitions (matches CPU logic exactly)
-    bool obj1On = false;
-    bool obj2On = false;
-    uint outCount = 0;
-    uint outZ[256];
-    
-    uint i = 0;
-    while (i < total) {
-        int currentZ = transitions[i].z;
-        bool hasObj1 = false;
-        bool hasObj2 = false;
-        
-        // Group all transitions at this Z
-        while (i < total && transitions[i].z == currentZ) {
-            if (transitions[i].isObj2) hasObj2 = true;
-            else hasObj1 = true;
-            i++;
-        }
-        
-        bool prevObj1On = obj1On;
-        bool prevObj2On = obj2On;
-        
-        // Update states
-        if (hasObj1) obj1On = !obj1On;
-        if (hasObj2) obj2On = !obj2On;
-        
-        // Determine if we should output this transition (_output since "output" is a reserved keyword)
-        bool _output = false;
-        
-        if (hasObj1 && hasObj2) {
-            bool obj1Flip = (prevObj1On != obj1On);
-            bool obj2Flip = (prevObj2On != obj2On);
-            
-            if (!(obj1Flip && obj2Flip)) {
-                _output = true;
-            }
-        } 
-        else if (hasObj1) {
-            if (obj1On != prevObj1On) {
-                _output = !obj2On;
-            }
-        } 
-        else if (hasObj2) {
-            if (obj2On != prevObj2On) {
-                _output = obj1On;
-            }
-        }
-        
-        if (_output) {
-            outZ[outCount++] = uint(currentZ);
-        }
-    }
-    
-    // Write output
-    uint outOffset = atomicCounterAdd(out_offset_counter, outCount);
-    out_prefixSumData[idx] = outOffset;
-    
-    for (uint j = 0; j < outCount; j++) {
-        out_compressedData[outOffset + j] = outZ[j];
-    }
-}
-
-
-
-// #version 460
-
-// #extension GL_ARB_shader_storage_buffer_object : enable
-// #extension GL_ARB_compute_variable_group_size : enable
-
-// // ----------- Bindings -----------
-
-// layout(std430, binding = 0) readonly buffer Obj1CompressedData {
-//     uint obj1_compressedData[];
-// };
-
-// layout(std430, binding = 1) readonly buffer Obj1PrefixSumData {
-//     uint obj1_prefixSumData[];
-// };
-
-// layout(std430, binding = 2) readonly buffer Obj2CompressedData {
-//     uint obj2_compressedData[];
-// };
-
-// layout(std430, binding = 3) readonly buffer Obj2PrefixSumData {
-//     uint obj2_prefixSumData[];
-// };
-
-// layout(std430, binding = 4) buffer OutputCompressedData {
-//     uint output_compressedData[];
-// };
-
-// layout(std430, binding = 5) buffer OutputPrefixSumData {
-//     uint output_prefixSumData[];
-// };
-
-// layout(std430, binding = 6) buffer OutputOffset {
-//     uint output_offsets[];
-// };
-
-// // ----------- Uniforms -----------
-
-// layout(location = 0) uniform int w1;
-// layout(location = 1) uniform int h1;
-// layout(location = 2) uniform int z1;
-// layout(location = 3) uniform int w2;
-// layout(location = 4) uniform int h2;
-// layout(location = 5) uniform int z2;
-
-// layout(location = 6) uniform int translateX;
-// layout(location = 7) uniform int translateY;
-// layout(location = 8) uniform int translateZ;
-
-// // ----------- Main -----------
-
-// layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-// void main() {
-//   uint x1 = gl_GlobalInvocationID.x;
-//   uint y1 = gl_GlobalInvocationID.y;
-//   if (x1 >= uint(w1) || y1 >= uint(h1)) return;
-
-//   uint idx1 = x1 + y1 * w1;
-
-//   // Fetch obj1 transitions
-//   uint start1 = obj1_prefixSumData[idx1];
-//   uint end1 = (idx1 + 1 < w1 * h1) ? obj1_prefixSumData[idx1 + 1] : obj1_compressedData.length();
-//   uint count1 = end1 - start1;
-
-//   // Fetch obj2 transitions
-//   int x2 = int(x1) - (translateX - w2 / 2);
-//   int y2 = int(y1) - (translateY - h2 / 2);
-//   uint count2 = 0;
-//   uint start2 = 0;
-//   uint end2 = 0;
-
-//   bool valid2 = (x2 >= 0 && x2 < w2 && y2 >= 0 && y2 < h2);
-//   if (valid2) {
-//     uint idx2 = uint(x2) + uint(y2) * w2;
-//     start2 = obj2_prefixSumData[idx2];
-//     end2 = (idx2 + 1 < w2 * h2) ? obj2_prefixSumData[idx2 + 1] : obj2_compressedData.length();
-//     count2 = end2 - start2;
-//   }
-
-//   // Local arrays
-//   uint packetZ1[64];
-//   uint packetZ2[64];
-//   uint combinedZ[128];
-//   uint combinedType[128]; // 0 = black, 1 = red
-
-//   // Load packets (obj1)
-//   for (uint i = 0; i < count1 && i < 64; ++i) {
-//     packetZ1[i] = obj1_compressedData[start1 + i];
-//   }
-
-//   // Load + offset packets (obj2)
-//   for (uint i = 0; i < count2 && i < 64; ++i) {
-//     int z = int(obj2_compressedData[start2 + i]);
-//     z += translateZ - z2 / 2;
-//     packetZ2[i] = uint(z);
-//   }
-
-//   // Combine
-//   uint total = 0;
-//   for (uint i = 0; i < count1 && total < 128; ++i) {
-//     combinedZ[total] = packetZ1[i];
-//     combinedType[total] = 0;
-//     total++;
-//   }
-//   for (uint i = 0; i < count2 && total < 128; ++i) {
-//     combinedZ[total] = packetZ2[i];
-//     combinedType[total] = 1;
-//     total++;
-//   }
-
-//   // Simple bubble sort (small arrays)
-//   for (uint i = 0; i < total; ++i) {
-//     for (uint j = i + 1; j < total; ++j) {
-//       if (combinedZ[j] < combinedZ[i] || 
-//         (combinedZ[j] == combinedZ[i] && combinedType[j] > combinedType[i])) {
-//         uint tmpZ = combinedZ[i]; combinedZ[i] = combinedZ[j]; combinedZ[j] = tmpZ;
-//         uint tmpT = combinedType[i]; combinedType[i] = combinedType[j]; combinedType[j] = tmpT;
-//       }
-//     }
-//   }
-
-//   // Process transitions
-//   bool blackOn = false;
-//   bool redOn = false;
-//   uint outCount = 0;
-//   uint outZ[128];
-
-//   uint i = 0;
-//   while (i < total) {
-//     uint z = combinedZ[i];
-//     bool hasBlack = false;
-//     bool hasRed = false;
-//     while (i < total && combinedZ[i] == z) {
-//       if (combinedType[i] == 0) hasBlack = true;
-//       if (combinedType[i] == 1) hasRed = true;
-//       i++;
-//     }
-
-//     bool prevBlackOn = blackOn;
-//     bool prevRedOn = redOn;
-//     if (hasBlack) blackOn = !blackOn;
-//     if (hasRed) redOn = !redOn;
-
-//     if (hasBlack && hasRed) {
-//       bool blackWasOnToOff = prevBlackOn && !blackOn;
-//       bool blackWasOffToOn = !prevBlackOn && blackOn;
-//       bool redWasOnToOff = prevRedOn && !redOn;
-//       bool redWasOffToOn = !prevRedOn && redOn;
-
-//       if ((blackWasOffToOn && redWasOffToOn) || (blackWasOnToOff && redWasOnToOff)) {
-//         continue;
-//       } else {
-//         outZ[outCount++] = z;
-//       }
-//     } else if (hasBlack) {
-//       if (!prevBlackOn) {
-//         if (!prevRedOn) outZ[outCount++] = z;
-//       } else {
-//         if (!prevRedOn) outZ[outCount++] = z;
-//       }
-//     } else if (hasRed) {
-//       if (!prevRedOn) {
-//         if (prevBlackOn) outZ[outCount++] = z;
-//       } else {
-//         if (prevBlackOn) outZ[outCount++] = z;
-//       }
-//     }
-//   }
-
-//   // First, count valid transitions
-//   uint filteredCount = 0;
-//   for (uint j = 0; j < outCount; ++j) {
-//     if (int(outZ[j]) >= 0 && int(outZ[j]) < z1) {
-//       outZ[filteredCount++] = outZ[j];  // Pack valid transitions at the front
-//     }
-//   }
-
-//   // Now, reserve space for the *filtered* transitions
-//   uint outOffset = atomicAdd(output_offsets[0], filteredCount);
-//   output_prefixSumData[idx1] = outOffset;
-
-//   // Finally, write them
-//   for (uint j = 0; j < filteredCount; ++j) {
-//     output_compressedData[outOffset + j] = outZ[j];
-//   }
-
-// }
