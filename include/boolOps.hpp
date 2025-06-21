@@ -33,7 +33,7 @@ class BoolOps {
   void clear() { objects.clear(); }
 
   // Subtract two voxel objects
-  void test();
+  void test(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);

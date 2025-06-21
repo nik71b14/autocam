@@ -470,7 +470,7 @@ GLuint BoolOps::createAtomicCounter(GLuint binding) {
   return buffer;
 }
 
-void BoolOps::test() {
+void BoolOps::test(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
 
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -482,9 +482,36 @@ void BoolOps::test() {
   glfwMakeContextCurrent(window);
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to init GLAD");
 
+  std::cout << "OpenGL: " << glGetString(GL_VERSION) << "\n";
+  std::cout << "GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << "\n";
+
   // Load and compile shader using Shader class
   Shader shader("shaders/subtract.comp");  // Path to your compute shader file
   shader.use();
+
+  // Calculate parameters
+  long w1 = obj1.params.resolutionXYZ.x;
+  long h1 = obj1.params.resolutionXYZ.y;
+  long z1 = obj1.params.resolutionXYZ.z;
+  long w2 = obj2.params.resolutionXYZ.x;
+  long h2 = obj2.params.resolutionXYZ.y;
+  long z2 = obj2.params.resolutionXYZ.z;
+
+  long translateX = w1 / 2 + offset.x;
+  long translateY = h1 / 2 + offset.y;
+  long translateZ = z1 / 2 - offset.z;
+
+  // Set uniforms
+  shader.setInt("w1", w1);
+  shader.setInt("h1", h1);
+  shader.setInt("z1", z1);
+  shader.setInt("w2", w2);
+  shader.setInt("h2", h2);
+  shader.setInt("z2", z2);
+  shader.setInt("translateX", translateX);
+  shader.setInt("translateY", translateY);
+  shader.setInt("translateZ", translateZ);
+  shader.setUInt("maxTransitions", 256);
 
   // Create buffers
   GLuint obj1Compressed = createBuffer(1024 * sizeof(GLuint), 0, GL_DYNAMIC_DRAW);
@@ -495,22 +522,8 @@ void BoolOps::test() {
   GLuint outPrefix = createBuffer(1024 * sizeof(GLuint), 5, GL_DYNAMIC_READ);
   GLuint atomicCounter = createAtomicCounter(6);
 
-  // Set uniforms
-  shader.setInt("w1", 8);
-  shader.setInt("h1", 8);
-  shader.setInt("z1", 64);
-  shader.setInt("w2", 8);
-  shader.setInt("h2", 8);
-  shader.setInt("z2", 64);
-  shader.setInt("translateX", 0);
-  shader.setInt("translateY", 0);
-  shader.setInt("translateZ", 0);
-  shader.setUInt("maxTransitions", 256);
-
   // Dispatch compute shader
   // glDispatchCompute(1, 1, 1);  // Just one workgroup for (0,0)
-  long w1 = 1000;
-  long h1 = 1000;
   GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
   GLuint groupsY = (GLuint)((h1 + 7) / 8);  // Assuming 8 threads per work group in Y, rounding up
   std::cout << "Dispatching " << groupsX << " x " << groupsY << " work groups (" << w1 << "x" << h1 << " pixels)\n";
