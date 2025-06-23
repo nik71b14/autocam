@@ -593,7 +593,7 @@ void BoolOps::test(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 
   //@@@ END DEBUG -------------------------------------------------------------
 
   // Read atomic counter to get the number of written elements in outCompressed
-  GLuint writtenCount = readAtomicCounter(6);
+  GLuint writtenCount = readAtomicCounter(atomicCounter);
   std::cout << "Atomic counter (written elements): " << std::dec << writtenCount << std::endl;
 
   // Read output buffers
@@ -832,13 +832,19 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   GLuint obj2Compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ, obj2.compressedData.data());
   // GLuint obj2Prefix = createBuffer(1024 * sizeof(GLuint), 3, GL_DYNAMIC_DRAW);
   GLuint obj2Prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ, obj2.prefixSumData.data());
+
   // GLuint outCompressed = createBuffer(1024 * sizeof(GLuint), 4, GL_DYNAMIC_READ);
   GLuint outCompressed = createBuffer(outSizeEstimate * sizeof(GLuint), 4, GL_DYNAMIC_COPY, nullptr);
+  // GLuint outCompressed = createBuffer(obj1.compressedData.size() * sizeof(GLuint), 4, GL_DYNAMIC_COPY, nullptr);  //@@@ DEBUG: Use obj1 size for now
+
   // GLuint outPrefix = createBuffer(1024 * sizeof(GLuint), 5, GL_DYNAMIC_READ);
   GLuint outPrefix = createBuffer(prefixCount * sizeof(GLuint), 5, GL_DYNAMIC_COPY, nullptr);
 
   GLuint atomicCounter = createAtomicCounter(6);
   zeroAtomicCounter(6);  // Initialize atomic counter to zero
+
+  GLuint debugCounter = createAtomicCounter(7);
+  zeroAtomicCounter(7);  // Initialize atomic counter to zero
 
   // Dispatch compute shader
   GLuint groupsX = (GLuint)((w1 + 7) / 8);  // Assuming 8 threads per work group in X, rounding up
@@ -848,17 +854,23 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
 
   //@@@ DEBUG: Read test output -----------------------------------------------
-  std::vector<GLuint> outData(1);
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
-  glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
-  std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
+  // std::vector<GLuint> outData(1);
+  // glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
+  // glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
+  // std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
   //@@@ END DEBUG -------------------------------------------------------------
 
   // Read atomic counter to get the number of written elements in outCompressed
-  GLuint writtenCount = readAtomicCounter(6);
+  GLuint writtenCount = readAtomicCounter(atomicCounter);
   std::cout << "Atomic counter (written elements): " << std::dec << writtenCount << std::endl;
 
+  //@@@ DEBUG:  Read debug atomic counter -------------------------------------
+  GLuint debugCount = readAtomicCounter(debugCounter);
+  std::cout << "Debug atomic counter: " << std::dec << debugCount << std::endl;
+  //@@@ END DEBUG -------------------------------------------------------------
+
   // Read output buffers
+  // std::vector<GLuint> compressedOut = readBuffer(outCompressed, obj1.compressedData.size());  //@@@ DEBUG
   std::vector<GLuint> compressedOut = readBuffer(outCompressed, writtenCount);
   std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount);
 
@@ -873,7 +885,7 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
 
   // Overwrite obj1
   const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
-  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
+  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);  // COPY JUST THIS FOR NOW
 
   // Cleanup
   glDeleteBuffers(1, &obj1Compressed);
