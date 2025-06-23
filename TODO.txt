@@ -1,6 +1,12 @@
--> Voxelizzare e creare un file .bin di un blocco 100x100x50 e vedere se viene visualizzato correttamente
--> Voxelizzare il tool da 10 mm a punta sferica
--> Verificare che vengano visualizzati correttamente
+-> Spostare la creazione buffers in una funzione "init" dell'oggetto ops, assieme alla creazione dello shader, ecc.,
+   in modo tale da rendere subtractGPU più veloce possibile
+-> Caricamento dello shader nella funzione init()
+-> Riutilizzare i buffers e non scaricarli ogni volta nella CPU (passo successivo, per il momento posso fare il "giro" esterno)
+-> RISOLVERE IL PROBLEMA DELLA VARIAZIONE DEL NUMERO DI TRANSIZIONI IN subtractGPU, aggiungendo un secondo passaggio di compattazione e creazione prefixSum
+   (riciclando il lavoro già fatto)
+-> Provare lavorazione
+-> Visualizzare passando direttamente il buffer con i dati al raymarching shader!!!
+-> Testare con oggetti con transizioni > 2 nella direzione Z
 
 
 -> "aggancio" di un utensile voxelizzato al punto di lavoro del simulatore gcode

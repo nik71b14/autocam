@@ -1,6 +1,7 @@
 #pragma once
 
 // #include <glad/glad.h>
+// #include <GLFW/glfw3.h>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -9,6 +10,8 @@
 
 // Assuming VoxelizationParams is defined somewhere
 #include "voxelizer.hpp"  // adjust path as needed
+
+struct GLFWwindow; // Forward declaration for GLFWwindow
 
 struct VoxelObject {
   VoxelizationParams params;
@@ -33,17 +36,20 @@ class BoolOps {
   void clear() { objects.clear(); }
 
   // Subtract two voxel objects
-  void test(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
 
  private:
   std::vector<VoxelObject> objects;
+  GLFWwindow* glContext = nullptr;  // OpenGL context for GPU operations
 
   // OpenGL utilities
+  GLFWwindow* createGLContext();
+  void destroyGLContext(GLFWwindow* window);
   GLuint createBuffer(GLsizeiptr size, GLuint binding, GLenum usage);
   GLuint createBuffer(GLsizeiptr size, GLuint binding, GLenum usage, const GLuint* data);
+  void loadBuffer(GLuint binding, const std::vector<GLuint>& data);
   std::vector<GLuint> readBuffer(GLuint binding, size_t numElements);
   GLuint createAtomicCounter(GLuint binding);
   void zeroAtomicCounter(GLuint binding);

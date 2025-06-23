@@ -38,8 +38,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // if (!ops.load("test/hemispheric_mill_10.bin")) {
-  if (!ops.load("test/obj2.bin")) {
+  if (!ops.load("test/hemispheric_mill_10.bin")) {
+    // if (!ops.load("test/obj2.bin")) {
     std::cerr << "Failed to load voxelized object." << std::endl;
     return 1;
   }
@@ -53,8 +53,8 @@ int main(int argc, char** argv) {
   // Perform subtraction using GPU --------------------------------------------
   // ops.test(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 0));
 
-  // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
-  if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 0))) {
+  if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
+    // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
     std::cerr << "Subtraction failed." << std::endl;
     return 1;
   }
@@ -167,7 +167,8 @@ int main(int argc, char** argv) {
     // 2. Load the voxelized object from the binary file
     BoolOps* ops = new BoolOps();
     // Loads object 1
-    if (!ops->load("test/workpiece_100_100_50.bin")) {
+    // if (!ops->load("test/workpiece_100_100_50.bin")) {
+    if (!ops->load("test/obj1.bin")) {
       std::cerr << "Failed to load voxelized object." << std::endl;
     }
     // Loads object 2
@@ -206,11 +207,13 @@ int main(int argc, char** argv) {
       int offsetX = static_cast<int>(sineVal / std::sqrt(2.0f));  // normalize the vector (-1,1)
       int offsetY = static_cast<int>(-sineVal / std::sqrt(2.0f));
 
-      glm::ivec3 offsetPos(baseX + offsetX, baseY + offsetY, 700 + mov / 4);
+      glm::ivec3 offsetPos(baseX + offsetX, baseY + offsetY, 820 - mov / 4);
+      // glm::ivec3 offsetPos(0, 0, 820);
 
       //@@@ SE LA SOTTRAZIONE RESTITUISCE FALSE, VEDERE COSA SUCCEDE
 
       ops->subtract(ops->getObjects()[0], ops->getObjects()[1], offsetPos);
+      // ops->subtractGPU(ops->getObjects()[0], ops->getObjects()[1], offsetPos);
       index++;
       std::cout << "Subtraction operation " << index << " completed at "
                 << "X=" << offsetPos.x << " Y=" << offsetPos.y << " Z=" << offsetPos.z << std::endl;
