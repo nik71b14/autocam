@@ -62,19 +62,20 @@ int main(int argc, char** argv) {
     }
   */
 
+  // =====> LAVORARE SU QUESTO ORA, BISOGNA inserire zeroAtomicCounter(atomicCounter); prima del dispatch
+  // =====> DEVE GENERARE ANCHE il prefixSumData, che ora non viene generato
+  // =====> Per farlo, devo usare un secondo shader che compatta i dati e genera il prefix sum
+  // =====> Ho già questo shader: prefix_passn.comp
+
   // This cycle took 26 ms per subtraction on average on the Dell machine
-  auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
   // for (int i = 0; i < 3; i++) {
   //   ops.setupSubtractBuffers(ops.getObjects()[0], ops.getObjects()[1]);  // Needed to setup buffers before GPU subtraction
   //   ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(-250 + 250 * i, -250 + 250 * i, 820));
   // }
 
+  // Test GPU sequence subtraction
   ops.setupSubtractBuffers(ops.getObjects()[0], ops.getObjects()[1]);  // Needed to setup buffers before GPU subtraction
-  ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(-250, -250, 820));
-  
-  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-  std::cout << "Cycle took " << duration << " ms\n";
+  ops.subtractGPU_sequence(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(-250, -250, 820));
 
   // --------------------------------------------------------------------------
 

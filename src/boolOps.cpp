@@ -8,7 +8,7 @@
 #include "voxelViewer.hpp"
 #include "voxelizer.hpp"
 
-// #define DEBUG_OUTPUT
+#define DEBUG_OUTPUT
 // #define DEBUG_SPEED_OUTPUT
 #define WORKGROUPS 8
 
@@ -20,9 +20,8 @@ BoolOps::BoolOps() {
   }
 
   // Load and compile shader using Shader class
-  shader = new Shader("shaders/subtract.comp");  // Path to your compute shader file
-  shader = new Shader("shaders/subtract.comp");  // Path to your compute shader file
-
+  shader = new Shader("shaders/subtract.comp");    // Path to your compute shader file
+  shader2 = new Shader("shaders/subtract2.comp");  // Path to your compute shader file
 }
 
 BoolOps::~BoolOps() {
@@ -281,7 +280,7 @@ void BoolOps::setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& o
   outCompressed = createBuffer(outSizeEstimate * sizeof(GLuint), 4, GL_DYNAMIC_COPY, nullptr);
   outPrefix = createBuffer(prefixCount * sizeof(GLuint), 5, GL_DYNAMIC_COPY, nullptr);
   atomicCounter = createAtomicCounter(6);
-  zeroAtomicCounter(6);  // Initialize atomic counter to zero
+  zeroAtomicCounter(atomicCounter);  // Initialize atomic counter to zero
 
 #ifdef DEBUG_OUTPUT
   debugCounter = createAtomicCounter(7);
@@ -601,15 +600,15 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   GLuint groupsY = (GLuint)((h1 + (WORKGROUPS - 1)) / WORKGROUPS);  // Assuming WORKGROUPS threads per work group in Y, rounding up
 
 #ifdef DEBUG_SPEED_OUTPUT
-    auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
+  auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
 #endif
 
-    // Dispatch compute shader (about 0.5 ms for 1M transitions)
-    glDispatchCompute(groupsX, groupsY, 1);
-    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+  // Dispatch compute shader (about 0.5 ms for 1M transitions)
+  glDispatchCompute(groupsX, groupsY, 1);
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
 
 #ifdef DEBUG_SPEED_OUTPUT
-    auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
+  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
 #endif
 
   //@@@ DEBUG: Read test output -----------------------------------------------
@@ -660,14 +659,9 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   return true;
 }
 
-bool BoolOps::subtractGPU2(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
-  // The subtract() CPU code:
-  // ✅ Iterates over each (x,y) column.
-  // ✅ Gathers Z transitions for both objects.
-  // ✅ Merges/sorts/evaluates transitions.
-  // ✅ Generates a new compressed result.
-
-  // Shader shader("shaders/subtract.comp");  // Path to your compute shader file
+// This function is a sequence of GPU dispatches, each with a different offset, run without reading the buffers CPU side in between.
+// NOTE: Works only if the prefixSumData doesn't change, i.e. the number of transitions per voxel is constant
+bool BoolOps::subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   shader2->use();
 
   // Calculate parameters
@@ -704,30 +698,21 @@ bool BoolOps::subtractGPU2(const VoxelObject& obj1, const VoxelObject& obj2, glm
   // Se per caso il buffer di output è troppo piccolo, il dispatch fallirà, dovrò accorgermene e segnalare la cosa
   // alla CPU, in modo tale che prenda l'ultimo buffer di output e lo ricrei con una dimensione maggiore.
 
-  for (int i = 0; i < 1; ++i) {                          //%%%
-    shader2->setInt("translateX", translateX + 250 * i);  //%%%
-    shader2->setInt("translateY", translateY + 250 * i);  //%%%
-    shader2->setInt("translateZ", translateZ + 250 * i);  //%%%
-
-#ifdef DEBUG_SPEED_OUTPUT
-    auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
-#endif
+  auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
+  for (int i = 0; i < 300; ++i) {
+    shader2->setInt("translateX", translateX + i);
+    shader2->setInt("translateY", translateY + i);
+    shader2->setInt("translateZ", translateZ + i);
+    zeroAtomicCounter(atomicCounter);  // Reset atomic counter to zero
 
     // Dispatch compute shader (about 0.5 ms for 1M transitions)
     glDispatchCompute(groupsX, groupsY, 1);
     glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
-
-#ifdef DEBUG_SPEED_OUTPUT
-    auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
-#endif
   }
-
-  //@@@ DEBUG: Read test output -----------------------------------------------
-  // std::vector<GLuint> outData(1);
-  // glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
-  // glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
-  // std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
-  //@@@ END DEBUG -------------------------------------------------------------
+  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
+  std::chrono::duration<double, std::milli> duration = end - start;
+  std::cout << "Bare GPU dispatch loop took " << duration.count() << " ms\n";
+  std::cout << "Single GPU dispatch took " << (duration.count() * 1000.0 / 300.0) << " us\n";
 
   // Read atomic counter to get the number of written elements in outCompressed
   GLuint writtenCount = readAtomicCounter(atomicCounter);
@@ -735,37 +720,13 @@ bool BoolOps::subtractGPU2(const VoxelObject& obj1, const VoxelObject& obj2, glm
   std::cout << "Atomic counter (written elements): " << std::dec << writtenCount << std::endl;
 #endif
 
-#ifdef DEBUG_OUTPUT
-  //@@@ DEBUG:  Read debug atomic counter -------------------------------------
-  GLuint debugCount = readAtomicCounter(debugCounter);
-  std::cout << "Debug atomic counter: " << std::dec << debugCount << std::endl;
-//@@@ END DEBUG -------------------------------------------------------------
-#endif
-
   // Read output buffers
-  std::vector<GLuint> compressedOut = readBuffer(outCompressed, writtenCount);
-  // std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount); //%%%%
+  std::vector<GLuint> compressedOut = readBuffer(obj1Compressed, writtenCount);  //%%% The same buffer in input
   std::vector<GLuint> prefixOut = readBuffer(outPrefix, obj1.prefixSumData.size());
-
-#ifdef DEBUG_OUTPUT
-  //@@@ DEBUG: Print output data ----------------------------------------------
-  std::cout << "First 30-40 values of compressedOut:" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(compressedOut.size(), 40); ++i) {
-    std::cout << compressedOut[i] << " ";
-    if ((i + 1) % 10 == 0) std::cout << std::endl;
-  }
-  std::cout << std::endl;
-//@@@ END DEBUG -------------------------------------------------------------
-#endif
 
   // Overwrite obj1
   const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
-  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);  // COPY JUST THIS FOR NOW
-
-#ifdef DEBUG_SPEED_OUTPUT
-  std::chrono::duration<double, std::milli> duration = end - start;
-  std::cout << "GPU dispatch (excluding loading buffers) took " << duration2.count() << " ms\n";
-#endif
+  // const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);
 
   return true;
 }

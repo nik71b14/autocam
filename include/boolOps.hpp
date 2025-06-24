@@ -42,7 +42,7 @@ class BoolOps {
   bool subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
-  bool subtractGPU2(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
+  bool subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
 
 
  private:
@@ -60,9 +60,7 @@ class BoolOps {
   GLuint outPrefix;
   // Atomic counters
   GLuint atomicCounter;
-#ifdef DEBUG_OUTPUT
   GLuint debugCounter;
-#endif
 
   // Shaders
   Shader* shader = nullptr;  // Shader for GPU operations

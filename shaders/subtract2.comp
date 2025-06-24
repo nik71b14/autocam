@@ -181,8 +181,7 @@ void main() {
     } else {
         // Copy obj1 transitions as-is
         for (uint i = 0; i < count1; ++i) {
-            // Note: out_compressedData remains unmodified, non need to do anything
-            // out_compressedData[outStart + i] = obj1_compressedData[start1 + i]; //%%%%
+            // obj1 stays the same, so we don't need to do anything special
             atomicCounterIncrement(out_offset_counter);
         }
     }
