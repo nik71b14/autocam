@@ -42,6 +42,8 @@ class BoolOps {
   bool subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
+  bool subtractGPU2(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
+
 
  private:
   std::vector<VoxelObject> objects;
@@ -64,6 +66,8 @@ class BoolOps {
 
   // Shaders
   Shader* shader = nullptr;  // Shader for GPU operations
+  Shader* shader2 = nullptr;  // Shader for GPU operations
+
 
   // OpenGL utilities
   GLFWwindow* createGLContext();
