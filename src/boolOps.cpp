@@ -9,8 +9,38 @@
 #include "voxelizer.hpp"
 
 // #define DEBUG_OUTPUT
-#define DEBUG_SPEED_OUTPUT
+// #define DEBUG_SPEED_OUTPUT
 #define WORKGROUPS 8
+
+BoolOps::BoolOps() {
+  // Initialize OpenGL context
+  glContext = createGLContext();
+  if (!glContext) {
+    throw std::runtime_error("Failed to create OpenGL context");
+  }
+
+  // Load and compile shader using Shader class
+  shader = new Shader("shaders/subtract.comp");  // Path to your compute shader file
+}
+
+BoolOps::~BoolOps() {
+  clear();
+  destroyGLContext(glContext);
+
+  // Cleanup
+  if (obj1Compressed) glDeleteBuffers(1, &obj1Compressed);
+  if (obj1Prefix) glDeleteBuffers(1, &obj1Prefix);
+  if (obj2Compressed) glDeleteBuffers(1, &obj2Compressed);
+  if (obj2Prefix) glDeleteBuffers(1, &obj2Prefix);
+  if (outCompressed) glDeleteBuffers(1, &outCompressed);
+  if (outPrefix) glDeleteBuffers(1, &outPrefix);
+  if (atomicCounter) glDeleteBuffers(1, &atomicCounter);
+
+  if (shader) {
+    delete shader;
+    shader = nullptr;
+  }
+}
 
 bool BoolOps::load(const std::string& filename) {
   std::ifstream file(filename, std::ios::binary);
@@ -217,10 +247,10 @@ GLFWwindow* BoolOps::createGLContext() {
   glfwMakeContextCurrent(window);
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to init GLAD");
 
-  #ifdef DEBUG_OUTPUT
+#ifdef DEBUG_OUTPUT
   std::cout << "OpenGL: " << glGetString(GL_VERSION) << "\n";
   std::cout << "GLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << "\n";
-  #endif
+#endif
 
   return window;
 }
@@ -230,6 +260,33 @@ void BoolOps::destroyGLContext(GLFWwindow* window) {
     glfwDestroyWindow(window);
     glfwTerminate();
   }
+}
+
+void BoolOps::setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& obj2) {
+  size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();
+  size_t prefixCount = obj1.prefixSumData.size();  // w1 * h1
+
+  // Create buffers
+  // IN
+  obj1Compressed = createBuffer(obj1.compressedData.size() * sizeof(GLuint), 0, GL_STATIC_READ);  // Load data later
+  obj1Prefix = createBuffer(obj1.prefixSumData.size() * sizeof(GLuint), 1, GL_STATIC_READ);       // Load data later
+  obj2Compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ);
+  obj2Prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ);
+  // OUT
+  outCompressed = createBuffer(outSizeEstimate * sizeof(GLuint), 4, GL_DYNAMIC_COPY, nullptr);
+  outPrefix = createBuffer(prefixCount * sizeof(GLuint), 5, GL_DYNAMIC_COPY, nullptr);
+  atomicCounter = createAtomicCounter(6);
+  zeroAtomicCounter(6);  // Initialize atomic counter to zero
+
+#ifdef DEBUG_OUTPUT
+  debugCounter = createAtomicCounter(7);
+  zeroAtomicCounter(7);  // Initialize atomic counter to zero
+#endif
+
+  loadBuffer(obj1Compressed, obj1.compressedData);  // Load data into the buffer
+  loadBuffer(obj1Prefix, obj1.prefixSumData);       // Load prefix sum data into the buffer
+  loadBuffer(obj2Compressed, obj2.compressedData);  // Load data into the buffer
+  loadBuffer(obj2Prefix, obj2.prefixSumData);       // Load prefix sum
 }
 
 bool BoolOps::subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
@@ -507,13 +564,8 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   // ✅ Merges/sorts/evaluates transitions.
   // ✅ Generates a new compressed result.
 
-  if (!glContext) glContext = createGLContext();
-
-  // Load and compile shader using Shader class
-  Shader shader("shaders/subtract.comp");  // Path to your compute shader file
-  shader.use();
-
-  // auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
+  // Shader shader("shaders/subtract.comp");  // Path to your compute shader file
+  shader->use();
 
   // Calculate parameters
   long w1 = obj1.params.resolutionXYZ.x;
@@ -527,68 +579,37 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   long translateY = h1 / 2 + offset.y;
   long translateZ = z1 / 2 - offset.z;
 
-  size_t prefixCount = w1 * h1;
-  size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();
-
   // Set uniforms
-  shader.setInt("w1", w1);
-  shader.setInt("h1", h1);
-  shader.setInt("z1", z1);
-  shader.setInt("w2", w2);
-  shader.setInt("h2", h2);
-  shader.setInt("z2", z2);
-  shader.setInt("translateX", translateX);
-  shader.setInt("translateY", translateY);
-  shader.setInt("translateZ", translateZ);
-  shader.setUInt("maxTransitions", 256);
-
-  // Create buffers
-
-  // IN
-  GLuint obj1Compressed = createBuffer(obj1.compressedData.size() * sizeof(GLuint), 0, GL_STATIC_READ);  // Load data later
-  GLuint obj1Prefix = createBuffer(obj1.prefixSumData.size() * sizeof(GLuint), 1, GL_STATIC_READ);       // Load data later
-  GLuint obj2Compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ);
-  GLuint obj2Prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ);
-  // OUT
-  GLuint outCompressed = createBuffer(outSizeEstimate * sizeof(GLuint), 4, GL_DYNAMIC_COPY, nullptr);
-  GLuint outPrefix = createBuffer(prefixCount * sizeof(GLuint), 5, GL_DYNAMIC_COPY, nullptr);
-
-  GLuint atomicCounter = createAtomicCounter(6);
-  zeroAtomicCounter(6);  // Initialize atomic counter to zero
-
-#ifdef DEBUG_OUTPUT
-  GLuint debugCounter = createAtomicCounter(7);
-  zeroAtomicCounter(7);  // Initialize atomic counter to zero
-#endif
+  shader->setInt("w1", w1);
+  shader->setInt("h1", h1);
+  shader->setInt("z1", z1);
+  shader->setInt("w2", w2);
+  shader->setInt("h2", h2);
+  shader->setInt("z2", z2);
+  shader->setUInt("maxTransitions", 256);
 
   // Setup dispatch parameters
   GLuint groupsX = (GLuint)((w1 + (WORKGROUPS - 1)) / WORKGROUPS);  // Assuming WORKGROUPS threads per work group in X, rounding up
   GLuint groupsY = (GLuint)((h1 + (WORKGROUPS - 1)) / WORKGROUPS);  // Assuming WORKGROUPS threads per work group in Y, rounding up
-#ifdef DEBUG_OUTPUT
-  std::cout << "Dispatching " << groupsX << " x " << groupsY << " work groups (" << w1 << "x" << h1 << " pixels)\n";
-#endif
+
+  // =======> E' IMPORTANTE FAR FUNZIONARE QUESTO CICLO!!!!! COSI' ESEGUO TUTTO SENZA SCARICARE I BUFFER OGNI VOLTA
+  for (int i = 0; i < 1; ++i) {                          //%%%
+    shader->setInt("translateX", translateX + 250 * i);  //%%%
+    shader->setInt("translateY", translateY + 250 * i);  //%%%
+    shader->setInt("translateZ", translateZ + 250 * i);  //%%%
 
 #ifdef DEBUG_SPEED_OUTPUT
-  auto start1 = std::chrono::high_resolution_clock::now();  // ====> Start timing
+    auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
 #endif
 
-  // Load buffers (about 3.5 ms for 1M transitions)
-  // NOTE: by not loading data each time, reusing obj1 buffer each time a subtraction is performed,
-  // the execution time is reduced to about 0.5 ms for 1M transitions (improvement by 7x)
-  loadBuffer(obj1Compressed, obj1.compressedData);  // Load data into the buffer
-  loadBuffer(obj1Prefix, obj1.prefixSumData);       // Load prefix sum data into the buffer
-  loadBuffer(obj2Compressed, obj2.compressedData);  // Load data into the buffer
-  loadBuffer(obj2Prefix, obj2.prefixSumData);       // Load prefix sum
+    // Dispatch compute shader (about 0.5 ms for 1M transitions)
+    glDispatchCompute(groupsX, groupsY, 1);
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
 
 #ifdef DEBUG_SPEED_OUTPUT
-  auto start2 = std::chrono::high_resolution_clock::now();  // ====> Start timing
+    auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
 #endif
-
-  // Dispatch compute shader (about 0.5 ms for 1M transitions)
-  glDispatchCompute(groupsX, groupsY, 1);
-  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
-
-  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
+  }
 
   //@@@ DEBUG: Read test output -----------------------------------------------
   // std::vector<GLuint> outData(1);
@@ -612,7 +633,8 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
 
   // Read output buffers
   std::vector<GLuint> compressedOut = readBuffer(outCompressed, writtenCount);
-  std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount);
+  // std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount); //%%%%
+  std::vector<GLuint> prefixOut = readBuffer(outPrefix, obj1.prefixSumData.size());
 
 #ifdef DEBUG_OUTPUT
   //@@@ DEBUG: Print output data ----------------------------------------------
@@ -629,21 +651,8 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
   const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);  // COPY JUST THIS FOR NOW
 
-  // Cleanup
-  glDeleteBuffers(1, &obj1Compressed);
-  glDeleteBuffers(1, &obj1Prefix);
-  glDeleteBuffers(1, &obj2Compressed);
-  glDeleteBuffers(1, &obj2Prefix);
-  glDeleteBuffers(1, &outCompressed);
-  glDeleteBuffers(1, &outPrefix);
-  glDeleteBuffers(1, &atomicCounter);
-
-  destroyGLContext(glContext);
-
 #ifdef DEBUG_SPEED_OUTPUT
-  std::chrono::duration<double, std::milli> duration1 = end - start1;
-  std::cout << "GPU subtraction (including loading buffers) took " << duration1.count() << " ms\n";
-  std::chrono::duration<double, std::milli> duration2 = end - start2;
+  std::chrono::duration<double, std::milli> duration = end - start;
   std::cout << "GPU dispatch (excluding loading buffers) took " << duration2.count() << " ms\n";
 #endif
 

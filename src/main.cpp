@@ -53,11 +53,29 @@ int main(int argc, char** argv) {
   // Perform subtraction using GPU --------------------------------------------
   // ops.test(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 0));
 
-  if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
+  /*
+    ops.setupSubtractBuffers(ops.getObjects()[0], ops.getObjects()[1]);  // Needed to setup buffers before GPU subtraction
+    if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
     // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
     std::cerr << "Subtraction failed." << std::endl;
     return 1;
-  }
+    }
+  */
+
+  // This cycle took 26 ms per subtraction on average on the Dell machine
+  auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
+  // for (int i = 0; i < 3; i++) {
+  //   ops.setupSubtractBuffers(ops.getObjects()[0], ops.getObjects()[1]);  // Needed to setup buffers before GPU subtraction
+  //   ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(-250 + 250 * i, -250 + 250 * i, 820));
+  // }
+
+  ops.setupSubtractBuffers(ops.getObjects()[0], ops.getObjects()[1]);  // Needed to setup buffers before GPU subtraction
+  ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(-250, -250, 820));
+  
+  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  std::cout << "Cycle took " << duration << " ms\n";
+
   // --------------------------------------------------------------------------
 
   VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);

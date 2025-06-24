@@ -7,11 +7,12 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "shader.hpp"
 
 // Assuming VoxelizationParams is defined somewhere
 #include "voxelizer.hpp"  // adjust path as needed
 
-struct GLFWwindow; // Forward declaration for GLFWwindow
+struct GLFWwindow;  // Forward declaration for GLFWwindow
 
 struct VoxelObject {
   VoxelizationParams params;
@@ -21,8 +22,9 @@ struct VoxelObject {
 
 class BoolOps {
  public:
-  BoolOps() = default;
-  ~BoolOps() { clear(); }
+  // BoolOps() = default;
+  BoolOps();
+  ~BoolOps();
 
   // Load a voxel object from file and store it internally
   bool load(const std::string& filename);
@@ -36,6 +38,7 @@ class BoolOps {
   void clear() { objects.clear(); }
 
   // Subtract two voxel objects
+  void setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& obj2);
   bool subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
@@ -43,6 +46,24 @@ class BoolOps {
  private:
   std::vector<VoxelObject> objects;
   GLFWwindow* glContext = nullptr;  // OpenGL context for GPU operations
+
+  // GL buffers
+  // IN
+  GLuint obj1Compressed;
+  GLuint obj1Prefix;
+  GLuint obj2Compressed;
+  GLuint obj2Prefix;
+  // OUT
+  GLuint outCompressed;
+  GLuint outPrefix;
+  // Atomic counters
+  GLuint atomicCounter;
+#ifdef DEBUG_OUTPUT
+  GLuint debugCounter;
+#endif
+
+  // Shaders
+  Shader* shader = nullptr;  // Shader for GPU operations
 
   // OpenGL utilities
   GLFWwindow* createGLContext();
