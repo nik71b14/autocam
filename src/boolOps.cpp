@@ -730,3 +730,52 @@ bool BoolOps::subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& o
 
   return true;
 }
+
+bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData) {
+  // Clear output vector
+  unpackedData.clear();
+
+  // Number of (x, y) columns
+  size_t numColumns = obj.prefixSumData.size();
+
+  // Reserve space for efficiency
+  unpackedData.reserve(numColumns * maxTransitions);
+
+  for (size_t col = 0; col < numColumns; ++col) {
+    size_t start = obj.prefixSumData[col];
+    size_t end = (col + 1 < numColumns) ? obj.prefixSumData[col + 1] : obj.compressedData.size();
+    size_t count = end - start;
+
+    if (count > maxTransitions) {
+      // Too many transitions for this column
+      return false;
+    }
+
+    // Copy transitions for this column
+    for (size_t i = 0; i < count; ++i) {
+      unpackedData.push_back(obj.compressedData[start + i]);
+    }
+
+    // Pad with zeros if needed
+    for (size_t i = count; i < maxTransitions; ++i) {
+      unpackedData.push_back(0);
+    }
+  }
+
+  return true;
+}
+
+bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+  // Unpack obj1 to a flat array for GPU processing
+  std::vector<GLuint> obj1Unpacked;
+  uint maxTransitions = 32;
+  if (!unpackObject(obj1, maxTransitions, obj1Unpacked)) {
+    std::cerr << "Failed to unpack obj1 for GPU flat subtraction." << std::endl;
+    return false;
+  }
+
+  // You would continue here with buffer creation, shader setup, and dispatch...
+
+  std::cout << "Unpacked obj1 size: " << (obj1Unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB" << std::endl;
+  return true;
+}

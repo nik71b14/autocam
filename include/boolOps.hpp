@@ -43,7 +43,7 @@ class BoolOps {
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
-
+  bool subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
 
  private:
   std::vector<VoxelObject> objects;
@@ -78,4 +78,6 @@ class BoolOps {
   void zeroAtomicCounter(GLuint binding);
   void zeroBuffer(GLuint binding);
   GLuint readAtomicCounter(GLuint binding);
+
+  bool unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData);
 };
