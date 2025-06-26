@@ -56,6 +56,8 @@ class BoolOps {
   GLuint obj1Prefix;
   GLuint obj2Compressed;
   GLuint obj2Prefix;
+  GLuint obj1Flat;     // Flat buffer for obj1 unpacked data
+  GLuint obj1DataNum;  // Buffer for valid data count of obj1
   // OUT
   GLuint outCompressed;
   GLuint outPrefix;
@@ -74,11 +76,12 @@ class BoolOps {
   GLuint createBuffer(GLsizeiptr size, GLuint binding, GLenum usage);
   GLuint createBuffer(GLsizeiptr size, GLuint binding, GLenum usage, const GLuint* data);
   void loadBuffer(GLuint binding, const std::vector<GLuint>& data);
+  void deleteBuffer(GLuint binding);
   std::vector<GLuint> readBuffer(GLuint binding, size_t numElements);
   GLuint createAtomicCounter(GLuint binding);
   void zeroAtomicCounter(GLuint binding);
   void zeroBuffer(GLuint binding);
   GLuint readAtomicCounter(GLuint binding);
 
-  bool unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData);
+  bool unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData, std::vector<GLuint>& validDataNum);
 };

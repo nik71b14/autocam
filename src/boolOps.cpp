@@ -11,7 +11,7 @@
 #define DEBUG_OUTPUT
 // #define DEBUG_SPEED_OUTPUT
 #define WORKGROUPS 8
-#define MAX_TRANSITIONS 32
+#define MAX_TRANSITIONS 8
 
 BoolOps::BoolOps() {
   // Initialize OpenGL context
@@ -230,6 +230,14 @@ void BoolOps::zeroBuffer(GLuint binding) {
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
+void BoolOps::deleteBuffer(GLuint binding) {
+  if (glIsBuffer(binding)) {
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, binding);
+    glDeleteBuffers(1, &binding);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+  }
+}
+
 GLuint BoolOps::readAtomicCounter(GLuint binding) {
   GLuint count = 0;
   glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, binding);
@@ -286,7 +294,7 @@ void BoolOps::setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& o
 
 #ifdef DEBUG_OUTPUT
   debugCounter = createAtomicCounter(7);
-  zeroAtomicCounter(7);  // Initialize atomic counter to zero
+  zeroAtomicCounter(debugCounter);  // Initialize atomic counter to zero
 #endif
 
   loadBuffer(obj1Compressed, obj1.compressedData);  // Load data into the buffer
@@ -732,15 +740,17 @@ bool BoolOps::subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& o
   return true;
 }
 
-bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData) {
-  // Clear output vector
+bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData, std::vector<GLuint>& validDataNum) {
+  // Clear output vectors
   unpackedData.clear();
+  validDataNum.clear();
 
   // Number of (x, y) columns
   size_t numColumns = obj.prefixSumData.size();
 
   // Reserve space for efficiency
   unpackedData.reserve(numColumns * maxTransitions);
+  validDataNum.reserve(numColumns);
 
   for (size_t col = 0; col < numColumns; ++col) {
     size_t start = obj.prefixSumData[col];
@@ -761,6 +771,8 @@ bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vec
     for (size_t i = count; i < maxTransitions; ++i) {
       unpackedData.push_back(0);
     }
+
+    validDataNum.push_back(count);  // Store the number of valid transitions for this column
   }
 
   return true;
@@ -768,13 +780,56 @@ bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vec
 
 bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   // Unpack obj1 to a flat array for GPU processing
-  std::vector<GLuint> obj1Unpacked;
-  if (!unpackObject(obj1, MAX_TRANSITIONS, obj1Unpacked)) {
+  std::vector<GLuint> unpacked;
+  std::vector<GLuint> dataNum;
+  if (!unpackObject(obj1, MAX_TRANSITIONS, unpacked, dataNum)) {
     std::cerr << "Failed to unpack obj1 for GPU flat subtraction." << std::endl;
     return false;
+  } else {
+    std::cout << "Unpacked obj1 size: " << (unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB" << std::endl;
   }
 
+#ifdef DEBUG_OUTPUT
+  // Print first 30-40 values of unpacked and dataNum
+  std::cout << "First 30-40 values of unpacked:" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
+    std::cout << unpacked[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
+
+  std::cout << "First 30-40 values of dataNum:" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
+    std::cout << dataNum[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
+#endif
+
   shader_flat->use();
+
+  // Delete old buffers if they exist
+  deleteBuffer(obj1Flat);
+  deleteBuffer(obj1DataNum);
+  deleteBuffer(obj2Compressed);
+  deleteBuffer(obj2Prefix);
+
+  // Create buffers
+  // IN/OUT
+  obj1Flat = createBuffer(unpacked.size() * sizeof(GLuint), 0, GL_DYNAMIC_COPY);
+  obj1DataNum = createBuffer(dataNum.size() * sizeof(GLuint), 1, GL_DYNAMIC_COPY);
+  obj2Compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ);
+  obj2Prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ);
+
+#ifdef DEBUG_OUTPUT
+  debugCounter = createAtomicCounter(4);
+  zeroAtomicCounter(debugCounter);  // Initialize atomic counter to zero
+#endif
+
+  loadBuffer(obj1Flat, unpacked);                   // Load data into the buffer
+  loadBuffer(obj1DataNum, dataNum);                 // Load valid data count into the buffer
+  loadBuffer(obj2Compressed, obj2.compressedData);  // Load data into the buffer
+  loadBuffer(obj2Prefix, obj2.prefixSumData);       // Load prefix sum
 
   // Calculate parameters
   long w1 = obj1.params.resolutionXYZ.x;
@@ -816,53 +871,68 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
   auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
 #endif
 
-  //@@@ DEBUG: Read test output -----------------------------------------------
-  // std::vector<GLuint> outData(1);
-  // glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
-  // glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
-  // std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
-  //@@@ END DEBUG -------------------------------------------------------------
-
-  // Read atomic counter to get the number of written elements in outCompressed
-  GLuint writtenCount = readAtomicCounter(atomicCounter);
 #ifdef DEBUG_OUTPUT
-  std::cout << "Atomic counter (written elements): " << std::dec << writtenCount << std::endl;
-#endif
-
-#ifdef DEBUG_OUTPUT
-  //@@@ DEBUG:  Read debug atomic counter -------------------------------------
   GLuint debugCount = readAtomicCounter(debugCounter);
   std::cout << "Debug atomic counter: " << std::dec << debugCount << std::endl;
-//@@@ END DEBUG -------------------------------------------------------------
 #endif
 
-  // Read output buffers
-  std::vector<GLuint> compressedOut = readBuffer(outCompressed, writtenCount);
-  // std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount); //%%%%
-  std::vector<GLuint> prefixOut = readBuffer(outPrefix, obj1.prefixSumData.size());
+  // Read output buffers recycling existing buffers
+  unpacked = readBuffer(obj1Flat, unpacked.size());
+  dataNum = readBuffer(obj1DataNum, dataNum.size());
 
 #ifdef DEBUG_OUTPUT
-  //@@@ DEBUG: Print output data ----------------------------------------------
-  std::cout << "First 30-40 values of compressedOut:" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(compressedOut.size(), 40); ++i) {
-    std::cout << compressedOut[i] << " ";
+  std::cout << "First 40 values of flatOut (out):" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
+    std::cout << unpacked[i] << " ";
     if ((i + 1) % 10 == 0) std::cout << std::endl;
   }
   std::cout << std::endl;
-//@@@ END DEBUG -------------------------------------------------------------
+  std::cout << "First 40 values of dataNum (out):" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
+    std::cout << dataNum[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
 #endif
 
-  // Overwrite obj1
-  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
-  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);  // COPY JUST THIS FOR NOW
+  //@@@ Here generate compressedData and create prefixSumData from flatOut
+  std::vector<GLuint> compressedData;
+  std::vector<GLuint> prefixSumData(dataNum.size(), 0);
+
+  compressedData.reserve(unpacked.size());  // Reserve upper bound
+
+  GLuint outOffset = 0;
+  for (size_t i = 0; i < dataNum.size(); ++i) {
+    prefixSumData[i] = outOffset;
+    for (GLuint j = 0; j < dataNum[i]; ++j) {
+      compressedData.push_back(unpacked[i * MAX_TRANSITIONS + j]);
+      ++outOffset;
+    }
+  }
+
+  std::cout << "First 40 values of compressedData:" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(compressedData.size(), 40); ++i) {
+    std::cout << compressedData[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
+
+  std::cout << "First 40 values of prefixSumData:" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(prefixSumData.size(), 40); ++i) {
+    std::cout << prefixSumData[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
+
+  // Assign to obj1
+  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedData);
+  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixSumData);
+  //@@@
 
 #ifdef DEBUG_SPEED_OUTPUT
   std::chrono::duration<double, std::milli> duration = end - start;
   std::cout << "GPU dispatch (excluding loading buffers) took " << duration2.count() << " ms\n";
 #endif
 
-  return true;
-
-  std::cout << "Unpacked obj1 size: " << (obj1Unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB" << std::endl;
   return true;
 }

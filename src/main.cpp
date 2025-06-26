@@ -35,13 +35,17 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (!ops.load("test/hemispheric_mill_10.bin")) {
+  if (!ops.load("test/obj2.bin")) {
     // if (!ops.load("test/obj2.bin")) {
     std::cerr << "Failed to load voxelized object." << std::endl;
     return 1;
   }
 
-  bool ok = ops.subtractGPU_flat(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820));
+  ops.subtractGPU_flat(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820));
+
+  VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
+  // viewer.setOrthographic(true);  // Set orthographic projection
+  viewer.run();
 
   exit(EXIT_SUCCESS);
 #endif
