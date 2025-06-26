@@ -11,6 +11,7 @@
 #define DEBUG_OUTPUT
 // #define DEBUG_SPEED_OUTPUT
 #define WORKGROUPS 8
+#define MAX_TRANSITIONS 32
 
 BoolOps::BoolOps() {
   // Initialize OpenGL context
@@ -20,8 +21,9 @@ BoolOps::BoolOps() {
   }
 
   // Load and compile shader using Shader class
-  shader = new Shader("shaders/subtract.comp");    // Path to your compute shader file
-  shader2 = new Shader("shaders/subtract2.comp");  // Path to your compute shader file
+  shader = new Shader("shaders/subtract.comp");            // Path to your compute shader file
+  shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
+  shader_flat = new Shader("shaders/subtract_flat.comp");  // Path to your compute shader file
 }
 
 BoolOps::~BoolOps() {
@@ -568,7 +570,6 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
   // ✅ Merges/sorts/evaluates transitions.
   // ✅ Generates a new compressed result.
 
-  // Shader shader("shaders/subtract.comp");  // Path to your compute shader file
   shader->use();
 
   // Calculate parameters
@@ -768,13 +769,99 @@ bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vec
 bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   // Unpack obj1 to a flat array for GPU processing
   std::vector<GLuint> obj1Unpacked;
-  uint maxTransitions = 32;
-  if (!unpackObject(obj1, maxTransitions, obj1Unpacked)) {
+  if (!unpackObject(obj1, MAX_TRANSITIONS, obj1Unpacked)) {
     std::cerr << "Failed to unpack obj1 for GPU flat subtraction." << std::endl;
     return false;
   }
 
-  // You would continue here with buffer creation, shader setup, and dispatch...
+  shader_flat->use();
+
+  // Calculate parameters
+  long w1 = obj1.params.resolutionXYZ.x;
+  long h1 = obj1.params.resolutionXYZ.y;
+  long z1 = obj1.params.resolutionXYZ.z;
+  long w2 = obj2.params.resolutionXYZ.x;
+  long h2 = obj2.params.resolutionXYZ.y;
+  long z2 = obj2.params.resolutionXYZ.z;
+
+  long translateX = w1 / 2 + offset.x;
+  long translateY = h1 / 2 + offset.y;
+  long translateZ = z1 / 2 - offset.z;
+
+  // Set uniforms
+  shader_flat->setInt("w1", w1);
+  shader_flat->setInt("h1", h1);
+  shader_flat->setInt("z1", z1);
+  shader_flat->setInt("w2", w2);
+  shader_flat->setInt("h2", h2);
+  shader_flat->setInt("z2", z2);
+  shader_flat->setUInt("maxTransitions", MAX_TRANSITIONS);
+  shader_flat->setInt("translateX", translateX);
+  shader_flat->setInt("translateY", translateY);
+  shader_flat->setInt("translateZ", translateZ);
+
+  // Setup dispatch parameters
+  GLuint groupsX = (GLuint)((w1 + (WORKGROUPS - 1)) / WORKGROUPS);  // Assuming WORKGROUPS threads per work group in X, rounding up
+  GLuint groupsY = (GLuint)((h1 + (WORKGROUPS - 1)) / WORKGROUPS);  // Assuming WORKGROUPS threads per work group in Y, rounding up
+
+#ifdef DEBUG_SPEED_OUTPUT
+  auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
+#endif
+
+  // Dispatch compute shader (about 0.5 ms for 1M transitions)
+  glDispatchCompute(groupsX, groupsY, 1);
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+
+#ifdef DEBUG_SPEED_OUTPUT
+  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
+#endif
+
+  //@@@ DEBUG: Read test output -----------------------------------------------
+  // std::vector<GLuint> outData(1);
+  // glBindBuffer(GL_SHADER_STORAGE_BUFFER, outCompressed);
+  // glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GLuint), outData.data());
+  // std::cout << "Compressed output[0]: 0x" << std::hex << outData[0] << std::endl;
+  //@@@ END DEBUG -------------------------------------------------------------
+
+  // Read atomic counter to get the number of written elements in outCompressed
+  GLuint writtenCount = readAtomicCounter(atomicCounter);
+#ifdef DEBUG_OUTPUT
+  std::cout << "Atomic counter (written elements): " << std::dec << writtenCount << std::endl;
+#endif
+
+#ifdef DEBUG_OUTPUT
+  //@@@ DEBUG:  Read debug atomic counter -------------------------------------
+  GLuint debugCount = readAtomicCounter(debugCounter);
+  std::cout << "Debug atomic counter: " << std::dec << debugCount << std::endl;
+//@@@ END DEBUG -------------------------------------------------------------
+#endif
+
+  // Read output buffers
+  std::vector<GLuint> compressedOut = readBuffer(outCompressed, writtenCount);
+  // std::vector<GLuint> prefixOut = readBuffer(outPrefix, prefixCount); //%%%%
+  std::vector<GLuint> prefixOut = readBuffer(outPrefix, obj1.prefixSumData.size());
+
+#ifdef DEBUG_OUTPUT
+  //@@@ DEBUG: Print output data ----------------------------------------------
+  std::cout << "First 30-40 values of compressedOut:" << std::endl;
+  for (size_t i = 0; i < std::min<size_t>(compressedOut.size(), 40); ++i) {
+    std::cout << compressedOut[i] << " ";
+    if ((i + 1) % 10 == 0) std::cout << std::endl;
+  }
+  std::cout << std::endl;
+//@@@ END DEBUG -------------------------------------------------------------
+#endif
+
+  // Overwrite obj1
+  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedOut);
+  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixOut);  // COPY JUST THIS FOR NOW
+
+#ifdef DEBUG_SPEED_OUTPUT
+  std::chrono::duration<double, std::milli> duration = end - start;
+  std::cout << "GPU dispatch (excluding loading buffers) took " << duration2.count() << " ms\n";
+#endif
+
+  return true;
 
   std::cout << "Unpacked obj1 size: " << (obj1Unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB" << std::endl;
   return true;

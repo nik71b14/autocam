@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
 #include "shader.hpp"
 
 // Assuming VoxelizationParams is defined somewhere
@@ -63,9 +64,9 @@ class BoolOps {
   GLuint debugCounter;
 
   // Shaders
-  Shader* shader = nullptr;  // Shader for GPU operations
-  Shader* shader2 = nullptr;  // Shader for GPU operations
-
+  Shader* shader = nullptr;       // Shader for GPU operations
+  Shader* shader2 = nullptr;      // Shader for GPU operations
+  Shader* shader_flat = nullptr;  // Shader for flat GPU operations
 
   // OpenGL utilities
   GLFWwindow* createGLContext();
