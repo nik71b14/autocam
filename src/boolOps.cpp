@@ -9,7 +9,7 @@
 #include "voxelizer.hpp"
 
 #define DEBUG_OUTPUT
-#define DEBUG_SPEED_OUTPUT
+// #define DEBUG_SPEED_OUTPUT
 #define WORKGROUPS 8
 #define WORKGROUPS_FLAT 8
 #define MAX_TRANSITIONS 32
@@ -22,8 +22,8 @@ BoolOps::BoolOps() {
   }
 
   // Load and compile shader using Shader class
-  shader = new Shader("shaders/subtract.comp");            // Path to your compute shader file
-  shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
+  // shader = new Shader("shaders/subtract.comp");            // Path to your compute shader file
+  // shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
   shader_flat = new Shader("shaders/subtract_flat.comp");  // Path to your compute shader file
 }
 
@@ -32,17 +32,29 @@ BoolOps::~BoolOps() {
   destroyGLContext(glContext);
 
   // Cleanup
-  if (obj1Compressed) glDeleteBuffers(1, &obj1Compressed);
-  if (obj1Prefix) glDeleteBuffers(1, &obj1Prefix);
-  if (obj2Compressed) glDeleteBuffers(1, &obj2Compressed);
-  if (obj2Prefix) glDeleteBuffers(1, &obj2Prefix);
+  // if (obj1Compressed) glDeleteBuffers(1, &obj1Compressed);
+  // if (obj1Prefix) glDeleteBuffers(1, &obj1Prefix);
+  // if (obj2Compressed) glDeleteBuffers(1, &obj2Compressed);
+  // if (obj2Prefix) glDeleteBuffers(1, &obj2Prefix);
   if (outCompressed) glDeleteBuffers(1, &outCompressed);
   if (outPrefix) glDeleteBuffers(1, &outPrefix);
+  if (obj1_flat) glDeleteBuffers(1, &obj1_flat);
+  if (obj1_dataNum) glDeleteBuffers(1, &obj1_dataNum);
+  if (obj2_compressed) glDeleteBuffers(1, &obj2_compressed);
+  if (obj2_prefix) glDeleteBuffers(1, &obj2_prefix);
   if (atomicCounter) glDeleteBuffers(1, &atomicCounter);
 
-  if (shader) {
-    delete shader;
-    shader = nullptr;
+  // if (shader) {
+  //   delete shader;
+  //   shader = nullptr;
+  // }
+  // if (shader2) {
+  //   delete shader2;
+  //   shader2 = nullptr;
+  // }
+  if (shader_flat) {
+    delete shader_flat;
+    shader_flat = nullptr;
   }
 }
 
@@ -274,6 +286,7 @@ void BoolOps::destroyGLContext(GLFWwindow* window) {
   }
 }
 
+/*
 void BoolOps::setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& obj2) {
   size_t outSizeEstimate = obj1.compressedData.size() + obj2.compressedData.size();
   size_t prefixCount = obj1.prefixSumData.size();  // w1 * h1
@@ -303,7 +316,9 @@ void BoolOps::setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& o
   loadBuffer(obj2Compressed, obj2.compressedData);  // Load data into the buffer
   loadBuffer(obj2Prefix, obj2.prefixSumData);       // Load prefix sum
 }
+*/
 
+/*
 bool BoolOps::subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   VoxelObject result;
   result.params = obj1.params;
@@ -571,7 +586,9 @@ bool BoolOps::subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::iv
 
   return true;
 }
+*/
 
+/*
 bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
   // The subtract() CPU code:
   // ✅ Iterates over each (x,y) column.
@@ -740,6 +757,7 @@ bool BoolOps::subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& o
 
   return true;
 }
+*/
 
 bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData, std::vector<GLuint>& validDataNum) {
   // Clear output vectors
@@ -779,33 +797,14 @@ bool BoolOps::unpackObject(const VoxelObject& obj, uint maxTransitions, std::vec
   return true;
 }
 
-bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset) {
+bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2) {
   // Unpack obj1 to a flat array for GPU processing
-  std::vector<GLuint> unpacked;
-  std::vector<GLuint> dataNum;
   if (!unpackObject(obj1, MAX_TRANSITIONS, unpacked, dataNum)) {
     std::cerr << "Failed to unpack obj1 for GPU flat subtraction." << std::endl;
     return false;
   } else {
     std::cout << "Unpacked obj1 size: " << (unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB" << std::endl;
   }
-
-  // #ifdef DEBUG_OUTPUT
-  //   // Print first 30-40 values of unpacked and dataNum
-  //   std::cout << "First 30-40 values of unpacked:" << std::endl;
-  //   for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
-  //     std::cout << unpacked[i] << " ";
-  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
-  //   }
-  //   std::cout << std::endl;
-
-  //   std::cout << "First 30-40 values of dataNum:" << std::endl;
-  //   for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
-  //     std::cout << dataNum[i] << " ";
-  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
-  //   }
-  //   std::cout << std::endl;
-  // #endif
 
   shader_flat->use();
 
@@ -832,17 +831,13 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
   loadBuffer(obj2_compressed, obj2.compressedData);  // Load data into the buffer
   loadBuffer(obj2_prefix, obj2.prefixSumData);       // Load prefix sum
 
-  // Calculate parameters
+  // Define parameters
   long w1 = obj1.params.resolutionXYZ.x;
   long h1 = obj1.params.resolutionXYZ.y;
   long z1 = obj1.params.resolutionXYZ.z;
   long w2 = obj2.params.resolutionXYZ.x;
   long h2 = obj2.params.resolutionXYZ.y;
   long z2 = obj2.params.resolutionXYZ.z;
-
-  long translateX = w1 / 2 + offset.x;
-  long translateY = h1 / 2 + offset.y;
-  long translateZ = z1 / 2 - offset.z;
 
   // Set uniforms
   shader_flat->setInt("w1", w1);
@@ -854,71 +849,18 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
   shader_flat->setUInt("maxTransitions", MAX_TRANSITIONS);
 
   // Setup dispatch parameters
-  GLuint groupsX = (GLuint)((w1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in X, rounding up
-  GLuint groupsY = (GLuint)((h1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in Y, rounding up
+  groupsX = (GLuint)((w1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in X, rounding up
+  groupsY = (GLuint)((h1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in Y, rounding up
 
-#ifdef DEBUG_SPEED_OUTPUT
-  auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
-#endif
+  return true;
+}
 
-  for (uint i = 0; i < 1000; ++i) {
-    long tX = translateX + i * 1;
-    long tY = translateY + i * 1;
-    long tZ = translateZ + i * 1;
-    shader_flat->setInt("translateX", tX);
-    shader_flat->setInt("translateY", tY);
-    shader_flat->setInt("translateZ", tZ);
-    // shader_flat->setInt("normalizeObj2X", tX - w2 / 2);
-    // shader_flat->setInt("normalizeObj2Y", tY - h2 / 2);
-
-    // Dispatch compute shader (about 0.5 ms for 1M transitions)
-    glDispatchCompute(groupsX, groupsY, 1);
-    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
-  }
-
-  // Wait until all compute shaders have finished
-  glMemoryBarrier(GL_ALL_BARRIER_BITS);
-  glFinish();
-
-#ifdef DEBUG_SPEED_OUTPUT
-  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
-  std::chrono::duration<double, std::milli> duration = end - start;
-  std::cout << "GPU dispatch took " << duration.count() << " ms\n";
-#endif
-
-#ifdef DEBUG_OUTPUT
-  GLuint debugCount = readAtomicCounter(debugCounter);
-  std::cout << "Debug atomic counter: " << std::dec << debugCount << std::endl;
-#endif
-
+void BoolOps::subtractGPU_copyback(VoxelObject& out) {
   // Read output buffers recycling existing buffers
   unpacked = readBuffer(obj1_flat, unpacked.size());
   dataNum = readBuffer(obj1_dataNum, dataNum.size());
 
-  // #ifdef DEBUG_OUTPUT
-  //   std::cout << "First 40 values of flatOut (out):" << std::endl;
-  //   for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
-  //     std::cout << unpacked[i] << " ";
-  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
-  //   }
-  //   std::cout << std::endl;
-  //   std::cout << "First 40 values of dataNum (out):" << std::endl;
-  //   for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
-  //     std::cout << dataNum[i] << " ";
-  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
-  //   }
-  //   std::cout << std::endl;
-  // #endif
-
-  //@@@ DEBUG: print out transitions and datanum in the center of obj1
-  // GLuint origin = (500 + 500 * w1) * MAX_TRANSITIONS;
-  // for (uint i = 0; i < MAX_TRANSITIONS; ++i) {
-  //   std::cout << unpacked[origin + i] << " ";
-  // }
-  // std::cout << "dataNum: " << dataNum[500 + 500 * w1] << " ";
-  // std::cout << std::endl;
-
-  //@@@ Here generate compressedData and create prefixSumData from flatOut
+  // Generate compressedData and create prefixSumData
   std::vector<GLuint> compressedData;
   std::vector<GLuint> prefixSumData(dataNum.size(), 0);
 
@@ -933,26 +875,34 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
     }
   }
 
-  // #ifdef DEBUG_OUTPUT
-  //   std::cout << "First 40 values of compressedData:" << std::endl;
-  //   for (size_t i = 0; i < std::min<size_t>(compressedData.size(), 40); ++i) {
-  //     std::cout << compressedData[i] << " ";
-  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
-  //   }
-  //   std::cout << std::endl;
+  // Assign to outData
+  const_cast<VoxelObject&>(out).compressedData = std::move(compressedData);
+  const_cast<VoxelObject&>(out).prefixSumData = std::move(prefixSumData);
+}
 
-  //   std::cout << "First 40 values of prefixSumData:" << std::endl;
-  //   for (size_t i = 0; i < std::min<size_t>(prefixSumData.size(), 40); ++i) {
-  //     std::cout << prefixSumData[i] << " ";
-  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
-  //   }
-  //   std::cout << std::endl;
-  // #endif
+bool BoolOps::subtractGPU(const VoxelObject& obj1, glm::ivec3 offset) {
+#ifdef DEBUG_SPEED_OUTPUT
+  auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
+#endif
 
-  // Assign to obj1
-  const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedData);
-  const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixSumData);
-  //@@@
+  // Calculate parameters
+  long w1 = obj1.params.resolutionXYZ.x;
+  long h1 = obj1.params.resolutionXYZ.y;
+  long z1 = obj1.params.resolutionXYZ.z;
+
+  glm::vec3 translate(w1 / 2 + offset.x, h1 / 2 + offset.y, z1 / 2 - offset.z);
+  shader_flat->setIVec3("translate", translate);
+
+  // Dispatch compute shader (about 0.5 ms for 1M transitions)
+  glDispatchCompute(groupsX, groupsY, 1);
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+  glFinish();
+
+#ifdef DEBUG_SPEED_OUTPUT
+  auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
+  std::chrono::duration<double, std::milli> duration = end - start;
+  std::cout << "GPU dispatch took " << duration.count() << " ms\n";
+#endif
 
   return true;
 }

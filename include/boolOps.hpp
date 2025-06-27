@@ -38,13 +38,21 @@ class BoolOps {
   // Optional: clear loaded objects
   void clear() { objects.clear(); }
 
-  // Subtract two voxel objects
-  void setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& obj2);
+  // Subtract using CPU
+  /*
   bool subtract_old(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
   bool subtract(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
-  bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
-  bool subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
-  bool subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
+  */
+
+  // Subtract using GPU with compressed buffers
+  // bool subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
+  // void setupSubtractBuffers(const VoxelObject& obj1, const VoxelObject& obj2);
+  // bool subtractGPU_sequence(const VoxelObject& obj1, const VoxelObject& obj2, glm::ivec3 offset);
+
+  // Subtract using GPU with flat buffers
+  bool subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2);
+  bool subtractGPU(const VoxelObject& obj1, glm::ivec3 offset);
+  void subtractGPU_copyback(VoxelObject& outData);
 
  private:
   std::vector<VoxelObject> objects;
@@ -52,16 +60,20 @@ class BoolOps {
 
   // GL buffers
   // IN
-  GLuint obj1Compressed;
-  GLuint obj1Prefix;
-  GLuint obj2Compressed;
-  GLuint obj2Prefix;
+  // GLuint obj1Compressed;
+  // GLuint obj1Prefix;
+  // GLuint obj2Compressed;
+  // GLuint obj2Prefix;
+
+  // Flat arrays
+  std::vector<GLuint> unpacked;
+  std::vector<GLuint> dataNum;
 
   // Flat buffers
   GLuint obj1_flat;        // Flat buffer for obj1 unpacked data
-  GLuint obj1_dataNum;    // Buffer for valid data count of obj1
+  GLuint obj1_dataNum;     // Buffer for valid data count of obj1
   GLuint obj2_compressed;  // Flat buffer for obj2 unpacked data
-  GLuint obj2_prefix;     // Buffer for valid data count of obj2
+  GLuint obj2_prefix;      // Buffer for valid data count of obj2
 
   // OUT
   GLuint outCompressed;
@@ -70,9 +82,13 @@ class BoolOps {
   GLuint atomicCounter;
   GLuint debugCounter;
 
+  // Dispatch parameters
+  GLuint groupsX;
+  GLuint groupsY;
+
   // Shaders
-  Shader* shader = nullptr;       // Shader for GPU operations
-  Shader* shader2 = nullptr;      // Shader for GPU operations
+  // Shader* shader = nullptr;       // Shader for GPU operations
+  // Shader* shader2 = nullptr;      // Shader for GPU operations
   Shader* shader_flat = nullptr;  // Shader for flat GPU operations
 
   // OpenGL utilities

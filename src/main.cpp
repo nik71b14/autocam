@@ -35,15 +35,46 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (!ops.load("test/hemispheric_mill_10.bin")) {
+  // if (!ops.load("test/hemispheric_mill_10.bin")) {
+  if (!ops.load("test/hemispheric_mill_3.bin")) {
     // if (!ops.load("test/obj2.bin")) {
     std::cerr << "Failed to load voxelized object." << std::endl;
     return 1;
   }
 
-  ops.subtractGPU_flat(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(-200, -200, 820));
+  // Init objects for subtraction
+  ops.subtractGPU_init(ops.getObjects()[0], ops.getObjects()[1]);
 
+  // Spiral subtraction loop (round spiral in XY, descending in Z)
+  float centerX = 0.0f;
+  float centerY = 0.0f;
+  float centerZ = 720.0f;
+
+  float a = 0.0f;          // Spiral base radius
+  float b = 50.0f;          // Spiral spacing (distance between loops)
+  float angleStep = 0.01f;  // Angle increment (radians) — lower = smoother spiral
+  float zStep = 0.25f;     // Z descent per step
+
+  for (int i = 0; i < 1500; ++i) {
+    float theta = i * angleStep;
+    float r = a + b * theta;
+
+    float x = centerX + r * std::cos(theta);
+    float y = centerY + r * std::sin(theta);
+    float z = centerZ - zStep * float(i);
+
+    ops.subtractGPU(ops.getObjects()[0], glm::ivec3(std::round(x), std::round(y), std::round(z)));
+  }
+
+  //@@@ QUA VEDERE PERCHE' NON FUNZIONA CON VoxelObject result
+  // Copy back the result
+  // VoxelObject result;
+  ops.subtractGPU_copyback(ops.getObjects()[0]);
+  // ops.subtractGPU_copyback(result);
+
+  //@@@ QUA USARE IN INPUT DEL VIEWER DIRETTAMENTE UN VoxelObject
   VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
+  // VoxelViewer viewer(result.compressedData, result.prefixSumData, result.params);
   // viewer.setOrthographic(true);  // Set orthographic projection
   viewer.run();
 
@@ -51,6 +82,7 @@ int main(int argc, char** argv) {
 #endif
 
 #ifdef TEST
+/*
   // analizeVoxelizedObject("test/point_mill_10.bin");
 
   // subtract("test/workpiece_100_100_50.bin", "test/hemispheric_mill_10.bin", glm::ivec3(0, 0, 820));
@@ -78,14 +110,12 @@ int main(int argc, char** argv) {
   // Perform subtraction using GPU --------------------------------------------
   // ops.test(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 0));
 
-  /*
-    ops.setupSubtractBuffers(ops.getObjects()[0], ops.getObjects()[1]);  // Needed to setup buffers before GPU subtraction
-    if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
-    // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
-    std::cerr << "Subtraction failed." << std::endl;
-    return 1;
-    }
-  */
+  // ops.setupSubtractBuffers(ops.getObjects()[0], ops.getObjects()[1]);  // Needed to setup buffers before GPU subtraction
+  // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 820))) {
+  // // if (!ops.subtractGPU(ops.getObjects()[0], ops.getObjects()[1], glm::ivec3(0, 0, 500))) {
+  // std::cerr << "Subtraction failed." << std::endl;
+  // return 1;
+  // }
 
   // =====> LAVORARE SU QUESTO ORA, BISOGNA inserire zeroAtomicCounter(atomicCounter); prima del dispatch
   // =====> DEVE GENERARE ANCHE il prefixSumData, che ora non viene generato
@@ -109,6 +139,7 @@ int main(int argc, char** argv) {
   viewer.run();
 
   exit(EXIT_SUCCESS);
+*/
 #endif
 
   try {

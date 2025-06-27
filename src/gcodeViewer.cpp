@@ -688,8 +688,9 @@ void GcodeViewer::carve(glm::vec3 pos) {
   // std::cout << "Carve position: (" << pos.x << ", " << pos.y << ", " << pos.z << ")" << std::endl;
   // return;
 
+  //@@@ TO BE REWRITTEN!!!!!
   glm::vec3 carvePosition = pos - glm::vec3(0.0f, 0.0f, -30.0f);  // Adjust position to center the tool
-  ops->subtract(ops->getObjects()[0], ops->getObjects()[1], carvePosition);
+  ops->subtractGPU(ops->getObjects()[0], carvePosition);
 
   // Update the voxelized workpiece object after carving
   const auto& obj = ops->getObjects()[0];

@@ -15,8 +15,8 @@
 #include "prefixSum.hpp"
 #include "shader.hpp"
 
-#define MIN_RESOLUTION_XYZ 256  // Minimum resolution for each axis, used for very small objects
-#define DEBUG_OUTPUT            // Enable debug output for detailed information
+#define MIN_RESOLUTION_XYZ 32  // Minimum resolution for each axis, used for very small objects
+#define DEBUG_OUTPUT           // Enable debug output for detailed information
 // #define DEBUG_GPU // Enable OpenGL debug output
 #define GPU_LIMITS  // Enable GPU limits output
 #define WORKGROUP_SIZE 1'024
