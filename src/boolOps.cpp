@@ -9,9 +9,10 @@
 #include "voxelizer.hpp"
 
 #define DEBUG_OUTPUT
-// #define DEBUG_SPEED_OUTPUT
+#define DEBUG_SPEED_OUTPUT
 #define WORKGROUPS 8
-#define MAX_TRANSITIONS 8
+#define WORKGROUPS_FLAT 8
+#define MAX_TRANSITIONS 32
 
 BoolOps::BoolOps() {
   // Initialize OpenGL context
@@ -662,7 +663,7 @@ bool BoolOps::subtractGPU(const VoxelObject& obj1, const VoxelObject& obj2, glm:
 
 #ifdef DEBUG_SPEED_OUTPUT
   std::chrono::duration<double, std::milli> duration = end - start;
-  std::cout << "GPU dispatch (excluding loading buffers) took " << duration2.count() << " ms\n";
+  std::cout << "GPU dispatch (excluding loading buffers) took " << duration.count() << " ms\n";
 #endif
 
   return true;
@@ -789,47 +790,47 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
     std::cout << "Unpacked obj1 size: " << (unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB" << std::endl;
   }
 
-#ifdef DEBUG_OUTPUT
-  // Print first 30-40 values of unpacked and dataNum
-  std::cout << "First 30-40 values of unpacked:" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
-    std::cout << unpacked[i] << " ";
-    if ((i + 1) % 10 == 0) std::cout << std::endl;
-  }
-  std::cout << std::endl;
+  // #ifdef DEBUG_OUTPUT
+  //   // Print first 30-40 values of unpacked and dataNum
+  //   std::cout << "First 30-40 values of unpacked:" << std::endl;
+  //   for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
+  //     std::cout << unpacked[i] << " ";
+  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
+  //   }
+  //   std::cout << std::endl;
 
-  std::cout << "First 30-40 values of dataNum:" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
-    std::cout << dataNum[i] << " ";
-    if ((i + 1) % 10 == 0) std::cout << std::endl;
-  }
-  std::cout << std::endl;
-#endif
+  //   std::cout << "First 30-40 values of dataNum:" << std::endl;
+  //   for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
+  //     std::cout << dataNum[i] << " ";
+  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
+  //   }
+  //   std::cout << std::endl;
+  // #endif
 
   shader_flat->use();
 
   // Delete old buffers if they exist
-  deleteBuffer(obj1Flat);
-  deleteBuffer(obj1DataNum);
-  deleteBuffer(obj2Compressed);
-  deleteBuffer(obj2Prefix);
+  deleteBuffer(obj1_flat);
+  deleteBuffer(obj1_dataNum);
+  deleteBuffer(obj2_compressed);
+  deleteBuffer(obj2_prefix);
 
   // Create buffers
   // IN/OUT
-  obj1Flat = createBuffer(unpacked.size() * sizeof(GLuint), 0, GL_DYNAMIC_COPY);
-  obj1DataNum = createBuffer(dataNum.size() * sizeof(GLuint), 1, GL_DYNAMIC_COPY);
-  obj2Compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ);
-  obj2Prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ);
+  obj1_flat = createBuffer(unpacked.size() * sizeof(GLuint), 0, GL_DYNAMIC_COPY);
+  obj1_dataNum = createBuffer(dataNum.size() * sizeof(GLuint), 1, GL_DYNAMIC_COPY);
+  obj2_compressed = createBuffer(obj2.compressedData.size() * sizeof(GLuint), 2, GL_STATIC_READ);
+  obj2_prefix = createBuffer(obj2.prefixSumData.size() * sizeof(GLuint), 3, GL_STATIC_READ);
 
 #ifdef DEBUG_OUTPUT
   debugCounter = createAtomicCounter(4);
   zeroAtomicCounter(debugCounter);  // Initialize atomic counter to zero
 #endif
 
-  loadBuffer(obj1Flat, unpacked);                   // Load data into the buffer
-  loadBuffer(obj1DataNum, dataNum);                 // Load valid data count into the buffer
-  loadBuffer(obj2Compressed, obj2.compressedData);  // Load data into the buffer
-  loadBuffer(obj2Prefix, obj2.prefixSumData);       // Load prefix sum
+  loadBuffer(obj1_flat, unpacked);                   // Load data into the buffer
+  loadBuffer(obj1_dataNum, dataNum);                 // Load valid data count into the buffer
+  loadBuffer(obj2_compressed, obj2.compressedData);  // Load data into the buffer
+  loadBuffer(obj2_prefix, obj2.prefixSumData);       // Load prefix sum
 
   // Calculate parameters
   long w1 = obj1.params.resolutionXYZ.x;
@@ -851,24 +852,38 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
   shader_flat->setInt("h2", h2);
   shader_flat->setInt("z2", z2);
   shader_flat->setUInt("maxTransitions", MAX_TRANSITIONS);
-  shader_flat->setInt("translateX", translateX);
-  shader_flat->setInt("translateY", translateY);
-  shader_flat->setInt("translateZ", translateZ);
 
   // Setup dispatch parameters
-  GLuint groupsX = (GLuint)((w1 + (WORKGROUPS - 1)) / WORKGROUPS);  // Assuming WORKGROUPS threads per work group in X, rounding up
-  GLuint groupsY = (GLuint)((h1 + (WORKGROUPS - 1)) / WORKGROUPS);  // Assuming WORKGROUPS threads per work group in Y, rounding up
+  GLuint groupsX = (GLuint)((w1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in X, rounding up
+  GLuint groupsY = (GLuint)((h1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in Y, rounding up
 
 #ifdef DEBUG_SPEED_OUTPUT
   auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
 #endif
 
-  // Dispatch compute shader (about 0.5 ms for 1M transitions)
-  glDispatchCompute(groupsX, groupsY, 1);
-  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+  for (uint i = 0; i < 1000; ++i) {
+    long tX = translateX + i * 1;
+    long tY = translateY + i * 1;
+    long tZ = translateZ + i * 1;
+    shader_flat->setInt("translateX", tX);
+    shader_flat->setInt("translateY", tY);
+    shader_flat->setInt("translateZ", tZ);
+    // shader_flat->setInt("normalizeObj2X", tX - w2 / 2);
+    // shader_flat->setInt("normalizeObj2Y", tY - h2 / 2);
+
+    // Dispatch compute shader (about 0.5 ms for 1M transitions)
+    glDispatchCompute(groupsX, groupsY, 1);
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
+  }
+
+  // Wait until all compute shaders have finished
+  glMemoryBarrier(GL_ALL_BARRIER_BITS);
+  glFinish();
 
 #ifdef DEBUG_SPEED_OUTPUT
   auto end = std::chrono::high_resolution_clock::now();  // ====> End timing
+  std::chrono::duration<double, std::milli> duration = end - start;
+  std::cout << "GPU dispatch took " << duration.count() << " ms\n";
 #endif
 
 #ifdef DEBUG_OUTPUT
@@ -877,23 +892,31 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
 #endif
 
   // Read output buffers recycling existing buffers
-  unpacked = readBuffer(obj1Flat, unpacked.size());
-  dataNum = readBuffer(obj1DataNum, dataNum.size());
+  unpacked = readBuffer(obj1_flat, unpacked.size());
+  dataNum = readBuffer(obj1_dataNum, dataNum.size());
 
-#ifdef DEBUG_OUTPUT
-  std::cout << "First 40 values of flatOut (out):" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
-    std::cout << unpacked[i] << " ";
-    if ((i + 1) % 10 == 0) std::cout << std::endl;
-  }
-  std::cout << std::endl;
-  std::cout << "First 40 values of dataNum (out):" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
-    std::cout << dataNum[i] << " ";
-    if ((i + 1) % 10 == 0) std::cout << std::endl;
-  }
-  std::cout << std::endl;
-#endif
+  // #ifdef DEBUG_OUTPUT
+  //   std::cout << "First 40 values of flatOut (out):" << std::endl;
+  //   for (size_t i = 0; i < std::min<size_t>(unpacked.size(), 40); ++i) {
+  //     std::cout << unpacked[i] << " ";
+  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
+  //   }
+  //   std::cout << std::endl;
+  //   std::cout << "First 40 values of dataNum (out):" << std::endl;
+  //   for (size_t i = 0; i < std::min<size_t>(dataNum.size(), 40); ++i) {
+  //     std::cout << dataNum[i] << " ";
+  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
+  //   }
+  //   std::cout << std::endl;
+  // #endif
+
+  //@@@ DEBUG: print out transitions and datanum in the center of obj1
+  // GLuint origin = (500 + 500 * w1) * MAX_TRANSITIONS;
+  // for (uint i = 0; i < MAX_TRANSITIONS; ++i) {
+  //   std::cout << unpacked[origin + i] << " ";
+  // }
+  // std::cout << "dataNum: " << dataNum[500 + 500 * w1] << " ";
+  // std::cout << std::endl;
 
   //@@@ Here generate compressedData and create prefixSumData from flatOut
   std::vector<GLuint> compressedData;
@@ -910,29 +933,26 @@ bool BoolOps::subtractGPU_flat(const VoxelObject& obj1, const VoxelObject& obj2,
     }
   }
 
-  std::cout << "First 40 values of compressedData:" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(compressedData.size(), 40); ++i) {
-    std::cout << compressedData[i] << " ";
-    if ((i + 1) % 10 == 0) std::cout << std::endl;
-  }
-  std::cout << std::endl;
+  // #ifdef DEBUG_OUTPUT
+  //   std::cout << "First 40 values of compressedData:" << std::endl;
+  //   for (size_t i = 0; i < std::min<size_t>(compressedData.size(), 40); ++i) {
+  //     std::cout << compressedData[i] << " ";
+  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
+  //   }
+  //   std::cout << std::endl;
 
-  std::cout << "First 40 values of prefixSumData:" << std::endl;
-  for (size_t i = 0; i < std::min<size_t>(prefixSumData.size(), 40); ++i) {
-    std::cout << prefixSumData[i] << " ";
-    if ((i + 1) % 10 == 0) std::cout << std::endl;
-  }
-  std::cout << std::endl;
+  //   std::cout << "First 40 values of prefixSumData:" << std::endl;
+  //   for (size_t i = 0; i < std::min<size_t>(prefixSumData.size(), 40); ++i) {
+  //     std::cout << prefixSumData[i] << " ";
+  //     if ((i + 1) % 10 == 0) std::cout << std::endl;
+  //   }
+  //   std::cout << std::endl;
+  // #endif
 
   // Assign to obj1
   const_cast<VoxelObject&>(obj1).compressedData = std::move(compressedData);
   const_cast<VoxelObject&>(obj1).prefixSumData = std::move(prefixSumData);
   //@@@
-
-#ifdef DEBUG_SPEED_OUTPUT
-  std::chrono::duration<double, std::milli> duration = end - start;
-  std::cout << "GPU dispatch (excluding loading buffers) took " << duration2.count() << " ms\n";
-#endif
 
   return true;
 }

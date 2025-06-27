@@ -56,8 +56,13 @@ class BoolOps {
   GLuint obj1Prefix;
   GLuint obj2Compressed;
   GLuint obj2Prefix;
-  GLuint obj1Flat;     // Flat buffer for obj1 unpacked data
-  GLuint obj1DataNum;  // Buffer for valid data count of obj1
+
+  // Flat buffers
+  GLuint obj1_flat;        // Flat buffer for obj1 unpacked data
+  GLuint obj1_dataNum;    // Buffer for valid data count of obj1
+  GLuint obj2_compressed;  // Flat buffer for obj2 unpacked data
+  GLuint obj2_prefix;     // Buffer for valid data count of obj2
+
   // OUT
   GLuint outCompressed;
   GLuint outPrefix;

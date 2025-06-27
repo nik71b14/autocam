@@ -1,4 +1,113 @@
+// VERSIONE OTTIMIZZATA, CONSIDERANDO CHE LE TRANSIZIONI SIANO GIA' ORDINATE PER obj1 E obj2
 #version 460
+#extension GL_ARB_shader_storage_buffer_object : enable
+#extension GL_ARB_compute_variable_group_size : enable
+
+layout(std430, binding = 0) buffer Obj1FlatData { uint obj1_flatData[]; };
+layout(std430, binding = 1) buffer Obj1DataNum { uint obj1_dataNum[]; };
+layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
+layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
+
+// Atomic counters
+layout(binding = 4, offset = 0) uniform atomic_uint debug_counter;
+
+uniform int w1, h1, z1;
+uniform int w2, h2, z2;
+uniform int translateX, translateY, translateZ;
+uniform uint maxTransitions;
+// uniform int normalizeObj2X;
+// uniform int normalizeObj2Y;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main() {
+    uint gx = gl_GlobalInvocationID.x;
+    uint gy = gl_GlobalInvocationID.y;
+
+    if (gx >= uint(w1) || gy >= uint(h1)) return;
+
+    uint idx1 = gx + gy * uint(w1);
+
+    uint start1 = idx1 * maxTransitions;
+    uint count1 = obj1_dataNum[idx1];
+
+    int x2 = int(gx) - (translateX - w2 / 2);
+    int y2 = int(gy) - (translateY - h2 / 2);
+    // int x2 = int(gx) - normalizeObj2X;
+    // int y2 = int(gy) - normalizeObj2Y;
+
+    bool inAOI = (x2 >= 0 && x2 < w2 && y2 >= 0 && y2 < h2);
+
+    if (!inAOI) return;
+
+    atomicCounterIncrement(debug_counter);
+
+    uint idx2 = uint(x2) + uint(y2) * uint(w2);
+    uint start2 = obj2_prefixSumData[idx2];
+    uint end2 = (idx2 + 1 < obj2_prefixSumData.length()) ? obj2_prefixSumData[idx2 + 1] : obj2_compressedData.length();
+    uint count2 = end2 - start2;
+
+    uint i1 = 0, i2 = 0;
+    uint outCount = 0;
+    uint localOut[64]; //@@@ TODO check if it is exceeded, and in case manage it dynamically
+
+    bool obj1On = false;
+    bool obj2On = false;
+
+    while ((i1 < count1 || i2 < count2) && outCount < maxTransitions) {
+        int z1 = (i1 < count1) ? int(obj1_flatData[start1 + i1]) : 2147483647;
+        int z2 = (i2 < count2) ? int(obj2_compressedData[start2 + i2]) + (translateZ - z2 / 2) : 2147483647;
+
+        int zVal = min(z1, z2);
+        bool has1 = (z1 == zVal);
+        bool has2 = (z2 == zVal);
+
+        if (has1) ++i1;
+        if (has2) ++i2;
+
+        bool prev1 = obj1On;
+        bool prev2 = obj2On;
+
+        if (has2) obj2On = !obj2On;
+        if (has1) obj1On = !obj1On;
+
+        if (has1 && has2) {
+            if (prev1 != obj1On && !obj2On) {
+                localOut[outCount++] = uint(zVal);
+            }
+        } else if (has1) {
+            if ((prev1 != obj1On) && !obj2On) {
+                localOut[outCount++] = uint(zVal);
+            }
+        } else if (has2) {
+            if ((prev2 != obj2On) && obj1On) {
+                localOut[outCount++] = uint(zVal);
+            }
+        }
+    }
+
+    // Filter out-of-bounds Z values
+    uint writeCount = 0;
+    for (uint i = 0; i < outCount; ++i) {
+        int z = int(localOut[i]);
+        if (z >= 0 && z < z1) {
+            obj1_flatData[start1 + writeCount++] = uint(z);
+        }
+    }
+
+    // Pad remaining transitions with zeros
+    for (uint i = writeCount; i < maxTransitions; ++i) {
+        obj1_flatData[start1 + i] = 0u;
+    }
+
+    obj1_dataNum[idx1] = writeCount;
+}
+
+
+
+
+// VERSIONE LENTA, MA FUNZIONANTE
+/* #version 460
 #extension GL_ARB_shader_storage_buffer_object : enable
 #extension GL_ARB_compute_variable_group_size : enable
 
@@ -23,7 +132,7 @@ struct Transition {
 };
 
 // Sort transitions by Z, then by isObj2 (obj2 first if same Z)
-void sortTransitions(inout Transition arr[256], uint count) {
+void sortTransitions(inout Transition arr[64], uint count) {
     // Insertion sort: small arrays
     for (uint i = 1; i < count; ++i) {
         Transition key = arr[i];
@@ -50,8 +159,8 @@ void main() {
 
     // Determine data range for obj1
     uint start1 = idx1 * maxTransitions; // Each column has exactly maxTransitions values, composed by actual transitions padded with zeros
-    uint end1 = start1 + obj1_dataNum[idx1];
-    uint count1 = end1 - start1;
+    uint count1 = obj1_dataNum[idx1];//end1 - start1;
+    uint end1 = start1 + count1;//obj1_dataNum[idx1];
 
     int x2 = int(gx) - (translateX - w2 / 2);
     int y2 = int(gy) - (translateY - h2 / 2);
@@ -59,6 +168,9 @@ void main() {
     bool inAOI = (x2 >= 0 && x2 < w2 && y2 >= 0 && y2 < h2);
 
     if (inAOI) {
+
+        //@@@ Just for debug
+        atomicCounterIncrement(debug_counter);
 
         // Now I'm sure that x2,y2 is within obj2 bounds, thus positive, so I can pass to uint
         uint idx2 = uint(x2) + uint(y2) * uint(w2);
@@ -69,8 +181,8 @@ void main() {
 
         // SINO QUA OK
 
-        Transition transitions[256];
-        uint localOut[256];
+        Transition transitions[64];
+        uint localOut[64];
         uint tCount = 0; // Used to track number of transitions to avoid overflow, and as index for transitions
         uint outCount = 0; // Used to track number of valid transitions in localOut
 
@@ -112,11 +224,13 @@ void main() {
             if (has2) obj2On = !obj2On;
 
             if (has1 && has2) {
-                bool bothOn = prev1 != obj1On && prev2 != obj2On;
-                if (!bothOn) {
+                // Only emit transition if obj1 changed and obj2 is now off
+                if (prev1 != obj1On && !obj2On) {
                     localOut[outCount++] = uint(zVal);
                 }
-            } else if (has1) {
+            }
+
+            else if (has1) {
                 if ((prev1 != obj1On) && !obj2On) {
                     localOut[outCount++] = uint(zVal);
                 }
@@ -141,27 +255,19 @@ void main() {
             }
         }
 
-        //@@@ Just for debug
-        if (outCount != 2) {
-            atomicCounterIncrement(debug_counter);
-        }
-
         for (uint i = 0; i < outCount; ++i) {
-            obj1_flatData[idx1 + i] = localOut[i]; //%%% Write on the same input object
+            obj1_flatData[start1 + i] = localOut[i]; //%%% Write on the same input object
         }
         
         // Pad with zeros up to maxTransitions
         for (uint i = outCount; i < maxTransitions; ++i) {
-            obj1_flatData[idx1 + i] = 0u;
+            obj1_flatData[start1 + i] = 0u;
         }
 
         // Update obj1_dataNum with the new number of transitions
         obj1_dataNum[idx1] = outCount;
-    } else {
-        // Copy obj1 transitions as-is
-        for (uint i = 0; i < count1; ++i) {
-            // Do nothing
-        }
     }
+    // If not in AOI, does nothing
 }
 
+ */

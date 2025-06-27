@@ -1,0 +1,79 @@
+If maxTransitions is known to be small (<= 64), consider using a fixed-size array
+
+If possible, precompute (translateZ - z2 / 2) on CPU and pass as uniform
+
+Profile with different workgroup sizes (e.g., 32x8, 16x16)
+
+Consider using subgroup operations if available in your hardware
+
+
+
+
+
+
+
+✅ 1. Further parallelize over Z
+Idea:
+Break the merge into parallel work across the Z-dimension (e.g. one thread per transition).
+
+Pros:
+Can leverage much higher total thread count.
+
+Good for very deep voxel grids (z1 ≫ 256).
+
+Cons:
+Hard to synchronize per-column state (obj1On/obj2On) across Z.
+
+Boolean logic is inherently sequential — transitions flip on/off state in order, so Z-parallelism is not naturally compatible.
+
+Verdict:
+🔻 Not suited here. Your boolean transition scan is inherently serial over Z (like prefix scan).
+→ This would not help much and adds complexity.
+
+✅ 2. Switch to 2-pass out-of-place writes
+Idea:
+Instead of writing back into obj1_flatData, use an intermediate buffer for output, then copy it back in a second pass if needed.
+
+Pros:
+Avoids in-place writes and padding.
+
+Enables simpler memory writes and potentially coalesced output.
+
+Great for pipelines where you process outputs further before committing.
+
+Cons:
+Slight overhead from second pass or copy.
+
+Requires allocating another buffer.
+
+Verdict:
+🟡 Medium gain. Useful if your final data goes into a post-process step (e.g., rendering, compression).
+→ If you're writing large volumes, it can help reduce cache thrashing and simplify memory patterns.
+
+✅ 3. Use shared memory for cooperative merge
+Idea:
+For each XY column (i.e., each workgroup), use shared memory to:
+
+Load input transitions (obj1 + obj2) cooperatively,
+
+Do the merge + boolean op in shared memory,
+
+Write compacted result back.
+
+Pros:
+Big reduction in global memory access latency.
+
+Great for bandwidth-bound workloads (yours is).
+
+Best if maxTransitions per column is not huge (e.g. ≤ 128–256).
+
+Cons:
+Limited shared memory (typically 48–64 KB per SM).
+
+Only helps if threads in workgroup cooperate (1 per XY column is good).
+
+Requires tuning and careful bounds handling.
+
+Verdict:
+✅ Best candidate for large speedup.
+→ Your shader is limited by global memory traffic and serialized transition merging, so putting data in shared memory, processing in place, and writing out only once = massive win.
