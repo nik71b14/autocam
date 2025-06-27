@@ -25,20 +25,24 @@ class GcodeViewer {
   void drawFrame();
   void carve(glm::vec3 pos);
 
-  // Set Voxelized Objects (VO)
-  void setWorkpieceVO(std::string workpiecePath) { initWorkpieceVO(workpiecePath.c_str()); };
-  void setToolVO(std::string toolPath) { initToolVO(toolPath.c_str()); };
+  // Set Voxelized Objects
+  void setWorkpiece(std::string workpiecePath);
+  void setTool(std::string toolPath);
 
   void setToolPosition(const glm::vec3& pos);
   void setProjectionType(ProjectionType type) { projectionType = type; };
+
+  void test();
 
  private:
   void init();
   bool shouldClose() const;
 
   Shader* shader = nullptr;
+  // std::unique_ptr<Shader> shader;
   Shader* shader_flat = nullptr;
   Shader* shader_raymarching = nullptr;
+
   GLFWwindow* window = nullptr;
   glm::vec3 toolPosition;
   glm::mat4 projection, view;
@@ -115,7 +119,9 @@ class GcodeViewer {
   void drawTool();
 
   // Boolean operations for voxel objects
-  BoolOps* ops = nullptr;  // Boolean operations for voxel objects
+  //BoolOps* ops = nullptr;  // Boolean operations for voxel objects
+  BoolOps ops;
+  
   void initVO(const std::string& path, VOType type);
 
   // Workpiece VO

@@ -15,12 +15,12 @@
 #include "voxelizer.hpp"
 #include "voxelizerUtils.hpp"
 
-// #define GCODE_TESTING
+#define GCODE_TESTING
 // #define VOXELIZATION_TESTING
 // #define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
 // #define TEST
-#define TEST_FLAT
+// #define TEST_FLAT
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
@@ -50,10 +50,10 @@ int main(int argc, char** argv) {
   float centerY = 0.0f;
   float centerZ = 720.0f;
 
-  float a = 0.0f;          // Spiral base radius
+  float a = 0.0f;           // Spiral base radius
   float b = 50.0f;          // Spiral spacing (distance between loops)
   float angleStep = 0.01f;  // Angle increment (radians) — lower = smoother spiral
-  float zStep = 0.25f;     // Z descent per step
+  float zStep = 0.25f;      // Z descent per step
 
   for (int i = 0; i < 1500; ++i) {
     float theta = i * angleStep;
@@ -171,9 +171,11 @@ int main(int argc, char** argv) {
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
 
     GcodeViewer gCodeViewer(toolpath);
+    gCodeViewer.test();  // Test viewer initialization
+
     gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
-    gCodeViewer.setWorkpieceVO("test/workpiece_100_100_50.bin");  // Set workpiece .bin file
-    gCodeViewer.setToolVO("models/hemispheric_mill_10.bin");      // Set tool .bin file)
+    gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");    // Set workpiece .bin file
+    gCodeViewer.setTool("test/hemispheric_mill_10.bin");          // Set tool .bin file)
 
     interpreter.setSpeedFactor(SPEED_FACTOR);  // Run 2x faster than real time
     interpreter.run();

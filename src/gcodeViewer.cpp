@@ -59,6 +59,13 @@ void GcodeViewer::init() {
 
   createShaders();
 
+  //%%%%%%%%%
+  if (glIsProgram(shader->ID)) {
+    shader->use();
+  } else {
+    std::cerr << "Shader program non valido!" << std::endl;
+  }
+
   // Lighting setup
   shader->use();
   shader->setVec3("lightDir", LIGHT_DIRECTION);
@@ -99,6 +106,7 @@ void GcodeViewer::init() {
 
 void GcodeViewer::createShaders() {
   shader = new Shader("shaders/gcode.vert", "shaders/gcode.frag");
+  // shader = std::make_unique<Shader>("shaders/gcode.vert", "shaders/gcode.frag");
   shader_flat = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
   shader_raymarching = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
 }
@@ -561,18 +569,65 @@ void GcodeViewer::drawTool() {
 }
  */
 
+void GcodeViewer::test() {
+  if (glIsProgram(shader->ID)) {
+    shader->use();
+  } else {
+    std::cerr << "Shader program non valido!" << std::endl;
+  }
+
+  shader->use();
+
+  //=========> IL PROBLEMA E' QUA!!!!
+  // Create BoolOps instance and load voxel objects
+  // if (!ops) {
+  //   ops = new BoolOps();
+  // }
+
+  // if (!ops->load("test/workpiece_100_100_50.bin")) {
+  //   std::cerr << "Failed to load voxelized object." << std::endl;
+  //   return;
+  // }
+
+  // VoxelObject obj = ops->getObjects().back();  // Get the last object loaded (assumed to be the workpiece)
+
+  // // Extract workpiece object data
+  // params = obj.params;  // Get voxelization parameters from the last object
+
+  //%%%%%%%%%
+  if (!glfwGetCurrentContext()) {
+    std::cerr << "No OpenGL context current!" << std::endl;
+    return;
+  }
+
+  if (glIsProgram(shader->ID)) {
+    shader->use();
+  } else {
+    std::cerr << "Shader program non valido!" << std::endl;
+  }
+  //%%%%%%%%%
+
+  shader->use();
+
+  std::cout << "Test function called!" << std::endl;
+}
+
+void GcodeViewer::setWorkpiece(std::string workpiecePath) { initVO(workpiecePath, VOType::WORKPIECE); }
+
+void GcodeViewer::setTool(std::string toolPath) { initVO(toolPath, VOType::TOOL); }
+
 void GcodeViewer::initVO(const std::string& path, VOType type) {
+  // Create BoolOps instance and load voxel objects
+  // if (!ops) {
+  //   ops = new BoolOps();
+  // }
+
   //@@@ Tool management
   if (type == VOType::TOOL) {
     return;
   }
 
-  // Create BoolOps instance and load voxel objects
-  if (!ops) {
-    ops = new BoolOps();
-  }
-
-  if (!ops->load(path)) {
+  if (!ops.load(path)) {
     std::cerr << "Failed to load voxelized object." << std::endl;
     return;
   }
@@ -588,8 +643,27 @@ void GcodeViewer::initVO(const std::string& path, VOType type) {
 
   // If the type is WORKPIECE, setup for visualization
   if (type == VOType::WORKPIECE) {
+    VoxelObject obj = ops.getObjects().back();  // Get the last object loaded (assumed to be the workpiece)
+
     // Extract workpiece object data
-    params = ops->getObjects().back().params;  // Get voxelization parameters from the last object
+    params = obj.params;  // Get voxelization parameters from the last object
+
+    //%%%%%%%%%
+    if (!glfwGetCurrentContext()) {
+      std::cerr << "No OpenGL context current!" << std::endl;
+      return;
+    }
+
+    if (glIsProgram(shader->ID)) {
+      shader->use();
+    } else {
+      std::cerr << "Shader program non valido!" << std::endl;
+    }
+    //%%%%%%%%%
+
+    shader->use();
+    shader_flat->use();
+    shader_raymarching->use();
 
     // Clean all buffers and VAOs
     if (workpieceVO_VAO) glDeleteVertexArrays(1, &workpieceVO_VAO);
@@ -604,10 +678,8 @@ void GcodeViewer::initVO(const std::string& path, VOType type) {
     std::vector<unsigned int> compressedData;
     std::vector<unsigned int> prefixSumData;
 
-    compressedData = ops->getObjects().back().compressedData;  // Get compressed data from the first object
-    prefixSumData = ops->getObjects().back().prefixSumData;    // Get prefix sum data from the first object
-
-    shader_raymarching->use();
+    compressedData = obj.compressedData;  // Get compressed data from the first object
+    prefixSumData = obj.prefixSumData;    // Get prefix sum data from the first object
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
@@ -690,10 +762,10 @@ void GcodeViewer::carve(glm::vec3 pos) {
 
   //@@@ TO BE REWRITTEN!!!!!
   glm::vec3 carvePosition = pos - glm::vec3(0.0f, 0.0f, -30.0f);  // Adjust position to center the tool
-  ops->subtractGPU(ops->getObjects()[0], carvePosition);
+  ops.subtractGPU(ops.getObjects()[0], carvePosition);
 
   // Update the voxelized workpiece object after carving
-  const auto& obj = ops->getObjects()[0];
+  const auto& obj = ops.getObjects()[0];
   params = obj.params;
 
   if (workpieceVO_VAO) glDeleteVertexArrays(1, &workpieceVO_VAO);
