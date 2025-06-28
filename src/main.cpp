@@ -4,6 +4,7 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "GLUtils.hpp"
 #include "boolOps.hpp"
 #include "gcode.hpp"
 #include "gcodeViewer.hpp"
@@ -26,7 +27,13 @@ int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
   std::cout << "Using STL path: " << stlPath << std::endl;
 
+// ----------------------------------------------------------------------------
 #ifdef TEST_FLAT
+
+  // Initialize OpenGL context and create a window
+  GLFWwindow* window = nullptr;
+  setupGLContext(&window, 1, 1, "Test flat", true);
+
   BoolOps ops;
 
   // if (!ops.load("test/workpiece_100_100_50.bin")) {
@@ -78,8 +85,11 @@ int main(int argc, char** argv) {
   // viewer.setOrthographic(true);  // Set orthographic projection
   viewer.run();
 
+  destroyGLContext(window);
+
   exit(EXIT_SUCCESS);
 #endif
+  // ----------------------------------------------------------------------------
 
 #ifdef TEST
 /*
@@ -155,6 +165,11 @@ int main(int argc, char** argv) {
 
 // GCODE INTERPRETER TESTING ----------------------------------------------
 #ifdef GCODE_TESTING
+
+    // Initialize OpenGL context and create a window
+    GLFWwindow* window = nullptr;
+    setupGLContext(&window, 800, 600, "gcode testing", false);
+
     GCodeInterpreter interpreter;
 
     if (!interpreter.loadFile(GCODE_PATH)) {
@@ -170,8 +185,8 @@ int main(int argc, char** argv) {
     // Extract full toolpath for initial rendering
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
 
-    GcodeViewer gCodeViewer(toolpath);
-    gCodeViewer.test();  // Test viewer initialization
+    GcodeViewer gCodeViewer(window, toolpath);
+    // gCodeViewer.test();  // Test viewer initialization
 
     gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
     gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");    // Set workpiece .bin file
@@ -192,13 +207,16 @@ int main(int argc, char** argv) {
 
       // Handle input and draw
       gCodeViewer.pollEvents();
-      gCodeViewer.carve(pos);  // Carve the workpiece with the tool
+      // gCodeViewer.carve(pos);  // Carve the workpiece with the tool
       gCodeViewer.drawFrame();
 
       // std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "Simulation finished.\n";
+
+    destroyGLContext(window);
+
     exit(EXIT_SUCCESS);
 #endif  // GCODE_TESTING
 // ------------------------------------------------------------------------

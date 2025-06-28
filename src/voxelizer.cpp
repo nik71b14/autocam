@@ -213,7 +213,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ_OLD(co
   int triangleCount = indices.size();
 
   // Initialize OpenGL context and create a window
-  setupGL(&window, params.resolutionXYZ.x, params.resolutionXYZ.y, "STL Viewer", !params.preview);
+  setupGLContext(&window, params.resolutionXYZ.x, params.resolutionXYZ.y, "STL Viewer", !params.preview);
   if (!window) throw std::runtime_error("Failed to create GLFW window");
 
 #ifdef DEBUG_GPU
@@ -833,7 +833,7 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
   int triangleCount = indices.size();
 
   // Initialize OpenGL context and create a window
-  setupGL(&window, params.resolutionXYZ.x, params.resolutionXYZ.y, "STL Viewer", !params.preview);
+  setupGLContext(&window, params.resolutionXYZ.x, params.resolutionXYZ.y, "STL Viewer", !params.preview);
   if (!window) throw std::runtime_error("Failed to create GLFW window");
 
 #ifdef DEBUG_GPU

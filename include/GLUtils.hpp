@@ -35,7 +35,8 @@ struct MeshBuffers {
 // Restituisce gli handle in un struct MeshBuffers.
 MeshBuffers uploadMesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices);
 
-void setupGL(GLFWwindow** window, int width, int height, const std::string& title = "OpenGL Window", bool hideWindow=false);
+void setupGLContext(GLFWwindow** window, int width, int height, const std::string& title = "OpenGL Window", bool hideWindow=false);
+void destroyGLContext(GLFWwindow* window);
 
 void createFramebuffer(GLuint& fbo, GLuint& colorTex, GLuint& depthRbo, int resolution);
 

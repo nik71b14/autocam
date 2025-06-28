@@ -17,6 +17,7 @@ public:
     Shader(const char* computePath);
 
     void use() const;
+    void dismiss() const;
 
     void setBool(const std::string& name, bool value) const;
     void setUInt(const std::string& name, unsigned int value) const;

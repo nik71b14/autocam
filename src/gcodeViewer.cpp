@@ -10,14 +10,14 @@
 #include "meshLoader.hpp"
 #include "shader.hpp"
 
-GcodeViewer::GcodeViewer(const std::vector<GcodePoint>& toolpath) : toolPosition(0.0f), path(toolpath) { init(); }
+GcodeViewer::GcodeViewer(GLFWwindow* window, const std::vector<GcodePoint>& toolpath) : window(window), toolPosition(0.0f), path(toolpath) { init(); }
 
 GcodeViewer::~GcodeViewer() {
   // Cleanup
   if (shader) delete shader;
   if (shader_flat) delete shader_flat;
   if (shader_raymarching) delete shader_raymarching;
-  if (window) glfwSetWindowUserPointer(window, nullptr);  // Clear user pointer before destroying window
+  if (window) glfwSetWindowUserPointer(window, nullptr);  // Clear user pointer
   if (axesVAO) glDeleteVertexArrays(1, &axesVAO);
   if (axesVBO) glDeleteBuffers(1, &axesVBO);
   if (pathVAO) glDeleteVertexArrays(1, &pathVAO);
@@ -34,44 +34,41 @@ GcodeViewer::~GcodeViewer() {
   if (workpieceVO_VBO) glDeleteBuffers(1, &workpieceVO_VBO);
   if (workpieceVO_compressedBuffer) glDeleteBuffers(1, &workpieceVO_compressedBuffer);
   if (workpieceVO_prefixSumBuffer) glDeleteBuffers(1, &workpieceVO_prefixSumBuffer);
+}
 
-  if (window) glfwDestroyWindow(window);
-  glfwTerminate();
+void GcodeViewer::checkContext() {
+  if (!window || glfwGetCurrentContext() != window) {
+    throw std::runtime_error("GLFW window is null or OpenGL context is not current for this window.");
+  }
 }
 
 void GcodeViewer::init() {
-  if (!glfwInit()) throw std::runtime_error("Failed to init GLFW");
-
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_DEPTH_BITS, 24);  // Add this line
-
-  window = glfwCreateWindow(INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, "G-code Viewer", nullptr, nullptr);
-  if (!window) throw std::runtime_error("Failed to create window");
-
-  glfwMakeContextCurrent(window);
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) throw std::runtime_error("Failed to initialize GLAD");
+  checkContext();
 
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glClearColor(CLEAR_COLOR);
+  glfwSetWindowSize(window, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT);
 
   createShaders();
-
-  //%%%%%%%%%
-  if (glIsProgram(shader->ID)) {
-    shader->use();
-  } else {
-    std::cerr << "Shader program non valido!" << std::endl;
-  }
+  setMouseCallbacks();
 
   // Lighting setup
   shader->use();
   shader->setVec3("lightDir", LIGHT_DIRECTION);
+}
 
-  // Set up viewport and clear color
-  glClearColor(0.1f, 0.1f, 0.1f, 1.f);
+void GcodeViewer::createShaders() {
+  checkContext();
+
+  shader = new Shader("shaders/gcode.vert", "shaders/gcode.frag");
+  shader_flat = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
+  shader_raymarching = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
+}
+
+void GcodeViewer::setMouseCallbacks() {
+  checkContext();
 
   // Set this instance as the user pointer for callbacks
   glfwSetWindowUserPointer(window, this);
@@ -102,13 +99,6 @@ void GcodeViewer::init() {
     auto* viewer = static_cast<GcodeViewer*>(glfwGetWindowUserPointer(win));
     if (viewer) viewer->onScroll(yoffset);
   });
-}
-
-void GcodeViewer::createShaders() {
-  shader = new Shader("shaders/gcode.vert", "shaders/gcode.frag");
-  // shader = std::make_unique<Shader>("shaders/gcode.vert", "shaders/gcode.frag");
-  shader_flat = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
-  shader_raymarching = new Shader("shaders/raymarching.vert", "shaders/raymarching.frag");
 }
 
 void GcodeViewer::initToolpath() {
@@ -176,23 +166,16 @@ void GcodeViewer::drawFrame() {
   shader_flat->setMat4("uView", view);
   shader_flat->setMat4("uModel", IDENTITY_MODEL);  // Identity model matrix for static objects
 
-  glDepthMask(GL_FALSE);  // %%%% Don't write to depth buffer
-  drawWorkpieceVO();      // shader_raymarching
-  glDepthMask(GL_TRUE);   // %%%% Re-enable depth writes
+  glDepthMask(GL_FALSE);  // Don't write to depth buffer
+  drawWorkpieceVO();      // shader_raymarching (voxelized object)
+  glDepthMask(GL_TRUE);   // Re-enable depth writes
 
   drawAxes();      // shader_flat
   drawToolpath();  // shader_flat
-  drawTool();      // shader
-  // drawWorkpiece();            // shader
+  drawTool();      // shader (stl source)
+  // drawWorkpiece();            // shader (stl source)
 
   glfwSwapBuffers(window);
-
-  // Draw transparent volume last %%%%
-  // glEnable(GL_BLEND);
-  // glDepthMask(GL_FALSE);  // Disable depth writes for transparency
-  // drawWorkpieceVO();
-  // glDepthMask(GL_TRUE);  // Re-enable depth writes
-  // glDisable(GL_BLEND);
 }
 
 void GcodeViewer::drawToolpath() {
@@ -201,18 +184,14 @@ void GcodeViewer::drawToolpath() {
   shader_flat->use();
 
   glBindVertexArray(pathVAO);
-  shader_flat->setVec4("uColor", glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+  shader_flat->setVec4("uColor", TOOLPATH_COLOR);
   glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(pathVertexCount));
   glBindVertexArray(0);
 }
 
-// Mouse callback for camera control
 void GcodeViewer::onMouseButton(int button, int action, double xpos, double ypos) {
   if (button == GLFW_MOUSE_BUTTON_LEFT) {
     leftButtonDown = (action == GLFW_PRESS);
-#ifdef DEBUG_OUTPUT_GCODE
-    std::cout << "leftButtonDown: " << leftButtonDown << std::endl;
-#endif
   }
   if (button == GLFW_MOUSE_BUTTON_RIGHT) {
     rightButtonDown = (action == GLFW_PRESS);
@@ -296,17 +275,14 @@ void GcodeViewer::initAxes() {
       0.0f, 0.0f, 0.0f, 0.0f,        0.0f,        AXES_LENGTH  // Z (blue)
   };
 
-  glGenVertexArrays(1, &axesVAO);
-  glGenBuffers(1, &axesVBO);
-
-  glBindVertexArray(axesVAO);
-  glBindBuffer(GL_ARRAY_BUFFER, axesVBO);
-  glBufferData(GL_ARRAY_BUFFER, axesVertices.size() * sizeof(float), axesVertices.data(), GL_STATIC_DRAW);
-
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
-  glEnableVertexAttribArray(0);
-
-  glBindVertexArray(0);
+  glGenVertexArrays(1, &axesVAO);          // This is the container for all the vertex attributes
+  glGenBuffers(1, &axesVBO);               // This is the buffer that holds the vertex data
+  glBindVertexArray(axesVAO);              // Bind the VAO to set up the vertex attributes
+  glBindBuffer(GL_ARRAY_BUFFER, axesVBO);  // Bind the VBO to the VAO
+  glBufferData(GL_ARRAY_BUFFER, axesVertices.size() * sizeof(float), axesVertices.data(), GL_STATIC_DRAW);  // Upload vertex data to the VBO
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);  // Vertex attribute at location 0 (read from shader as vec3 at location 0)
+  glEnableVertexAttribArray(0);                                                 // Enable the vertex attribute at location 0
+  glBindVertexArray(0);                                                         // Unbind the VAO to avoid accidental modifications
 
   axesInitialized = true;
 }
@@ -319,15 +295,15 @@ void GcodeViewer::drawAxes() {
   glBindVertexArray(axesVAO);
 
   // Red X axis
-  shader_flat->setVec4("uColor", glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+  shader_flat->setVec4("uColor", RED_COLOR);
   glDrawArrays(GL_LINES, 0, 2);
 
   // Green Y axis
-  shader_flat->setVec4("uColor", glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+  shader_flat->setVec4("uColor", GREEN_COLOR);
   glDrawArrays(GL_LINES, 2, 2);
 
   // Blue Z axis
-  shader_flat->setVec4("uColor", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+  shader_flat->setVec4("uColor", BLUE_COLOR);
   glDrawArrays(GL_LINES, 4, 2);
 
   glBindVertexArray(0);
@@ -508,120 +484,11 @@ void GcodeViewer::drawTool() {
   glBindVertexArray(0);
 }
 
-/* void GcodeViewer::initQuad() {
-  if (quadInitialized) return;
-
-  // Create BoolOps instance and load voxel objects
-  ops = new BoolOps();
-  // =======> Workpiece @@@@@@@
-  if (!ops->load(VOXELIZED_WORKPIECE_PATH)) {
-    std::cerr << "Failed to load voxelized object." << std::endl;
-  }
-  // =======> Tool @@@@@@@
-  if (!ops->load(VOXELIZED_TOOL_PATH)) {
-    std::cerr << "Failed to load voxelized object." << std::endl;
-  }
-
-  // Extract workpiece object data
-  params = ops->getObjects()[0].params;  // Get voxelization parameters from the first object
-
-#ifdef DEBUG_OUTPUT_GCODE
-  std::cout << "Voxel Params:" << std::endl;
-  std::cout << "  resolutionXYZ: (" << params.resolutionXYZ.x << ", " << params.resolutionXYZ.y << ", " << params.resolutionXYZ.z << ")" << std::endl;
-  std::cout << "  maxTransitionsPerZColumn: " << params.maxTransitionsPerZColumn << std::endl;
-  std::cout << "  zSpan: " << params.zSpan << std::endl;
-  std::cout << "  scale: " << params.scale << std::endl;
-  std::cout << "  color: (" << params.color.x << ", " << params.color.y << ", " << params.color.z << ")" << std::endl;
-#endif
-
-  compressedData = ops->getObjects()[0].compressedData;  // Get compressed data from the first object
-  prefixSumData = ops->getObjects()[0].prefixSumData;    // Get prefix sum data from the first object
-
-  shader_raymarching->use();
-
-  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-
-  float quadVertices[] = {
-      -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
-  };
-
-  glGenVertexArrays(1, &workpieceVO_VAO);
-  glGenBuffers(1, &workpieceVO_VBO);
-  glBindVertexArray(workpieceVO_VAO);
-  glBindBuffer(GL_ARRAY_BUFFER, workpieceVO_VBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-
-  glGenBuffers(1, &workpieceVO_compressedBuffer);
-  glGenBuffers(1, &workpieceVO_prefixSumBuffer);
-
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_compressedBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, compressedData.size() * sizeof(GLuint), compressedData.data(), GL_DYNAMIC_COPY);
-
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, workpieceVO_prefixSumBuffer);
-  glBufferData(GL_SHADER_STORAGE_BUFFER, prefixSumData.size() * sizeof(GLuint), prefixSumData.data(), GL_DYNAMIC_COPY);
-
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, workpieceVO_compressedBuffer);
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, workpieceVO_prefixSumBuffer);
-
-  quadInitialized = true;
-}
- */
-
-void GcodeViewer::test() {
-  if (glIsProgram(shader->ID)) {
-    shader->use();
-  } else {
-    std::cerr << "Shader program non valido!" << std::endl;
-  }
-
-  shader->use();
-
-  //=========> IL PROBLEMA E' QUA!!!!
-  // Create BoolOps instance and load voxel objects
-  // if (!ops) {
-  //   ops = new BoolOps();
-  // }
-
-  // if (!ops->load("test/workpiece_100_100_50.bin")) {
-  //   std::cerr << "Failed to load voxelized object." << std::endl;
-  //   return;
-  // }
-
-  // VoxelObject obj = ops->getObjects().back();  // Get the last object loaded (assumed to be the workpiece)
-
-  // // Extract workpiece object data
-  // params = obj.params;  // Get voxelization parameters from the last object
-
-  //%%%%%%%%%
-  if (!glfwGetCurrentContext()) {
-    std::cerr << "No OpenGL context current!" << std::endl;
-    return;
-  }
-
-  if (glIsProgram(shader->ID)) {
-    shader->use();
-  } else {
-    std::cerr << "Shader program non valido!" << std::endl;
-  }
-  //%%%%%%%%%
-
-  shader->use();
-
-  std::cout << "Test function called!" << std::endl;
-}
-
 void GcodeViewer::setWorkpiece(std::string workpiecePath) { initVO(workpiecePath, VOType::WORKPIECE); }
 
 void GcodeViewer::setTool(std::string toolPath) { initVO(toolPath, VOType::TOOL); }
 
 void GcodeViewer::initVO(const std::string& path, VOType type) {
-  // Create BoolOps instance and load voxel objects
-  // if (!ops) {
-  //   ops = new BoolOps();
-  // }
-
   //@@@ Tool management
   if (type == VOType::TOOL) {
     return;
@@ -647,19 +514,6 @@ void GcodeViewer::initVO(const std::string& path, VOType type) {
 
     // Extract workpiece object data
     params = obj.params;  // Get voxelization parameters from the last object
-
-    //%%%%%%%%%
-    if (!glfwGetCurrentContext()) {
-      std::cerr << "No OpenGL context current!" << std::endl;
-      return;
-    }
-
-    if (glIsProgram(shader->ID)) {
-      shader->use();
-    } else {
-      std::cerr << "Shader program non valido!" << std::endl;
-    }
-    //%%%%%%%%%
 
     shader->use();
     shader_flat->use();
@@ -732,8 +586,7 @@ void GcodeViewer::drawWorkpieceVO() {
   glm::mat4 model = glm::mat4(1.0f);
   if (this->projectionType == ProjectionType::ORTHOGRAPHIC) {
     model = glm::scale(model, glm::vec3(1.0f / params.scale));
-    model = glm::translate(model, params.center * params.scale);
-    model = glm::scale(model, glm::vec3(-1.0f, 1.0f, -1.0f));
+    model = glm::translate(model, params.center * params.scale);  // Put the object at the correct, original position
   }
 
   glm::mat4 viewProj = projection * view * model;
@@ -749,7 +602,7 @@ void GcodeViewer::drawWorkpieceVO() {
   glBindVertexArray(workpieceVO_VAO);
   glDrawArrays(GL_TRIANGLES, 0, 6);
 
-  glUseProgram(0);
+  shader_raymarching->dismiss();  // Dismiss the shader after use
 }
 
 void GcodeViewer::initWorkpieceVO(const std::string& path) { initVO(path, VOType::WORKPIECE); }

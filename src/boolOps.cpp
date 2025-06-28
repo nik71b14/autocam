@@ -15,11 +15,15 @@
 #define MAX_TRANSITIONS 32
 
 BoolOps::BoolOps() {
-  // Initialize OpenGL context
-  glContext = createGLContext();
-  if (!glContext) {
-    throw std::runtime_error("Failed to create OpenGL context");
+  if (glfwGetCurrentContext() == nullptr) {
+    throw std::runtime_error("No active OpenGL context found. Please create a context before using BoolOps.");
   }
+
+  // Initialize OpenGL context
+  // glContext = createGLContext();
+  // if (!glContext) {
+  //   throw std::runtime_error("Failed to create OpenGL context");
+  // }
 
   // Load and compile shader using Shader class
   // shader = new Shader("shaders/subtract.comp");            // Path to your compute shader file
@@ -29,7 +33,6 @@ BoolOps::BoolOps() {
 
 BoolOps::~BoolOps() {
   clear();
-  destroyGLContext(glContext);
 
   // Cleanup
   // if (obj1Compressed) glDeleteBuffers(1, &obj1Compressed);
@@ -56,6 +59,8 @@ BoolOps::~BoolOps() {
     delete shader_flat;
     shader_flat = nullptr;
   }
+
+  // destroyGLContext(glContext);
 }
 
 bool BoolOps::load(const std::string& filename) {

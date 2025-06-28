@@ -18,7 +18,7 @@ struct GLFWwindow;  // Forward declaration for GLFW window to avoid prbles with 
 
 class GcodeViewer {
  public:
-  GcodeViewer(const std::vector<GcodePoint>& toolpath);
+  GcodeViewer(GLFWwindow* window, const std::vector<GcodePoint>& toolpath);
   ~GcodeViewer();
 
   void pollEvents();
@@ -31,8 +31,6 @@ class GcodeViewer {
 
   void setToolPosition(const glm::vec3& pos);
   void setProjectionType(ProjectionType type) { projectionType = type; };
-
-  void test();
 
  private:
   void init();
@@ -48,7 +46,9 @@ class GcodeViewer {
   glm::mat4 projection, view;
   ProjectionType projectionType = ProjectionType::ORTHOGRAPHIC;  // Default to orthographic projection
 
+  void checkContext();
   void createShaders();
+  void setMouseCallbacks();
 
   // Mouse management for camera control
   bool orthographicMode = true;                        // Use orthographic projection if true
