@@ -132,6 +132,88 @@ void GCodeInterpreter::run() {
   });
 }
 
+void GCodeInterpreter::jog(float delta) {
+    static size_t currentCommand = 0;
+    static std::vector<GcodePoint> currentPath;
+    static size_t currentPoint = 0;
+    static float accumulatedDistance = 0.0f;
+
+    // If we need to load a new command
+    if (currentCommand >= gcodeLines.size()) {
+        currentCommand = 0;  // Loop back to start or return for single execution
+        currentPath.clear();
+        return;
+    }
+
+    // If we need to parse a new command
+    if (currentPath.empty()) {
+        // Store current state
+        bool wasRunning = running;
+        bool wasPreviewMode = previewMode;
+        glm::vec3 savedPosition = state.position;
+
+        // Set up for path extraction
+        previewMode = true;
+        running = true;
+        toolpath.clear();  // Clear any existing path
+
+        // Execute the command to get its path
+        executeCommand(gcodeLines[currentCommand]);
+
+        // Restore state
+        previewMode = wasPreviewMode;
+        running = wasRunning;
+        state.position = savedPosition;
+
+        // Store the generated path
+        currentPath = toolpath;
+        currentPoint = 0;
+        accumulatedDistance = 0.0f;
+
+        // If this command didn't produce any path points, move to next command
+        if (currentPath.empty()) {
+            currentCommand++;
+            jog(delta);  // Process next command
+            return;
+        }
+    }
+
+    // If we've processed all points in current path
+    if (currentPoint + 1 >= currentPath.size()) {
+        currentCommand++;
+        currentPath.clear();
+        jog(delta);  // Process next command
+        return;
+    }
+
+    // Get current segment
+    const glm::vec3& startPos = currentPath[currentPoint].position;
+    const glm::vec3& endPos = currentPath[currentPoint + 1].position;
+    glm::vec3 segment = endPos - startPos;
+    float segmentLength = glm::length(segment);
+
+    // Calculate movement for this jog step
+    float remainingDistance = segmentLength - accumulatedDistance;
+    float moveDistance = glm::min(delta, remainingDistance);
+    float t = (accumulatedDistance + moveDistance) / segmentLength;
+    glm::vec3 newPosition = glm::mix(startPos, endPos, t);
+
+    // Update state
+    {
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.position = newPosition;
+    }
+
+    // Update tracking variables
+    accumulatedDistance += moveDistance;
+
+    // If we completed this segment, move to next point
+    if (accumulatedDistance >= segmentLength - 0.0001f) {
+        currentPoint++;
+        accumulatedDistance = 0.0f;
+    }
+}
+
 void GCodeInterpreter::stop() {
   running = false;
   if (simulationThread.joinable())

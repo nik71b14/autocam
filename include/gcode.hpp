@@ -1,17 +1,15 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <thread>
 #include <atomic>
-#include <mutex>
+#include <functional>
 #include <glm/glm.hpp>
 #include <map>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
 
-
-enum class Plane {
-  XY, ZX, YZ
-};
+enum class Plane { XY, ZX, YZ };
 
 struct SimulationState {
   glm::vec3 position = glm::vec3(0.0f);
@@ -23,11 +21,11 @@ struct SimulationState {
 };
 
 struct GcodePoint {
-    glm::vec3 position;
+  glm::vec3 position;
 };
 
 class GCodeInterpreter {
-public:
+ public:
   GCodeInterpreter();
   ~GCodeInterpreter();
 
@@ -36,6 +34,7 @@ public:
 
   void setSpeedFactor(double factor);
   void run();
+  void jog(float delta);
   void stop();
   bool isRunning() const;
 
@@ -46,7 +45,7 @@ public:
   Plane getCurrentPlane() const;
   std::vector<GcodePoint> getToolpath();
 
-private:
+ private:
   void executeCommand(const std::string& line);
   void parseLine(const std::string& line, std::map<char, double>& params, std::string& cmd);
 
@@ -58,5 +57,4 @@ private:
 
   mutable std::mutex stateMutex;
   SimulationState state;
-
 };
