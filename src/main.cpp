@@ -182,6 +182,23 @@ int main(int argc, char** argv) {
       return 1;
     }
 
+    //%%%%%%%%%
+    // Start jogging
+    interpreter.beginJog();
+
+    // Jog loop
+    while (!interpreter.jogComplete()) {
+      interpreter.jog(0.5f);  // Move by 0.5 units
+                              // Render frame
+                              // Optional: Add small delay if needed
+      glm::vec3 pos = interpreter.getCurrentPosition();
+      std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
+    }
+
+    // Clean up
+    interpreter.resetJog();
+    //%%%%%%%%%
+
     // Extract full toolpath for initial rendering
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
 

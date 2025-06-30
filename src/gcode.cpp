@@ -130,70 +130,77 @@ void GCodeInterpreter::run() {
   });
 }
 
-void GCodeInterpreter::jog(float delta) {
-  static size_t currentCommand = 0;
-  static std::vector<GcodePoint> currentPath;
-  static size_t currentPoint = 0;
-  static float accumulatedDistance = 0.0f;
+// ----------------------------------------------------------------------------
+// Table: Jog State Management Functions
+// +----------------+--------------------------+--------------------------+
+// | Function       | beginJog()               | resetJog()               |
+// +----------------+--------------------------+--------------------------+
+// | Purpose        | Initializes fresh jog    | Clears jog state         |
+// |                | state                    |                          |
+// | When Used      | Before starting to jog   | After finishing jogging  |
+// | Active Flag    | Sets to true             | Sets to false            |
+// | Position       | Resets to start of       | Maintains final position |
+// |                | program                  |                          |
+// +----------------+--------------------------+--------------------------+
 
-  // If we need to load a new command
-  if (currentCommand >= gcodeLines.size()) {
-    currentCommand = 0;  // Loop back to start or return for single execution
-    currentPath.clear();
+void GCodeInterpreter::beginJog() {
+  jogCurrentCommand = 0;
+  jogCurrentPath.clear();
+  jogCurrentPoint = 0;
+  jogAccumulatedDistance = 0.0f;
+  jogActive = true;
+  jogInitialized = true;
+}
+
+void GCodeInterpreter::jog(float delta) {
+  if (!jogInitialized) {
+    beginJog();
+  }
+
+  // If we've completed all commands
+  if (jogCurrentCommand >= gcodeLines.size()) {
+    jogActive = false;
     return;
   }
 
   // If we need to parse a new command
-  if (currentPath.empty()) {
-    // Store current state
+  if (jogCurrentPath.empty()) {
     bool wasRunning = running;
     bool wasPreviewMode = previewMode;
     glm::vec3 savedPosition = state.position;
 
-    // Set up for path extraction
+    // Extract path for current command
     previewMode = true;
     running = true;
-    toolpath.clear();  // Clear any existing path
-
-    // Execute the command to get its path
-    executeCommand(gcodeLines[currentCommand]);
+    toolpath.clear();
+    executeCommand(gcodeLines[jogCurrentCommand]);
 
     // Restore state
     previewMode = wasPreviewMode;
     running = wasRunning;
     state.position = savedPosition;
 
-    // Store the generated path
-    currentPath = toolpath;
-    currentPoint = 0;
-    accumulatedDistance = 0.0f;
+    jogCurrentPath = toolpath;
+    jogCurrentPoint = 0;
+    jogAccumulatedDistance = 0.0f;
 
-    // If this command didn't produce any path points, move to next command
-    if (currentPath.empty()) {
-      currentCommand++;
+    // Skip non-movement commands
+    if (jogCurrentPath.empty()) {
+      jogCurrentCommand++;
       jog(delta);  // Process next command
       return;
     }
   }
 
-  // If we've processed all points in current path
-  if (currentPoint + 1 >= currentPath.size()) {
-    currentCommand++;
-    currentPath.clear();
-    jog(delta);  // Process next command
-    return;
-  }
-
-  // Get current segment
-  const glm::vec3& startPos = currentPath[currentPoint].position;
-  const glm::vec3& endPos = currentPath[currentPoint + 1].position;
+  // Process current segment
+  const glm::vec3& startPos = jogCurrentPath[jogCurrentPoint].position;
+  const glm::vec3& endPos = jogCurrentPath[jogCurrentPoint + 1].position;
   glm::vec3 segment = endPos - startPos;
   float segmentLength = glm::length(segment);
 
-  // Calculate movement for this jog step
-  float remainingDistance = segmentLength - accumulatedDistance;
+  float remainingDistance = segmentLength - jogAccumulatedDistance;
   float moveDistance = glm::min(delta, remainingDistance);
-  float t = (accumulatedDistance + moveDistance) / segmentLength;
+  float t = (jogAccumulatedDistance + moveDistance) / segmentLength;
   glm::vec3 newPosition = glm::mix(startPos, endPos, t);
 
   // Update state
@@ -202,15 +209,31 @@ void GCodeInterpreter::jog(float delta) {
     state.position = newPosition;
   }
 
-  // Update tracking variables
-  accumulatedDistance += moveDistance;
+  jogAccumulatedDistance += moveDistance;
 
-  // If we completed this segment, move to next point
-  if (accumulatedDistance >= segmentLength - 0.0001f) {
-    currentPoint++;
-    accumulatedDistance = 0.0f;
+  // Move to next segment if completed
+  if (jogAccumulatedDistance >= segmentLength - 0.0001f) {
+    jogCurrentPoint++;
+    jogAccumulatedDistance = 0.0f;
+
+    // Move to next command if completed all segments
+    if (jogCurrentPoint + 1 >= jogCurrentPath.size()) {
+      jogCurrentCommand++;
+      jogCurrentPath.clear();
+    }
   }
 }
+
+bool GCodeInterpreter::jogComplete() const {
+  // Only complete if we've processed all commands AND all segments
+  return jogInitialized && (jogCurrentCommand >= gcodeLines.size()) && jogCurrentPath.empty();
+}
+
+void GCodeInterpreter::resetJog() {
+  jogInitialized = false;
+  jogActive = false;
+}
+// ----------------------------------------------------------------------------
 
 void GCodeInterpreter::stop() {
   running = false;
@@ -343,6 +366,16 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
   std::map<char, double> params;
   std::string cmd;
   parseLine(line, params, cmd);
+
+  std::cout << "Executing command: " << cmd << std::endl;
+  for (const auto& p : params) {
+    std::cout << "  Param " << p.first << " = " << p.second << std::endl;
+  }
+
+  if (cmd.empty() || line.empty() || line[0] == ';' || line[0] == '(') {
+    // Comment or empty line, nothing to do
+    return;
+  }
 
   if (cmd == "G0" || cmd == "G1") {
     glm::vec3 startPos;

@@ -35,8 +35,11 @@ class GCodeInterpreter {
   void setSpeedFactor(double factor);
   void run();
   void jog(float delta);
-  void stop();
+  void beginJog();
+  void resetJog();
+  bool jogComplete() const;
   bool isRunning() const;
+  void stop();
 
   glm::vec3 getCurrentPosition() const;
   double getCurrentFeedRate() const;
@@ -57,4 +60,12 @@ class GCodeInterpreter {
 
   mutable std::mutex stateMutex;
   SimulationState state;
+
+  // Jog state variables
+  size_t jogCurrentCommand = 0;
+  std::vector<GcodePoint> jogCurrentPath;
+  size_t jogCurrentPoint = 0;
+  float jogAccumulatedDistance = 0.0f;
+  bool jogActive = false;
+  bool jogInitialized = false;
 };
