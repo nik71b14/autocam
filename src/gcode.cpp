@@ -80,20 +80,19 @@
 // - `getCurrentPlane() const`: Get the current plane being used in the simulation (XY, ZX, YZ).
 
 #include "gcode.hpp"
-#include <fstream>
-#include <sstream>
-#include <iostream>
-#include <chrono>
-#include <map>
-#include <cmath>
+
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <sstream>
 #include <thread>
 
 GCodeInterpreter::GCodeInterpreter() : running(false) {}
 
-GCodeInterpreter::~GCodeInterpreter() {
-  stop();
-}
+GCodeInterpreter::~GCodeInterpreter() { stop(); }
 
 bool GCodeInterpreter::loadFile(const std::string& filename) {
   std::ifstream file(filename);
@@ -109,8 +108,7 @@ bool GCodeInterpreter::loadFile(const std::string& filename) {
 
 bool GCodeInterpreter::checkFile() const {
   for (const auto& line : gcodeLines) {
-    if (line.find("G0") != std::string::npos || line.find("G1") != std::string::npos)
-      return true;
+    if (line.find("G0") != std::string::npos || line.find("G1") != std::string::npos) return true;
   }
   return false;
 }
@@ -133,96 +131,93 @@ void GCodeInterpreter::run() {
 }
 
 void GCodeInterpreter::jog(float delta) {
-    static size_t currentCommand = 0;
-    static std::vector<GcodePoint> currentPath;
-    static size_t currentPoint = 0;
-    static float accumulatedDistance = 0.0f;
+  static size_t currentCommand = 0;
+  static std::vector<GcodePoint> currentPath;
+  static size_t currentPoint = 0;
+  static float accumulatedDistance = 0.0f;
 
-    // If we need to load a new command
-    if (currentCommand >= gcodeLines.size()) {
-        currentCommand = 0;  // Loop back to start or return for single execution
-        currentPath.clear();
-        return;
-    }
+  // If we need to load a new command
+  if (currentCommand >= gcodeLines.size()) {
+    currentCommand = 0;  // Loop back to start or return for single execution
+    currentPath.clear();
+    return;
+  }
 
-    // If we need to parse a new command
+  // If we need to parse a new command
+  if (currentPath.empty()) {
+    // Store current state
+    bool wasRunning = running;
+    bool wasPreviewMode = previewMode;
+    glm::vec3 savedPosition = state.position;
+
+    // Set up for path extraction
+    previewMode = true;
+    running = true;
+    toolpath.clear();  // Clear any existing path
+
+    // Execute the command to get its path
+    executeCommand(gcodeLines[currentCommand]);
+
+    // Restore state
+    previewMode = wasPreviewMode;
+    running = wasRunning;
+    state.position = savedPosition;
+
+    // Store the generated path
+    currentPath = toolpath;
+    currentPoint = 0;
+    accumulatedDistance = 0.0f;
+
+    // If this command didn't produce any path points, move to next command
     if (currentPath.empty()) {
-        // Store current state
-        bool wasRunning = running;
-        bool wasPreviewMode = previewMode;
-        glm::vec3 savedPosition = state.position;
-
-        // Set up for path extraction
-        previewMode = true;
-        running = true;
-        toolpath.clear();  // Clear any existing path
-
-        // Execute the command to get its path
-        executeCommand(gcodeLines[currentCommand]);
-
-        // Restore state
-        previewMode = wasPreviewMode;
-        running = wasRunning;
-        state.position = savedPosition;
-
-        // Store the generated path
-        currentPath = toolpath;
-        currentPoint = 0;
-        accumulatedDistance = 0.0f;
-
-        // If this command didn't produce any path points, move to next command
-        if (currentPath.empty()) {
-            currentCommand++;
-            jog(delta);  // Process next command
-            return;
-        }
+      currentCommand++;
+      jog(delta);  // Process next command
+      return;
     }
+  }
 
-    // If we've processed all points in current path
-    if (currentPoint + 1 >= currentPath.size()) {
-        currentCommand++;
-        currentPath.clear();
-        jog(delta);  // Process next command
-        return;
-    }
+  // If we've processed all points in current path
+  if (currentPoint + 1 >= currentPath.size()) {
+    currentCommand++;
+    currentPath.clear();
+    jog(delta);  // Process next command
+    return;
+  }
 
-    // Get current segment
-    const glm::vec3& startPos = currentPath[currentPoint].position;
-    const glm::vec3& endPos = currentPath[currentPoint + 1].position;
-    glm::vec3 segment = endPos - startPos;
-    float segmentLength = glm::length(segment);
+  // Get current segment
+  const glm::vec3& startPos = currentPath[currentPoint].position;
+  const glm::vec3& endPos = currentPath[currentPoint + 1].position;
+  glm::vec3 segment = endPos - startPos;
+  float segmentLength = glm::length(segment);
 
-    // Calculate movement for this jog step
-    float remainingDistance = segmentLength - accumulatedDistance;
-    float moveDistance = glm::min(delta, remainingDistance);
-    float t = (accumulatedDistance + moveDistance) / segmentLength;
-    glm::vec3 newPosition = glm::mix(startPos, endPos, t);
+  // Calculate movement for this jog step
+  float remainingDistance = segmentLength - accumulatedDistance;
+  float moveDistance = glm::min(delta, remainingDistance);
+  float t = (accumulatedDistance + moveDistance) / segmentLength;
+  glm::vec3 newPosition = glm::mix(startPos, endPos, t);
 
-    // Update state
-    {
-        std::lock_guard<std::mutex> lock(stateMutex);
-        state.position = newPosition;
-    }
+  // Update state
+  {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    state.position = newPosition;
+  }
 
-    // Update tracking variables
-    accumulatedDistance += moveDistance;
+  // Update tracking variables
+  accumulatedDistance += moveDistance;
 
-    // If we completed this segment, move to next point
-    if (accumulatedDistance >= segmentLength - 0.0001f) {
-        currentPoint++;
-        accumulatedDistance = 0.0f;
-    }
+  // If we completed this segment, move to next point
+  if (accumulatedDistance >= segmentLength - 0.0001f) {
+    currentPoint++;
+    accumulatedDistance = 0.0f;
+  }
 }
 
 void GCodeInterpreter::stop() {
   running = false;
-  if (simulationThread.joinable())
-    simulationThread.join();
+  if (simulationThread.joinable()) simulationThread.join();
 }
 
-bool GCodeInterpreter::isRunning() const {
-  return running;
-}
+bool GCodeInterpreter::isRunning() const { return running; }
 
 glm::vec3 GCodeInterpreter::getCurrentPosition() const {
   std::lock_guard<std::mutex> lock(stateMutex);
@@ -261,7 +256,8 @@ void GCodeInterpreter::parseLine(const std::string& line, std::map<char, double>
       try {
         double value = std::stod(valueStr);
         params[letter] = value;
-      } catch (...) {}
+      } catch (...) {
+      }
     }
   }
 }
@@ -352,16 +348,16 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
     glm::vec3 startPos;
     double currentFeedRate;
     double speedFactor;
-    //int currentTool;
-    //double spindleSpeed;
+    // int currentTool;
+    // double spindleSpeed;
 
     {
       std::lock_guard<std::mutex> lock(stateMutex);
       startPos = state.position;
       currentFeedRate = state.feedRate;
       speedFactor = state.speedFactor;
-      //currentTool = state.tool;
-      //spindleSpeed = state.spindleSpeed;
+      // currentTool = state.tool;
+      // spindleSpeed = state.spindleSpeed;
     }
 
     glm::vec3 targetPos = startPos;
@@ -377,14 +373,13 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
 
     // Store the toolpath point if previewing
     if (previewMode) {
-
       toolpath.push_back({
-        .position = targetPos
-        // .start = startPos,
-        // .end = targetPos,
-        // .feedRate = currentFeedRate,
-        // .tool = currentTool,
-        // .spindleSpeed = spindleSpeed
+          .position = targetPos
+          // .start = startPos,
+          // .end = targetPos,
+          // .feedRate = currentFeedRate,
+          // .tool = currentTool,
+          // .spindleSpeed = spindleSpeed
       });
     }
 
@@ -418,8 +413,7 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
       std::lock_guard<std::mutex> lock(stateMutex);
       localSpeed = state.speedFactor;
     }
-    if (!previewMode)
-      std::this_thread::sleep_for(std::chrono::duration<double>(dwell / 1000.0 / localSpeed));
+    if (!previewMode) std::this_thread::sleep_for(std::chrono::duration<double>(dwell / 1000.0 / localSpeed));
 
   } else if (cmd == "G17") {
     std::lock_guard<std::mutex> lock(stateMutex);
@@ -439,7 +433,6 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
   }
 }
 
-
 std::vector<GcodePoint> GCodeInterpreter::getToolpath() {
   this->toolpath.clear();
   glm::vec3 savedPosition = state.position;  // preserve state
@@ -448,7 +441,7 @@ std::vector<GcodePoint> GCodeInterpreter::getToolpath() {
 
   for (const auto& line : gcodeLines) {
     std::cout << line << std::endl;
-      executeCommand(line);  // reuses actual logic
+    executeCommand(line);  // reuses actual logic
   }
 
   previewMode = false;
