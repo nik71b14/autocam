@@ -21,7 +21,7 @@ struct SimulationState {
 };
 
 struct GcodePoint {
-  glm::vec3 position;
+  glm::vec3 position = glm::vec3(0.0f);
 };
 
 class GCodeInterpreter {
@@ -62,8 +62,6 @@ class GCodeInterpreter {
   SimulationState state;
 
   // Jog state variables
-  size_t jogCurrentCommand = 0;
-  std::vector<GcodePoint> jogCurrentPath;
   size_t jogCurrentPoint = 0;
   float jogAccumulatedDistance = 0.0f;
   bool jogActive = false;

@@ -1,8 +1,10 @@
 #include <assimp/scene.h>
 
+#include <chrono>
 #include <cmath>  // for sin()
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 
 #include "GLUtils.hpp"
 #include "boolOps.hpp"
@@ -163,7 +165,7 @@ int main(int argc, char** argv) {
     // params.preview = true;  // Enable preview during voxelization
     //  ------------------------------------------------------------------------
 
-// GCODE INTERPRETER TESTING ----------------------------------------------
+// GCODE TESTING --------------------------------------------------------------
 #ifdef GCODE_TESTING
 
     // Initialize OpenGL context and create a window
@@ -172,6 +174,7 @@ int main(int argc, char** argv) {
 
     GCodeInterpreter interpreter;
 
+    // CARVING ----------------------------------------------------------------
     if (!interpreter.loadFile(GCODE_PATH)) {
       std::cerr << "Failed to load G-code file.\n";
       return 1;
@@ -182,23 +185,31 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    //%%%%%%%%%
     // Start jogging
     interpreter.beginJog();
 
     // Jog loop
     while (!interpreter.jogComplete()) {
-      interpreter.jog(0.5f);  // Move by 0.5 units
+      interpreter.jog(0.1f);  // Move by 0.5 units
                               // Render frame
-                              // Optional: Add small delay if needed
       glm::vec3 pos = interpreter.getCurrentPosition();
+
+#ifdef MAIN_DEBUG_OUTPUT
       std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
+#endif
+
+      //@@@ Add small delay
+      // std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     // Clean up
     interpreter.resetJog();
-    //%%%%%%%%%
 
+    destroyGLContext(window);
+    exit(EXIT_SUCCESS);
+    // ------------------------------------------------------------------------
+
+    // SIMULATION ---------------------------------------------------
     // Extract full toolpath for initial rendering
     std::vector<GcodePoint> toolpath = interpreter.getToolpath();
 
@@ -226,15 +237,14 @@ int main(int argc, char** argv) {
       gCodeViewer.pollEvents();
       // gCodeViewer.carve(pos);  // Carve the workpiece with the tool
       gCodeViewer.drawFrame();
-
-      // std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "Simulation finished.\n";
 
     destroyGLContext(window);
-
     exit(EXIT_SUCCESS);
+    // ------------------------------------------------------------------------
+
 #endif  // GCODE_TESTING
 // ------------------------------------------------------------------------
 
