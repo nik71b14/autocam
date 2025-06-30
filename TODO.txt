@@ -1,12 +1,7 @@
 
-  //@@@ QUA VEDERE PERCHE' NON FUNZIONA CON VoxelObject result
-  // Copy back the result
-  // VoxelObject result;
-  ops.subtractGPU_copyback(ops.getObjects()[0]);
-  // ops.subtractGPU_copyback(result);
-
-  //@@@ QUA USARE IN INPUT DEL VIEWER DIRETTAMENTE UN VoxelObject
-  VoxelViewer viewer(ops.getObjects()[0].compressedData, ops.getObjects()[0].prefixSumData, ops.getObjects()[0].params);
+-> Fare marching cubes viewer
+-> Visualizzare risultato carving
+-> Utensile con diversa direzione/orientabile
 
   
 

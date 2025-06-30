@@ -18,12 +18,12 @@
 #include "voxelizer.hpp"
 #include "voxelizerUtils.hpp"
 
-#define GCODE_TESTING
+// #define GCODE_TESTING
 // #define VOXELIZATION_TESTING
 // #define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
 // #define TEST
-// #define TEST_FLAT
+#define TEST_FLAT
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
@@ -193,14 +193,14 @@ int main(int argc, char** argv) {
     //@@@ FARE: verificare e completare queste due funzioni
     //@@@ FARE: inserire   ops.subtractGPU_init(ops.getObjects()[0], ops.getObjects()[1]); da qualche parte
     gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");  // Set workpiece .bin file
-    gCodeViewer.setTool("test/hemispheric_mill_3.bin");         // Set tool .bin file)
+    gCodeViewer.setTool("test/hemispheric_mill_10.bin");        // Set tool .bin file)
 
     // Start jogging
     interpreter.beginJog();
 
     // Jog loop
     while (!interpreter.jogComplete()) {
-      interpreter.jog(0.1f);  // Move by 0.5 units
+      interpreter.jog(0.5f);  // Move by 0.5 units
                               // Render frame
       glm::vec3 pos = interpreter.getCurrentPosition();
 
