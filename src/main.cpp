@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     float y = centerY + r * std::sin(theta);
     float z = centerZ - zStep * float(i);
 
-    ops.subtractGPU(ops.getObjects()[0], glm::ivec3(std::round(x), std::round(y), std::round(z)));
+    ops.subtractGPU(glm::ivec3(std::round(x), std::round(y), std::round(z)));
   }
 
   //@@@ QUA VEDERE PERCHE' NON FUNZIONA CON VoxelObject result
@@ -185,6 +185,16 @@ int main(int argc, char** argv) {
       return 1;
     }
 
+    // Instantiate and initialize GcodeViewer object
+    GcodeViewer gCodeViewer(window, interpreter.getToolpath());
+
+    gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
+
+    //@@@ FARE: verificare e completare queste due funzioni
+    //@@@ FARE: inserire   ops.subtractGPU_init(ops.getObjects()[0], ops.getObjects()[1]); da qualche parte
+    gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");  // Set workpiece .bin file
+    gCodeViewer.setTool("test/hemispheric_mill_3.bin");         // Set tool .bin file)
+
     // Start jogging
     interpreter.beginJog();
 
@@ -198,6 +208,9 @@ int main(int argc, char** argv) {
       std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
 #endif
 
+      // gCodeViewer.setToolPosition(pos);
+      gCodeViewer.carve(pos);  // Carve the workpiece with the tool
+
       //@@@ Add small delay
       // std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -210,39 +223,40 @@ int main(int argc, char** argv) {
     // ------------------------------------------------------------------------
 
     // SIMULATION ---------------------------------------------------
-    // Extract full toolpath for initial rendering
-    std::vector<GcodePoint> toolpath = interpreter.getToolpath();
+    /*     // Extract full toolpath for initial rendering
+        std::vector<GcodePoint> toolpath = interpreter.getToolpath();
 
-    GcodeViewer gCodeViewer(window, toolpath);
-    // gCodeViewer.test();  // Test viewer initialization
+        GcodeViewer gCodeViewer(window, toolpath);
+        // gCodeViewer.test();  // Test viewer initialization
 
-    gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
-    gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");    // Set workpiece .bin file
-    gCodeViewer.setTool("test/hemispheric_mill_10.bin");          // Set tool .bin file)
+        gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
+        gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");    // Set workpiece .bin file
+        gCodeViewer.setTool("test/hemispheric_mill_10.bin");          // Set tool .bin file)
 
-    interpreter.setSpeedFactor(SPEED_FACTOR);  // Run 2x faster than real time
-    interpreter.run();
+        interpreter.setSpeedFactor(SPEED_FACTOR);  // Run 2x faster than real time
+        interpreter.run();
 
-    while (interpreter.isRunning()) {
-      glm::vec3 pos = interpreter.getCurrentPosition();
+        while (interpreter.isRunning()) {
+          glm::vec3 pos = interpreter.getCurrentPosition();
 
-#ifdef MAIN_DEBUG_OUTPUT
-      std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
-#endif
+    #ifdef MAIN_DEBUG_OUTPUT
+          std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
+    #endif
 
-      // Update viewer with current tool position
-      gCodeViewer.setToolPosition(pos);
+          // Update viewer with current tool position
+          gCodeViewer.setToolPosition(pos);
 
-      // Handle input and draw
-      gCodeViewer.pollEvents();
-      // gCodeViewer.carve(pos);  // Carve the workpiece with the tool
-      gCodeViewer.drawFrame();
-    }
+          // Handle input and draw
+          gCodeViewer.pollEvents();
+          // gCodeViewer.carve(pos);  // Carve the workpiece with the tool
+          gCodeViewer.drawFrame();
+        }
 
-    std::cout << "Simulation finished.\n";
+        std::cout << "Simulation finished.\n";
 
-    destroyGLContext(window);
-    exit(EXIT_SUCCESS);
+        destroyGLContext(window);
+        exit(EXIT_SUCCESS);
+    */
     // ------------------------------------------------------------------------
 
 #endif  // GCODE_TESTING

@@ -51,7 +51,7 @@ class BoolOps {
 
   // Subtract using GPU with flat buffers
   bool subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2);
-  bool subtractGPU(const VoxelObject& obj1, glm::ivec3 offset);
+  bool subtractGPU(glm::ivec3 offset);
   void subtractGPU_copyback(VoxelObject& outData);
 
  private:

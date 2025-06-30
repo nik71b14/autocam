@@ -491,6 +491,23 @@ void GcodeViewer::setTool(std::string toolPath) { initVO(toolPath, VOType::TOOL)
 void GcodeViewer::initVO(const std::string& path, VOType type) {
   //@@@ Tool management
   if (type == VOType::TOOL) {
+    if (ops.getObjects().size() > 1) {
+      std::cerr << "Tool already initialized. Only one tool can be set." << std::endl;
+      return;
+    }
+    if (ops.getObjects().size() == 0) {
+      std::cerr << "Set workpiece first." << std::endl;
+      return;
+    }
+    if (!ops.load(path)) {
+      std::cerr << "Failed to load tool object." << std::endl;
+      return;
+    }
+
+    std::cout << "Tool loaded: " << path << std::endl;
+
+    ops.subtractGPU_init(ops.getObjects()[0], ops.getObjects()[1]);  //@@@ MOVE TO A MORE SUITED POSITION TO ALLOW RESET, TOOL CHANGE, ETC.
+
     return;
   }
 
@@ -610,12 +627,18 @@ void GcodeViewer::initWorkpieceVO(const std::string& path) { initVO(path, VOType
 void GcodeViewer::initToolVO(const std::string& path) { initVO(path, VOType::TOOL); }
 
 void GcodeViewer::carve(glm::vec3 pos) {
+  //@@@ DEBUG
   // std::cout << "Carve position: (" << pos.x << ", " << pos.y << ", " << pos.z << ")" << std::endl;
-  // return;
 
-  //@@@ TO BE REWRITTEN!!!!!
-  glm::vec3 carvePosition = pos - glm::vec3(0.0f, 0.0f, -30.0f);  // Adjust position to center the tool
-  ops.subtractGPU(ops.getObjects()[0], carvePosition);
+  glm::vec3 carvePosition = pos - glm::vec3(0.0f, 0.0f, 0.0f);  //@@@ DEBUG Adjust position to center the tool
+  ops.subtractGPU(carvePosition);
+
+  //@@@ DEBUG: Increment a counter to track the number of carvings
+  carvingCounter++;
+  std::cout << "Counter: " << carvingCounter << std::endl;
+
+  //@@@ DEBUG: stop here (no need to update the workpieceVO_VAO for now)
+  return;
 
   // Update the voxelized workpiece object after carving
   const auto& obj = ops.getObjects()[0];

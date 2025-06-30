@@ -136,4 +136,6 @@ class GcodeViewer {
   // Tool VO
   void initToolVO(const std::string& path);
 
+  long carvingCounter = 0;  // Counter for carving operations
+
 };

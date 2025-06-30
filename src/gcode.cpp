@@ -131,6 +131,7 @@ void GCodeInterpreter::run() {
 }
 
 void GCodeInterpreter::beginJog() {
+
   toolpath = getToolpath();  // Get full toolpath for jogging
 
   //@@@DEBUG

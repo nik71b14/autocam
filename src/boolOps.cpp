@@ -885,7 +885,14 @@ void BoolOps::subtractGPU_copyback(VoxelObject& out) {
   const_cast<VoxelObject&>(out).prefixSumData = std::move(prefixSumData);
 }
 
-bool BoolOps::subtractGPU(const VoxelObject& obj1, glm::ivec3 offset) {
+bool BoolOps::subtractGPU(glm::ivec3 offset) {
+  if (objects.size() != 2) {
+    std::cerr << "BoolOps::subtractGPU: Expected exactly 2 objects, got " << objects.size() << std::endl;
+    return false;
+  }
+  VoxelObject obj1 = objects[0];  // Assuming obj1 is the first object in the list
+
+
 #ifdef DEBUG_SPEED_OUTPUT
   auto start = std::chrono::high_resolution_clock::now();  // ====> Start timing
 #endif
