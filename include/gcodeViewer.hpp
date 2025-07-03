@@ -10,7 +10,7 @@
 #include "shader.hpp"
 #include "voxelizer.hpp"
 
-// Enums 
+// Enums
 enum class ProjectionType { ORTHOGRAPHIC, PERSPECTIVE };
 enum class VOType { WORKPIECE, TOOL };
 
@@ -31,6 +31,17 @@ class GcodeViewer {
 
   void setToolPosition(const glm::vec3& pos);
   void setProjectionType(ProjectionType type) { projectionType = type; };
+
+  void copyBack() {
+    // Copy back the voxelized workpiece data after carving
+    ops.subtractGPU_copyback(ops.getObjects()[0]);  // Copy back from GPU to CPU
+  }
+  VoxelObject getWorkpiece() const {
+    if (ops.getObjects().empty()) {
+      throw std::runtime_error("No workpiece voxel object loaded.");
+    }
+    return ops.getObjects()[0];  // Return the first object (workpiece)
+  }
 
  private:
   void init();
@@ -119,9 +130,9 @@ class GcodeViewer {
   void drawTool();
 
   // Boolean operations for voxel objects
-  //BoolOps* ops = nullptr;  // Boolean operations for voxel objects
+  // BoolOps* ops = nullptr;  // Boolean operations for voxel objects
   BoolOps ops;
-  
+
   void initVO(const std::string& path, VOType type);
 
   // Workpiece VO
@@ -137,5 +148,4 @@ class GcodeViewer {
   void initToolVO(const std::string& path);
 
   long carvingCounter = 0;  // Counter for carving operations
-
 };

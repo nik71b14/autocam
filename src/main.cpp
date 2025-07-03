@@ -18,12 +18,12 @@
 #include "voxelizer.hpp"
 #include "voxelizerUtils.hpp"
 
-// #define GCODE_TESTING
+#define GCODE_TESTING
 // #define VOXELIZATION_TESTING
 // #define BOOLEAN_OPERATIONS_TESTING
 // #define VOXEL_VIEWER_TESTING
 // #define TEST
-#define TEST_FLAT
+// #define TEST_FLAT
 
 int main(int argc, char** argv) {
   const char* stlPath = (argc > 1) ? argv[1] : STL_PATH;
@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
 
     // Jog loop
     while (!interpreter.jogComplete()) {
-      interpreter.jog(0.5f);  // Move by 0.5 units
+      interpreter.jog(2.0f);  // Move by 5 units (pixels, not mm currently) @@@ Introduce real units
                               // Render frame
       glm::vec3 pos = interpreter.getCurrentPosition();
 
@@ -217,6 +217,15 @@ int main(int argc, char** argv) {
 
     // Clean up
     interpreter.resetJog();
+
+    gCodeViewer.copyBack();  // Copy back the voxelized workpiece data after carving
+
+    // Visualize the carved workpiece
+    VoxelObject workpiece = gCodeViewer.getWorkpiece();  // Get the voxelized workpiece
+    VoxelViewer viewer(workpiece.compressedData, workpiece.prefixSumData, workpiece.params);
+    // VoxelViewer viewer(result.compressedData, result.prefixSumData, result.params);
+    // viewer.setOrthographic(true);  // Set orthographic projection
+    viewer.run();
 
     destroyGLContext(window);
     exit(EXIT_SUCCESS);

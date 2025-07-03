@@ -31,7 +31,8 @@
 #define BIN_PATH "test/hemispheric_mill_3.bin"
 
 // #define GCODE_PATH "gcode/star_pocket.gcode"
-#define GCODE_PATH "gcode/pocket.gcode"
+// #define GCODE_PATH "gcode/pocket.gcode"
+#define GCODE_PATH "gcode/square_600.gcode"
 
 // Vozelization parameters
 #define WHITE glm::vec3(1.0f, 1.0f, 1.0f)
