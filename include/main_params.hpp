@@ -30,8 +30,8 @@
 // For VOXEL_VIEWER_TESTING route
 #define BIN_PATH "test/hemispheric_mill_3.bin"
 
-// #define GCODE_PATH "gcode/star_pocket.gcode"
-// #define GCODE_PATH "gcode/pocket.gcode"
+// // #define GCODE_PATH "gcode/star_pocket.gcode"
+// #define GCODE_PATH "gcode/pocket_small.gcode"
 #define GCODE_PATH "gcode/square_600.gcode"
 
 // Vozelization parameters

@@ -11,6 +11,7 @@
 #include "gcode.hpp"
 #include "gcodeViewer.hpp"
 #include "main_params.hpp"
+#include "marchingCubes.hpp"
 #include "meshLoader.hpp"
 #include "test.hpp"
 #include "utils.hpp"
@@ -218,10 +219,32 @@ int main(int argc, char** argv) {
     // Clean up
     interpreter.resetJog();
 
-    gCodeViewer.copyBack();  // Copy back the voxelized workpiece data after carving
+    gCodeViewer.copyBack();                              // Copy back the voxelized workpiece data after carving
+    VoxelObject workpiece = gCodeViewer.getWorkpiece();  // Get the voxelized workpiece
+
+    //$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+    // MARCHING CUBES --------------------------------------------------------
+    // Output containers
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::ivec3> triangles;
+
+    // Run marching cubes
+    marchingCubes(workpiece, vertices, triangles);
+
+    // Print summary
+    std::cout << "Generated " << vertices.size() << " vertices and " << triangles.size() << " triangles." << std::endl;
+
+    // Optionally print first few vertices and triangles
+    for (size_t i = 0; i < std::min(vertices.size(), size_t(10)); ++i) {
+      std::cout << "v " << vertices[i].x << " " << vertices[i].y << " " << vertices[i].z << std::endl;
+    }
+    for (size_t i = 0; i < std::min(triangles.size(), size_t(10)); ++i) {
+      std::cout << "f " << triangles[i].x + 1 << " " << triangles[i].y + 1 << " " << triangles[i].z + 1 << std::endl;
+    }
+    // ------------------------------------------------------------------------
+    //$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
     // Visualize the carved workpiece
-    VoxelObject workpiece = gCodeViewer.getWorkpiece();  // Get the voxelized workpiece
     VoxelViewer viewer(workpiece.compressedData, workpiece.prefixSumData, workpiece.params);
     // VoxelViewer viewer(result.compressedData, result.prefixSumData, result.params);
     // viewer.setOrthographic(true);  // Set orthographic projection
