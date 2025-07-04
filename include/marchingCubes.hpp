@@ -16,3 +16,4 @@ glm::vec3 vertexInterp(float isoLevel, const glm::vec3& p1, const glm::vec3& p2,
 
 // Generate mesh from a VoxelObject using the Marching Cubes algorithm
 void marchingCubes(const VoxelObject& obj, std::vector<glm::vec3>& outVertices, std::vector<glm::ivec3>& outTriangles);
+void marchingCubes_flat(const VoxelObject& obj, std::vector<float>& outVerticesFlat, std::vector<int>& outTrianglesFlat);
