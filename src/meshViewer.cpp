@@ -103,6 +103,8 @@ MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, co
   createShaders();
   buildMeshBuffers();
 
+  fitViewToMesh();
+
   glViewport(0, 0, width, height);
   glfwSetWindowUserPointer(window, this);
   glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int w_, int h_) {
@@ -127,7 +129,8 @@ MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, co
 
     float sensitivity = 0.1f;
     self->yaw += xoffset * sensitivity;
-    self->pitch += yoffset * sensitivity;
+    self->pitch -= yoffset * sensitivity;
+    self->pitch = std::clamp(self->pitch, -89.0f, 89.0f);  // clamp pitch to avoid gimbal lock
     self->updateCameraVectors();
   });
 
@@ -161,7 +164,8 @@ void MeshViewer::checkContext() {
 
 void MeshViewer::createShaders() {
   checkContext();
-  shader = new Shader("shaders/gcode.vert", "shaders/gcode.frag");
+  // shader = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
+  shader = new Shader("shaders/mesh_fakenormals.vert", "shaders/mesh_fakenormals.frag");
 }
 
 void MeshViewer::buildMeshBuffers() {
@@ -186,19 +190,31 @@ glm::mat4 MeshViewer::getViewMatrix() const { return glm::lookAt(cameraPos, came
 
 glm::mat4 MeshViewer::getProjectionMatrix() const {
   float aspect = static_cast<float>(width) / static_cast<float>(height);
-  if (usePerspective)
-    return glm::perspective(glm::radians(zoom), aspect, 0.1f, 1000.0f);
-  else
+  if (useOrtho)
     return glm::ortho(-10.f * aspect, 10.f * aspect, -10.f, 10.f, -100.f, 100.f);
+  else
+    return glm::perspective(glm::radians(zoom), aspect, 0.1f, 1000.0f);
 }
 
 void MeshViewer::updateCameraVectors() {
-  glm::vec3 front;
-  front.x = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
-  front.y = sin(glm::radians(pitch));
-  front.z = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
-  cameraFront = glm::normalize(front);
+  float radYaw = glm::radians(yaw);
+  float radPitch = glm::radians(pitch);
+
+  float x = radius * cos(radPitch) * cos(radYaw);
+  float y = radius * sin(radPitch);
+  float z = radius * cos(radPitch) * sin(radYaw);
+
+  cameraPos = target + glm::vec3(x, y, z);
+  cameraFront = glm::normalize(target - cameraPos);  // always look at target
+  cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);            // you can improve this with cross product if needed
 }
+// void MeshViewer::updateCameraVectors() {
+//   glm::vec3 front;
+//   front.x = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
+//   front.y = sin(glm::radians(pitch));
+//   front.z = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
+//   cameraFront = glm::normalize(front);
+// }
 
 void MeshViewer::drawMesh() {
   shader->use();
@@ -229,4 +245,37 @@ void MeshViewer::drawFrame() {
 
 void MeshViewer::setMeshColor(const glm::vec4& color) { meshColor = color; }
 
-void MeshViewer::setProjectionMode(bool perspective) { usePerspective = perspective; }
+void MeshViewer::setProjectionMode(bool perspective) { useOrtho = perspective; }
+
+void MeshViewer::fitViewToMesh() {
+  glm::vec3 minBounds(FLT_MAX), maxBounds(-FLT_MAX);
+  for (size_t i = 0; i < vertices.size(); i += 3) {
+    glm::vec3 v(vertices[i], vertices[i + 1], vertices[i + 2]);
+    minBounds = glm::min(minBounds, v);
+    maxBounds = glm::max(maxBounds, v);
+  }
+
+  target = 0.5f * (minBounds + maxBounds);
+  // radius = glm::length(maxBounds - minBounds) * 0.6f;
+  radius = glm::length(maxBounds - minBounds) * 2.0f;
+
+  yaw = -90.0f;
+  pitch = 0.0f;
+
+  updateCameraVectors();
+}
+
+// void MeshViewer::fitViewToMesh() {
+//   glm::vec3 minBounds(FLT_MAX), maxBounds(-FLT_MAX);
+//   for (size_t i = 0; i < vertices.size(); i += 3) {
+//     glm::vec3 v(vertices[i], vertices[i + 1], vertices[i + 2]);
+//     minBounds = glm::min(minBounds, v);
+//     maxBounds = glm::max(maxBounds, v);
+//   }
+//   glm::vec3 center = 0.5f * (minBounds + maxBounds);
+//   float radius = glm::length(maxBounds - minBounds) * 0.5f;
+
+//   cameraPos = center + glm::vec3(0, 0, radius * 2.0f);
+//   cameraFront = glm::normalize(center - cameraPos);
+//   cameraUp = glm::vec3(0, 1, 0);
+// }

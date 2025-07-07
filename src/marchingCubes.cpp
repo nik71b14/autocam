@@ -131,9 +131,13 @@ void marchingCubes(const VoxelObject& obj, std::vector<glm::vec3>& outVertices, 
 
         for (int i = 0; triTable[cubeIndex][i] != -1; i += 3) {
           int i0 = outVertices.size();  // base index for this triangle
+          // outVertices.push_back(vertList[triTable[cubeIndex][i]]);
+          // outVertices.push_back(vertList[triTable[cubeIndex][i + 1]]);
+          // outVertices.push_back(vertList[triTable[cubeIndex][i + 2]]);
+          // outTriangles.emplace_back(i0, i0 + 1, i0 + 2);
           outVertices.push_back(vertList[triTable[cubeIndex][i]]);
-          outVertices.push_back(vertList[triTable[cubeIndex][i + 1]]);
           outVertices.push_back(vertList[triTable[cubeIndex][i + 2]]);
+          outVertices.push_back(vertList[triTable[cubeIndex][i + 1]]);
           outTriangles.emplace_back(i0, i0 + 1, i0 + 2);
         }
       }
@@ -141,7 +145,7 @@ void marchingCubes(const VoxelObject& obj, std::vector<glm::vec3>& outVertices, 
   }
 }
 
-void marchingCubes_flat(const VoxelObject& obj, std::vector<float>& outVerticesFlat, std::vector<int>& outTrianglesFlat) {
+/* void marchingCubes_flat(const VoxelObject& obj, std::vector<float>& outVerticesFlat, std::vector<int>& outTrianglesFlat) {
   const auto& p = obj.params;
   int resX = p.resolutionXYZ.x;
   int resY = p.resolutionXYZ.y;
@@ -189,11 +193,94 @@ void marchingCubes_flat(const VoxelObject& obj, std::vector<float>& outVerticesF
         for (int i = 0; triTable[cubeIndex][i] != -1; i += 3) {
           int baseIndex = outVerticesFlat.size() / 3;
 
+          // for (int j = 0; j < 3; ++j) {
+          //   glm::vec3 v = vertList[triTable[cubeIndex][i + j]];
+          //   outVerticesFlat.push_back(v.x);
+          //   outVerticesFlat.push_back(v.y);
+          //   outVerticesFlat.push_back(v.z);
+          //   outTrianglesFlat.push_back(baseIndex + j);
+          // }
           for (int j = 0; j < 3; ++j) {
-            glm::vec3 v = vertList[triTable[cubeIndex][i + j]];
+            int index = j == 0 ? 0 : (3 - j);  // this gives 0, 2, 1
+            glm::vec3 v = vertList[triTable[cubeIndex][i + index]];
             outVerticesFlat.push_back(v.x);
             outVerticesFlat.push_back(v.y);
             outVerticesFlat.push_back(v.z);
+            outTrianglesFlat.push_back(baseIndex + j);
+          }
+        }
+      }
+    }
+  }
+}
+ */
+
+ void marchingCubes_flat(
+    const VoxelObject& obj,
+    std::vector<float>& outVerticesFlat,
+    std::vector<int>& outTrianglesFlat,
+    std::vector<float>& outNormalsFlat)
+{
+  const auto& p = obj.params;
+  int resX = p.resolutionXYZ.x;
+  int resY = p.resolutionXYZ.y;
+  int resZ = p.resolutionXYZ.z;
+  float s = p.resolution;
+
+  auto pos = [&](int x, int y, int z) -> glm::vec3 {
+    return p.center + glm::vec3(x * s, y * s, z * s);
+  };
+
+  for (int x = 0; x < resX - 1; ++x) {
+    for (int y = 0; y < resY - 1; ++y) {
+      for (int z = 0; z < resZ - 1; ++z) {
+        bool cube[8] = {
+            isInside(x, y, z, obj), isInside(x + 1, y, z, obj),
+            isInside(x + 1, y + 1, z, obj), isInside(x, y + 1, z, obj),
+            isInside(x, y, z + 1, obj), isInside(x + 1, y, z + 1, obj),
+            isInside(x + 1, y + 1, z + 1, obj), isInside(x, y + 1, z + 1, obj)};
+
+        int cubeIndex = 0;
+        for (int i = 0; i < 8; ++i)
+          if (cube[i]) cubeIndex |= (1 << i);
+
+        if (edgeTable[cubeIndex] == 0) continue;
+
+        glm::vec3 vertList[12];
+        if (edgeTable[cubeIndex] & 1) vertList[0] = vertexInterp(0.5, pos(x, y, z), pos(x + 1, y, z), cube[0], cube[1]);
+        if (edgeTable[cubeIndex] & 2) vertList[1] = vertexInterp(0.5, pos(x + 1, y, z), pos(x + 1, y + 1, z), cube[1], cube[2]);
+        if (edgeTable[cubeIndex] & 4) vertList[2] = vertexInterp(0.5, pos(x + 1, y + 1, z), pos(x, y + 1, z), cube[2], cube[3]);
+        if (edgeTable[cubeIndex] & 8) vertList[3] = vertexInterp(0.5, pos(x, y + 1, z), pos(x, y, z), cube[3], cube[0]);
+        if (edgeTable[cubeIndex] & 16) vertList[4] = vertexInterp(0.5, pos(x, y, z + 1), pos(x + 1, y, z + 1), cube[4], cube[5]);
+        if (edgeTable[cubeIndex] & 32) vertList[5] = vertexInterp(0.5, pos(x + 1, y, z + 1), pos(x + 1, y + 1, z + 1), cube[5], cube[6]);
+        if (edgeTable[cubeIndex] & 64) vertList[6] = vertexInterp(0.5, pos(x + 1, y + 1, z + 1), pos(x, y + 1, z + 1), cube[6], cube[7]);
+        if (edgeTable[cubeIndex] & 128) vertList[7] = vertexInterp(0.5, pos(x, y + 1, z + 1), pos(x, y, z + 1), cube[7], cube[4]);
+        if (edgeTable[cubeIndex] & 256) vertList[8] = vertexInterp(0.5, pos(x, y, z), pos(x, y, z + 1), cube[0], cube[4]);
+        if (edgeTable[cubeIndex] & 512) vertList[9] = vertexInterp(0.5, pos(x + 1, y, z), pos(x + 1, y, z + 1), cube[1], cube[5]);
+        if (edgeTable[cubeIndex] & 1024) vertList[10] = vertexInterp(0.5, pos(x + 1, y + 1, z), pos(x + 1, y + 1, z + 1), cube[2], cube[6]);
+        if (edgeTable[cubeIndex] & 2048) vertList[11] = vertexInterp(0.5, pos(x, y + 1, z), pos(x, y + 1, z + 1), cube[3], cube[7]);
+
+        for (int i = 0; triTable[cubeIndex][i] != -1; i += 3) {
+          // Swap triangle winding order to fix normals direction (if needed)
+          glm::vec3 v0 = vertList[triTable[cubeIndex][i]];
+          glm::vec3 v1 = vertList[triTable[cubeIndex][i + 2]];  // ← swapped
+          glm::vec3 v2 = vertList[triTable[cubeIndex][i + 1]];  // ← swapped
+
+          glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+
+          int baseIndex = outVerticesFlat.size() / 3;
+
+          for (int j = 0; j < 3; ++j) {
+            glm::vec3 v = (j == 0) ? v0 : (j == 1) ? v1 : v2;
+
+            outVerticesFlat.push_back(v.x);
+            outVerticesFlat.push_back(v.y);
+            outVerticesFlat.push_back(v.z);
+
+            outNormalsFlat.push_back(faceNormal.x);
+            outNormalsFlat.push_back(faceNormal.y);
+            outNormalsFlat.push_back(faceNormal.z);
+
             outTrianglesFlat.push_back(baseIndex + j);
           }
         }

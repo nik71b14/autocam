@@ -175,39 +175,37 @@ int main(int argc, char** argv) {
     setupGLContext(&window, 800, 600, "gcode testing", false);
 
     //$$$$$
-    // Cube with side size 100, centered at origin
-    std::vector<float> vertices2 = {
-      -50, -50, -50,  // 0
-       50, -50, -50,  // 1
-       50,  50, -50,  // 2
-      -50,  50, -50,  // 3
-      -50, -50,  50,  // 4
-       50, -50,  50,  // 5
-       50,  50,  50,  // 6
-      -50,  50,  50   // 7
-    };
-    std::vector<int> triangles2 = {
-      // Bottom face
-      0, 1, 2,  2, 3, 0,
-      // Top face
-      4, 5, 6,  6, 7, 4,
-      // Front face
-      0, 1, 5,  5, 4, 0,
-      // Back face
-      3, 2, 6,  6, 7, 3,
-      // Left face
-      0, 3, 7,  7, 4, 0,
-      // Right face
-      1, 2, 6,  6, 5, 1
-    };
+    /*     // Cube with side size 100, centered at origin
+        std::vector<float> vertices2 = {
+            -10, -10, -10,  // 0
+            10,  -10, -10,  // 1
+            10,  10,  -10,  // 2
+            -10, 10,  -10,  // 3
+            -10, -10, 10,   // 4
+            10,  -10, 10,   // 5
+            10,  10,  10,   // 6
+            -10, 10,  10    // 7
+        };
+        std::vector<int> triangles2 = {// Bottom face (y = -10)
+                                       0, 2, 1, 0, 3, 2,
+                                       // Top face (y = 10)
+                                       4, 5, 6, 4, 6, 7,
+                                       // Front face (z = 10)
+                                       0, 1, 5, 0, 5, 4,
+                                       // Back face (z = -10)
+                                       3, 6, 2, 3, 7, 6,
+                                       // Left face (x = -10)
+                                       0, 4, 7, 0, 7, 3,
+                                       // Right face (x = 10)
+                                       1, 2, 6, 1, 6, 5};
 
-    MeshViewer viewer(window, 800, 600, vertices2, triangles2);
-    viewer.setMeshColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+        MeshViewer viewer(window, 800, 600, vertices2, triangles2);
+        viewer.setMeshColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
-    while (!glfwWindowShouldClose(window)) {
-      viewer.drawFrame();
-      glfwPollEvents();
-    }
+        while (!glfwWindowShouldClose(window)) {
+          viewer.drawFrame();
+          glfwPollEvents();
+        } */
     //$$$$$
 
     GCodeInterpreter interpreter;
@@ -261,14 +259,16 @@ int main(int argc, char** argv) {
 
     //$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
     // MARCHING CUBES --------------------------------------------------------
-    // // Output containers
+    // // Output containers (vec3)
     // std::vector<glm::vec3> vertices;
     // std::vector<glm::ivec3> triangles;
     // marchingCubes(workpiece, vertices, triangles);
 
+    // Output containers (flat arrays)
     std::vector<float> vertices;
     std::vector<int> triangles;
-    marchingCubes_flat(workpiece, vertices, triangles);
+    std::vector<float> normals;
+    marchingCubes_flat(workpiece, vertices, triangles, normals);
 
     // Print summary
     std::cout << "Generated " << vertices.size() << " vertices and " << triangles.size() << " triangles." << std::endl;
@@ -284,13 +284,14 @@ int main(int argc, char** argv) {
     }
 
     // Mesh viewer ------------------------------------------------------------
-    // MeshViewer viewer(window, 800, 600, vertices, triangles);
-    // viewer.setMeshColor(glm::vec4(1, 0, 0, 1));
+    MeshViewer viewer(window, 800, 600, vertices, triangles);
+    viewer.setMeshColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
-    // while (!glfwWindowShouldClose(window)) {
-    //   viewer.drawFrame();
-    //   glfwPollEvents();
-    // }
+    while (!glfwWindowShouldClose(window)) {
+      viewer.drawFrame();
+      glfwPollEvents();
+    }
+
     // ------------------------------------------------------------------------
 
     // ==========> INPUT DI VOXELVIEWVER E' UN VoxelObject, che contiene i dati compressi e il prefix sum, non i dati separati
