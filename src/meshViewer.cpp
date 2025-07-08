@@ -95,7 +95,7 @@ screen. Please include:
 #include "shader.hpp"
 
 #define IDENTITY_MODEL glm::mat4(1.0f)
-#define LIGHT_DIRECTION glm::vec3(-1.0f, -1.0f, -1.0f)
+#define LIGHT_DIRECTION glm::vec3(-0.0f, -1.0f, 1.0f)
 
 MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, const std::vector<float>& vertices, const std::vector<int>& triangles,
                        const std::vector<float>& normals)
