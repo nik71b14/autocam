@@ -265,27 +265,32 @@ int main(int argc, char** argv) {
     // marchingCubes(workpiece, vertices, triangles);
 
     // Output containers (flat arrays)
-    std::vector<float> vertices;
-    std::vector<int> triangles;
-    std::vector<float> normals;
-    marchingCubes_flat(workpiece, vertices, triangles, normals);
+    // std::vector<float> vertices;
+    // std::vector<int> triangles;
+    // std::vector<float> normals;
+    // marchingCubes(workpiece, vertices, triangles, normals);
+    MarchingCubes mc(workpiece);
+    mc.go();  // Run the marching cubes algorithm
+    // mc.saveStl("results/marching_cubes_output.stl");  // Save the mesh to an STL file
 
     // Print summary
-    std::cout << "Generated " << vertices.size() << " vertices and " << triangles.size() << " triangles." << std::endl;
+    std::cout << "Generated " << mc.getVertices().size() << " vertices and " << mc.getTriangles().size() << " triangles." << std::endl;
 
     // Optionally print first few vertices and triangles
     // Print first 10 vertices (flat array: x, y, z, x, y, z, ...)
-    for (size_t i = 0; i < std::min(vertices.size() / 3, size_t(10)); ++i) {
-      std::cout << "v " << vertices[3 * i] << " " << vertices[3 * i + 1] << " " << vertices[3 * i + 2] << std::endl;
-    }
-    // Print first 10 triangles (flat array: i0, i1, i2, i0, i1, i2, ...)
-    for (size_t i = 0; i < std::min(triangles.size() / 3, size_t(10)); ++i) {
-      std::cout << "f " << triangles[3 * i] + 1 << " " << triangles[3 * i + 1] + 1 << " " << triangles[3 * i + 2] + 1 << std::endl;
-    }
+    // for (size_t i = 0; i < std::min(vertices.size() / 3, size_t(10)); ++i) {
+    //   std::cout << "v " << vertices[3 * i] << " " << vertices[3 * i + 1] << " " << vertices[3 * i + 2] << std::endl;
+    // }
+    // // Print first 10 triangles (flat array: i0, i1, i2, i0, i1, i2, ...)
+    // for (size_t i = 0; i < std::min(triangles.size() / 3, size_t(10)); ++i) {
+    //   std::cout << "f " << triangles[3 * i] + 1 << " " << triangles[3 * i + 1] + 1 << " " << triangles[3 * i + 2] + 1 << std::endl;
+    // }
 
     // Mesh viewer ------------------------------------------------------------
-    MeshViewer viewer(window, 800, 600, vertices, triangles);
-    viewer.setMeshColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+    // MeshViewer viewer(window, 800, 600, vertices, triangles, normals);
+    MeshViewer viewer(window, 800, 600, mc.getVertices(), mc.getTriangles(), mc.getNormals());
+
+    viewer.setMeshColor(glm::vec4(0.2f, 0.4f, 0.8f, 1.0f));
 
     while (!glfwWindowShouldClose(window)) {
       viewer.drawFrame();

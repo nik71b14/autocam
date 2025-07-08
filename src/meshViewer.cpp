@@ -97,8 +97,9 @@ screen. Please include:
 #define IDENTITY_MODEL glm::mat4(1.0f)
 #define LIGHT_DIRECTION glm::vec3(-1.0f, -1.0f, -1.0f)
 
-MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, const std::vector<float>& vertices, const std::vector<int>& triangles)
-    : window(window), width(windowWidth), height(windowHeight), vertices(vertices), triangles(triangles) {
+MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, const std::vector<float>& vertices, const std::vector<int>& triangles,
+                       const std::vector<float>& normals)
+    : window(window), width(windowWidth), height(windowHeight), vertices(vertices), triangles(triangles), normals(normals) {
   checkContext();
   createShaders();
   buildMeshBuffers();
@@ -165,25 +166,75 @@ void MeshViewer::checkContext() {
 void MeshViewer::createShaders() {
   checkContext();
   // shader = new Shader("shaders/gcode_flat.vert", "shaders/gcode_flat.frag");
-  shader = new Shader("shaders/mesh_fakenormals.vert", "shaders/mesh_fakenormals.frag");
+  // shader = new Shader("shaders/mesh_fakenormals.vert", "shaders/mesh_fakenormals.frag");
+  shader = new Shader("shaders/gcode.vert", "shaders/gcode.frag");
 }
 
 void MeshViewer::buildMeshBuffers() {
+  // glGenVertexArrays(1, &VAO);
+  // glGenBuffers(1, &VBO);
+  // glGenBuffers(1, &EBO);
+
+  // glBindVertexArray(VAO);
+
+  // glBindBuffer(GL_ARRAY_BUFFER, VBO);
+  // glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+  // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+  // glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(int), triangles.data(), GL_STATIC_DRAW);
+
+  // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+  // glEnableVertexAttribArray(0);
+
+  // glBindVertexArray(0);
+
+  //%%%%
+
+  if (vertices.empty() || triangles.empty()) {
+    throw std::runtime_error("MeshViewer: vertices or triangles are empty.");
+  }
+  if (vertices.size() % 3 != 0) {
+    throw std::runtime_error("MeshViewer: vertices size must be a multiple of 3.");
+  }
+  if (vertices.size() != normals.size()) {
+    throw std::runtime_error("MeshViewer: vertices and normals must have the same size.");
+  }
+
   glGenVertexArrays(1, &VAO);
   glGenBuffers(1, &VBO);
   glGenBuffers(1, &EBO);
 
   glBindVertexArray(VAO);
+
+  // Interleave vertex + normal data into a single buffer
+  std::vector<float> interleaved;
+  for (size_t i = 0; i < vertices.size(); i += 3) {
+    interleaved.push_back(vertices[i]);
+    interleaved.push_back(vertices[i + 1]);
+    interleaved.push_back(vertices[i + 2]);
+
+    interleaved.push_back(normals[i]);
+    interleaved.push_back(normals[i + 1]);
+    interleaved.push_back(normals[i + 2]);
+  }
+
   glBindBuffer(GL_ARRAY_BUFFER, VBO);
-  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, interleaved.size() * sizeof(float), interleaved.data(), GL_STATIC_DRAW);
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(int), triangles.data(), GL_STATIC_DRAW);
 
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+  // Vertex positions at location 0
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
   glEnableVertexAttribArray(0);
 
+  // Normals at location 1
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+
   glBindVertexArray(0);
+
+  //%%%%
 }
 
 glm::mat4 MeshViewer::getViewMatrix() const { return glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp); }

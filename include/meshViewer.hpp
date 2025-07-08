@@ -12,7 +12,7 @@
 
 class MeshViewer {
  public:
-  MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, const std::vector<float>& vertices, const std::vector<int>& triangles);
+  MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, const std::vector<float>& vertices, const std::vector<int>& triangles, const std::vector<float>& normals = {});
 
   ~MeshViewer();
 
@@ -31,6 +31,7 @@ class MeshViewer {
 
   std::vector<float> vertices;
   std::vector<int> triangles;
+  std::vector<float> normals; // per-vertex normals
 
   glm::vec4 meshColor = glm::vec4(0.8f, 0.8f, 0.9f, 1.0f);
   bool useOrtho = false;
