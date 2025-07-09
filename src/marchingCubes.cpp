@@ -49,6 +49,8 @@ write a marching cubes algorithm which takes this VoxelObject and generates a me
 
 #include "marchingCubes.hpp"
 
+#include <GLFW/glfw3.h>
+
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -71,13 +73,47 @@ void MarchingCubes::setTriangles(const std::vector<int>& triangles) { trianglesF
 
 void MarchingCubes::setNormals(const std::vector<float>& normals) { normalsFlat = normals; }
 
+// bool MarchingCubes::isInsideWithPadding(int x, int y, int z, const VoxelObject& obj) {
+//   const auto& p = obj.params;
+
+//   // Allow up to x == resX to detect surface at the last column
+//   if (x < 0 || y < 0 || z < 0 || x > p.resolutionXYZ.x || y >= p.resolutionXYZ.y || z >= p.resolutionXYZ.z) return false;
+
+//   // x == resX means it's outside the valid voxel data
+//   if (x == p.resolutionXYZ.x) return false;
+
+//   int index = y * p.resolutionXYZ.x + x;
+//   GLuint start = obj.prefixSumData[index];
+//   GLuint end = obj.prefixSumData[index + 1];
+
+//   bool inside = false;
+//   for (GLuint i = start; i < end; ++i) {
+//     GLuint zTransition = obj.compressedData[i];
+//     if (z < static_cast<int>(zTransition)) break;
+//     inside = !inside;
+//   }
+//   return inside;
+// }
+
 bool MarchingCubes::isInsideWithPadding(int x, int y, int z, const VoxelObject& obj) {
   const auto& p = obj.params;
 
-  if (x < -1 || y < -1 || z < -1 || x > p.resolutionXYZ.x || y > p.resolutionXYZ.y || z > p.resolutionXYZ.z) return false;
+  // Allow one voxel of padding in all directions
+  if (x < -1 || y < -1 || z < -1 || x > p.resolutionXYZ.x || y > p.resolutionXYZ.y || z > p.resolutionXYZ.z) {
+    return false;
+  }
 
-  if (x < 0 || y < 0 || z < 0 || x >= p.resolutionXYZ.x || y >= p.resolutionXYZ.y || z >= p.resolutionXYZ.z) return false;
+  // For coordinates outside the valid range (padding), consider them outside
+  if (x < 0 || y < 0 || z < 0) {
+    return false;
+  }
 
+  // Special case for maximum boundaries
+  if (x >= p.resolutionXYZ.x || y >= p.resolutionXYZ.y || z >= p.resolutionXYZ.z) {
+    return false;
+  }
+
+  // Normal case - check the voxel data
   int index = y * p.resolutionXYZ.x + x;
   GLuint start = obj.prefixSumData[index];
   GLuint end = obj.prefixSumData[index + 1];
@@ -164,7 +200,22 @@ void MarchingCubes::go() {
   occupancyNext.resize(resYp2 * resZp2, 0);
 
   // Before entering the y/z loops for a given x, populate the current and next slices
+  // auto fillOccupancy = [&](int x, std::vector<uint8_t>& buffer) {
+  //   for (int y = -1; y <= resY; ++y) {
+  //     for (int z = -1; z <= resZ; ++z) {
+  //       int index = (y + 1) * resZp2 + (z + 1);
+  //       buffer[index] = isInsideWithPadding(x, y, z, obj);
+  //     }
+  //   }
+  // };
   auto fillOccupancy = [&](int x, std::vector<uint8_t>& buffer) {
+    // For x values beyond the volume, fill with padding (all false)
+    if (x < 0 || x >= obj.params.resolutionXYZ.x) {
+      std::fill(buffer.begin(), buffer.end(), 0);
+      return;
+    }
+
+    // Normal case - fill from voxel data
     for (int y = -1; y <= resY; ++y) {
       for (int z = -1; z <= resZ; ++z) {
         int index = (y + 1) * resZp2 + (z + 1);
@@ -192,7 +243,8 @@ void MarchingCubes::go() {
   fillOccupancy(0, occupancyCurr);
   fillOccupancy(1, occupancyNext);
 
-  for (int x = -1; x < resX; ++x) {
+  for (int x = -1; x <= resX; ++x) {
+    glfwPollEvents();  //@@@ Just to avoid SO warnings during execution (move to working thread if needed)
     //@@@ DEBUG: Print progress
     int total = resXp2 * resYp2;
     int current = (x + 1) * resYp2;
@@ -208,8 +260,16 @@ void MarchingCubes::go() {
 
     for (int y = -1; y < resY; ++y) {
       for (int z = -1; z < resZ; ++z) {
-        bool cube[8] = {getCached(0, y, z),     getCached(1, y, z),     getCached(1, y + 1, z),     getCached(0, y + 1, z),
-                        getCached(0, y, z + 1), getCached(1, y, z + 1), getCached(1, y + 1, z + 1), getCached(0, y + 1, z + 1)};
+        bool cube[8] = {
+            getCached(0, y, z),          // (x, y, z)
+            getCached(1, y, z),          // (x+1, y, z)
+            getCached(1, y + 1, z),      // (x+1, y+1, z)
+            getCached(0, y + 1, z),      // (x, y+1, z)
+            getCached(0, y, z + 1),      // (x, y, z+1)
+            getCached(1, y, z + 1),      // (x+1, y, z+1)
+            getCached(1, y + 1, z + 1),  // (x+1, y+1, z+1)
+            getCached(0, y + 1, z + 1)   // (x, y+1, z+1)
+        };
 
         int cubeIndex = 0;
         //%%%
@@ -259,6 +319,7 @@ void MarchingCubes::go() {
     // Shift and refill
     std::swap(occupancyPrev, occupancyCurr);
     std::swap(occupancyCurr, occupancyNext);
+
     fillOccupancy(x + 2, occupancyNext);
   }
 }

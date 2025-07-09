@@ -622,10 +622,7 @@ void GcodeViewer::drawWorkpieceVO() {
   shader_raymarching->dismiss();  // Dismiss the shader after use
 }
 
-void GcodeViewer::printCounter(int value) {
-    std::cout << "\rCounter: " << value << std::string(10, ' ') << std::flush;
-}
-
+void GcodeViewer::printCounter(int value) { std::cout << "\rCounter: " << value << std::string(10, ' ') << std::flush; }
 
 void GcodeViewer::initWorkpieceVO(const std::string& path) { initVO(path, VOType::WORKPIECE); }
 

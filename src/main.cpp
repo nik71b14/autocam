@@ -174,40 +174,6 @@ int main(int argc, char** argv) {
     GLFWwindow* window = nullptr;
     setupGLContext(&window, 800, 600, "gcode testing", false);
 
-    //$$$$$
-    /*     // Cube with side size 100, centered at origin
-        std::vector<float> vertices2 = {
-            -10, -10, -10,  // 0
-            10,  -10, -10,  // 1
-            10,  10,  -10,  // 2
-            -10, 10,  -10,  // 3
-            -10, -10, 10,   // 4
-            10,  -10, 10,   // 5
-            10,  10,  10,   // 6
-            -10, 10,  10    // 7
-        };
-        std::vector<int> triangles2 = {// Bottom face (y = -10)
-                                       0, 2, 1, 0, 3, 2,
-                                       // Top face (y = 10)
-                                       4, 5, 6, 4, 6, 7,
-                                       // Front face (z = 10)
-                                       0, 1, 5, 0, 5, 4,
-                                       // Back face (z = -10)
-                                       3, 6, 2, 3, 7, 6,
-                                       // Left face (x = -10)
-                                       0, 4, 7, 0, 7, 3,
-                                       // Right face (x = 10)
-                                       1, 2, 6, 1, 6, 5};
-
-        MeshViewer viewer(window, 800, 600, vertices2, triangles2);
-        viewer.setMeshColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
-
-        while (!glfwWindowShouldClose(window)) {
-          viewer.drawFrame();
-          glfwPollEvents();
-        } */
-    //$$$$$
-
     GCodeInterpreter interpreter;
 
     // CARVING ----------------------------------------------------------------
@@ -221,34 +187,23 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    // Instantiate and initialize GcodeViewer object
+    // Instantiate and initialize GcodeViewer object providing the toolpath
     GcodeViewer gCodeViewer(window, interpreter.getToolpath());
 
     gCodeViewer.setProjectionType(ProjectionType::ORTHOGRAPHIC);  // Set orthographic projection
-
-    //@@@ FARE: verificare e completare queste due funzioni
-    //@@@ FARE: inserire   ops.subtractGPU_init(ops.getObjects()[0], ops.getObjects()[1]); da qualche parte
-    gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");  // Set workpiece .bin file
-    gCodeViewer.setTool("test/hemispheric_mill_10.bin");        // Set tool .bin file)
+    gCodeViewer.setWorkpiece("test/workpiece_100_100_50.bin");    // Set workpiece .bin file
+    gCodeViewer.setTool("test/hemispheric_mill_10.bin");          // Set tool .bin file)
 
     // Start jogging
     interpreter.beginJog();
 
     // Jog loop
     while (!interpreter.jogComplete()) {
-      interpreter.jog(2.0f);  // Move by 5 units (pixels, not mm currently) @@@ Introduce real units
+      interpreter.jog(2.0f);  // Move by 2 units (pixels, not mm currently) @@@ Introduce real units
                               // Render frame
       glm::vec3 pos = interpreter.getCurrentPosition();
 
-#ifdef MAIN_DEBUG_OUTPUT
-      std::cout << "Tool Position: X=" << pos.x << " Y=" << pos.y << " Z=" << pos.z << std::endl;
-#endif
-
-      // gCodeViewer.setToolPosition(pos);
       gCodeViewer.carve(pos);  // Carve the workpiece with the tool
-
-      //@@@ Add small delay
-      // std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     // Clean up
@@ -258,56 +213,26 @@ int main(int argc, char** argv) {
     VoxelObject workpiece = gCodeViewer.getWorkpiece();  // Get the voxelized workpiece
 
     //$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-    // MARCHING CUBES --------------------------------------------------------
-    // // Output containers (vec3)
-    // std::vector<glm::vec3> vertices;
-    // std::vector<glm::ivec3> triangles;
-    // marchingCubes(workpiece, vertices, triangles);
+    //@@@ PROBLEM: if I have a face at the extreme value of x, a corresponding face in the mesh is not generated
+    /*
+      MarchingCubes mc(workpiece);
+      mc.go();  // Run the marching cubes algorithm
+      // mc.saveStl("results/marching_cubes_output.stl");  // Save the mesh to an STL file
+      MeshViewer viewer(window, 800, 600, mc.getVertices(), mc.getTriangles(), mc.getNormals());
+      viewer.setMeshColor(glm::vec4(0.7f, 0.7f, 0.7f, 1.0f));
 
-    // Output containers (flat arrays)
-    // std::vector<float> vertices;
-    // std::vector<int> triangles;
-    // std::vector<float> normals;
-    // marchingCubes(workpiece, vertices, triangles, normals);
-    MarchingCubes mc(workpiece);
-    mc.go();  // Run the marching cubes algorithm
-    // mc.saveStl("results/marching_cubes_output.stl");  // Save the mesh to an STL file
-
-    // Print summary
-    std::cout << "Generated " << mc.getVertices().size() << " vertices and " << mc.getTriangles().size() << " triangles." << std::endl;
-
-    // Optionally print first few vertices and triangles
-    // Print first 10 vertices (flat array: x, y, z, x, y, z, ...)
-    // for (size_t i = 0; i < std::min(vertices.size() / 3, size_t(10)); ++i) {
-    //   std::cout << "v " << vertices[3 * i] << " " << vertices[3 * i + 1] << " " << vertices[3 * i + 2] << std::endl;
-    // }
-    // // Print first 10 triangles (flat array: i0, i1, i2, i0, i1, i2, ...)
-    // for (size_t i = 0; i < std::min(triangles.size() / 3, size_t(10)); ++i) {
-    //   std::cout << "f " << triangles[3 * i] + 1 << " " << triangles[3 * i + 1] + 1 << " " << triangles[3 * i + 2] + 1 << std::endl;
-    // }
-
-    // Mesh viewer ------------------------------------------------------------
-    // MeshViewer viewer(window, 800, 600, vertices, triangles, normals);
-    MeshViewer viewer(window, 800, 600, mc.getVertices(), mc.getTriangles(), mc.getNormals());
-
-    viewer.setMeshColor(glm::vec4(0.2f, 0.4f, 0.8f, 1.0f));
-
-    while (!glfwWindowShouldClose(window)) {
-      viewer.drawFrame();
-      glfwPollEvents();
-    }
-
-    // ------------------------------------------------------------------------
-
-    // ==========> INPUT DI VOXELVIEWVER E' UN VoxelObject, che contiene i dati compressi e il prefix sum, non i dati separati
-
-    // ------------------------------------------------------------------------
+      while (!glfwWindowShouldClose(window)) {
+        viewer.drawFrame();
+        glfwPollEvents();
+      }
+    */
     //$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
     // Visualize the carved workpiece
+    //@@@ TODO: INPUT DI VOXELVIEWVER E' UN VoxelObject, che contiene i dati compressi e il prefix sum, non i dati separati
+    //@@@ TODO: PASSARE window a VoxelViewer e non creare un'altra finestra
     VoxelViewer vviewer(workpiece.compressedData, workpiece.prefixSumData, workpiece.params);
-    // VoxelViewer viewer(result.compressedData, result.prefixSumData, result.params);
-    // viewer.setOrthographic(true);  // Set orthographic projection
+    // vviewer.setOrthographic(true);  // Set orthographic projection
     vviewer.run();
 
     destroyGLContext(window);
