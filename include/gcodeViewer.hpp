@@ -46,6 +46,7 @@ class GcodeViewer {
  private:
   void init();
   bool shouldClose() const;
+  void printCounter(int value);
 
   Shader* shader = nullptr;
   // std::unique_ptr<Shader> shader;

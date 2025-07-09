@@ -53,10 +53,7 @@ class MarchingCubes {
   std::vector<float> normalsFlat;
 
   // Helpers for marching cubes
-  static bool isInside(int x, int y, int z, const VoxelObject& obj);
   static bool isInsideWithPadding(int x, int y, int z, const VoxelObject& obj);
   float smoothedScalarField(int x, int y, int z, const VoxelObject& obj);
-  //%%%
-  static glm::vec3 vertexInterp(float isoLevel, const glm::vec3& p1, const glm::vec3& p2, bool valp1, bool valp2);
-  // glm::vec3 vertexInterp(float isoLevel, const glm::vec3& p1, const glm::vec3& p2, float valp1, float valp2);
+  glm::vec3 vertexInterp(const glm::vec3& p1, const glm::vec3& p2);
 };

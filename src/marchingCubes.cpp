@@ -23,7 +23,7 @@ write a marching cubes algorithm which takes this VoxelObject and generates a me
       compressedData for column i = y * resolutionX + x, and prefixSumData[i+1] is the end.
 
   Role of isInside():
-    - `isInside(x, y, z, obj)` checks whether voxel (x, y, z) is inside the solid.
+    - `isInsideWithPadding(x, y, z, obj)` checks whether voxel (x, y, z) is inside the solid.
     - It does so by counting how many Z-transitions occur at or below Z.
       - If the count is odd → the voxel is inside.
       - If the count is even → the voxel is outside.
@@ -32,7 +32,7 @@ write a marching cubes algorithm which takes this VoxelObject and generates a me
 
   Algorithm Overview:
     1. Iterate over all voxels in the grid, treating each as the corner of a cube.
-    2. Use `isInside()` to determine the binary occupancy of each of the 8 cube corners.
+    2. Use `isInsideWithPadding()` to determine the binary occupancy of each of the 8 cube corners.
     3. Construct a `cubeIndex` from those 8 bits.
     4. Use `edgeTable[cubeIndex]` to find which edges the surface intersects.
     5. Use `triTable[cubeIndex]` to determine how to connect those intersections into triangles.
@@ -71,23 +71,6 @@ void MarchingCubes::setTriangles(const std::vector<int>& triangles) { trianglesF
 
 void MarchingCubes::setNormals(const std::vector<float>& normals) { normalsFlat = normals; }
 
-bool MarchingCubes::isInside(int x, int y, int z, const VoxelObject& obj) {
-  const auto& p = obj.params;
-  if (x < 0 || y < 0 || z < 0 || x >= p.resolutionXYZ.x || y >= p.resolutionXYZ.y || z >= p.resolutionXYZ.z) return false;
-
-  int index = y * p.resolutionXYZ.x + x;
-  GLuint start = obj.prefixSumData[index];
-  GLuint end = obj.prefixSumData[index + 1];
-
-  bool inside = false;
-  for (GLuint i = start; i < end; ++i) {
-    GLuint zTransition = obj.compressedData[i];
-    if (z < static_cast<int>(zTransition)) break;
-    inside = !inside;
-  }
-  return inside;
-}
-
 bool MarchingCubes::isInsideWithPadding(int x, int y, int z, const VoxelObject& obj) {
   const auto& p = obj.params;
 
@@ -107,6 +90,27 @@ bool MarchingCubes::isInsideWithPadding(int x, int y, int z, const VoxelObject& 
   }
   return inside;
 }
+
+/* // With binary search for efficiency (no ok for small numbers of transitions)
+bool MarchingCubes::isInsideWithPadding(int x, int y, int z, const VoxelObject& obj) {
+  const auto& p = obj.params;
+
+  // Allow coordinates in the range [-1, res] for padding, but discard anything out of bounds
+  if (x < -1 || y < -1 || z < -1 || x > p.resolutionXYZ.x || y > p.resolutionXYZ.y || z > p.resolutionXYZ.z) return false;
+
+  if (x < 0 || y < 0 || z < 0 || x >= p.resolutionXYZ.x || y >= p.resolutionXYZ.y || z >= p.resolutionXYZ.z) return false;
+
+  int index = y * p.resolutionXYZ.x + x;
+  GLuint start = obj.prefixSumData[index];
+  GLuint end = obj.prefixSumData[index + 1];
+
+  auto first = obj.compressedData.begin() + start;
+  auto last = obj.compressedData.begin() + end;
+  auto upper = std::upper_bound(first, last, static_cast<GLuint>(z));
+
+  int count = std::distance(first, upper);
+  return count % 2 == 1;
+} */
 
 float MarchingCubes::smoothedScalarField(int x, int y, int z, const VoxelObject& obj) {
   // Can increase the kernel size (e.g., 3×3×3 or even 5×5×5) for more aggressive smoothing, but 6-connected neighbors is fast and good for most cases.
@@ -129,19 +133,7 @@ float MarchingCubes::smoothedScalarField(int x, int y, int z, const VoxelObject&
   return sum / count;  // Value in [0,1]
 }
 
-//%%%
-glm::vec3 MarchingCubes::vertexInterp(float isoLevel, const glm::vec3& p1, const glm::vec3& p2, bool valp1, bool valp2) {
-  if (std::abs(isoLevel - (valp1 ? 1.0f : 0.0f)) < 0.001f) return p1;
-  if (std::abs(isoLevel - (valp2 ? 1.0f : 0.0f)) < 0.001f) return p2;
-  return (p1 + p2) * 0.5f;
-}
-// glm::vec3 MarchingCubes::vertexInterp(float isoLevel, const glm::vec3& p1, const glm::vec3& p2, float valp1, float valp2) {
-//   if (std::abs(isoLevel - valp1) < 0.0001f) return p1;
-//   if (std::abs(isoLevel - valp2) < 0.0001f) return p2;
-//   if (std::abs(valp1 - valp2) < 0.0001f) return p1;
-//   float mu = (isoLevel - valp1) / (valp2 - valp1);
-//   return p1 + mu * (p2 - p1);
-// }
+glm::vec3 MarchingCubes::vertexInterp(const glm::vec3& p1, const glm::vec3& p2) { return (p1 + p2) * 0.5f; }
 
 void MarchingCubes::go() {
   if (!voxelObj) return;
@@ -152,61 +144,93 @@ void MarchingCubes::go() {
   int resZ = p.resolutionXYZ.z;
   float s = p.resolution;
 
+  // Precompute some constants
+  int resXp2 = resX + 2;
+  int resYp2 = resY + 2;
+  int resZp2 = resZ + 2;
+
   auto pos = [&](int x, int y, int z) -> glm::vec3 { return p.center + glm::vec3(x * s, y * s, z * s); };
 
+  // Roughly reserve space for the output buffers to avoid reallocations
+  verticesFlat.reserve(1e6);  //@@@ Use heuristic based on resolution
+  normalsFlat.reserve(1e6);
+  trianglesFlat.reserve(1e6);
+
+  // Instantiate and initialize occupancy buffers for the current, previous, and next slices
+  // This stores the occupancy (0/1) for three consecutive x slices: x-1, x, x+1, each of shape (resY+2)*(resZ+2) to include padding
+  std::vector<uint8_t> occupancyPrev, occupancyCurr, occupancyNext;
+  occupancyPrev.resize(resYp2 * resZp2, 0);
+  occupancyCurr.resize(resYp2 * resZp2, 0);
+  occupancyNext.resize(resYp2 * resZp2, 0);
+
+  // Before entering the y/z loops for a given x, populate the current and next slices
+  auto fillOccupancy = [&](int x, std::vector<uint8_t>& buffer) {
+    for (int y = -1; y <= resY; ++y) {
+      for (int z = -1; z <= resZ; ++z) {
+        int index = (y + 1) * resZp2 + (z + 1);
+        buffer[index] = isInsideWithPadding(x, y, z, obj);
+      }
+    }
+  };
+
+  auto getCached = [&](int xOffset, int y, int z) -> bool {
+    const std::vector<uint8_t>* buffer = nullptr;
+    if (xOffset == 0)
+      buffer = &occupancyCurr;
+    else if (xOffset == -1)
+      buffer = &occupancyPrev;
+    else if (xOffset == 1)
+      buffer = &occupancyNext;
+    else
+      return false;  // safety
+    int index = (y + 1) * resZp2 + (z + 1);
+    return (*buffer)[index];
+  };
+
+  // Pre-fill initial 3 x-slices
+  fillOccupancy(-1, occupancyPrev);
+  fillOccupancy(0, occupancyCurr);
+  fillOccupancy(1, occupancyNext);
+
   for (int x = -1; x < resX; ++x) {
-    int total = (resX + 2) * (resY + 2);
-    int current = (x + 1) * (resY + 2);
+    //@@@ DEBUG: Print progress
+    int total = resXp2 * resYp2;
+    int current = (x + 1) * resYp2;
     static int lastPercent = -1;
     int percent = static_cast<int>(100.0f * current / total);
     if (percent != lastPercent) {
       std::cout << "\rMarching Cubes progress: " << percent << "%   " << std::flush;
       lastPercent = percent;
     }
+    //@@@
+
+    fillOccupancy(x + 2, occupancyNext);
 
     for (int y = -1; y < resY; ++y) {
       for (int z = -1; z < resZ; ++z) {
-        //%%%%
-        bool cube[8] = {isInsideWithPadding(x, y, z, obj),
-                        isInsideWithPadding(x + 1, y, z, obj),
-                        isInsideWithPadding(x + 1, y + 1, z, obj),
-                        isInsideWithPadding(x, y + 1, z, obj),
-                        isInsideWithPadding(x, y, z + 1, obj),
-                        isInsideWithPadding(x + 1, y, z + 1, obj),
-                        isInsideWithPadding(x + 1, y + 1, z + 1, obj),
-                        isInsideWithPadding(x, y + 1, z + 1, obj)};
-
-        // float cube[8] = {smoothedScalarField(x, y, z, obj),
-        //                  smoothedScalarField(x + 1, y, z, obj),
-        //                  smoothedScalarField(x + 1, y + 1, z, obj),
-        //                  smoothedScalarField(x, y + 1, z, obj),
-        //                  smoothedScalarField(x, y, z + 1, obj),
-        //                  smoothedScalarField(x + 1, y, z + 1, obj),
-        //                  smoothedScalarField(x + 1, y + 1, z + 1, obj),
-        //                  smoothedScalarField(x, y + 1, z + 1, obj)};
+        bool cube[8] = {getCached(0, y, z),     getCached(1, y, z),     getCached(1, y + 1, z),     getCached(0, y + 1, z),
+                        getCached(0, y, z + 1), getCached(1, y, z + 1), getCached(1, y + 1, z + 1), getCached(0, y + 1, z + 1)};
 
         int cubeIndex = 0;
         //%%%
         for (int i = 0; i < 8; ++i)
           if (cube[i]) cubeIndex |= (1 << i);
-        // for (int i = 0; i < 8; ++i)
-        //   if (cube[i] >= 0.5f) cubeIndex |= (1 << i);
 
         if (edgeTable[cubeIndex] == 0) continue;
 
         glm::vec3 vertList[12];
-        if (edgeTable[cubeIndex] & 1) vertList[0] = vertexInterp(0.5f, pos(x, y, z), pos(x + 1, y, z), cube[0], cube[1]);
-        if (edgeTable[cubeIndex] & 2) vertList[1] = vertexInterp(0.5f, pos(x + 1, y, z), pos(x + 1, y + 1, z), cube[1], cube[2]);
-        if (edgeTable[cubeIndex] & 4) vertList[2] = vertexInterp(0.5f, pos(x + 1, y + 1, z), pos(x, y + 1, z), cube[2], cube[3]);
-        if (edgeTable[cubeIndex] & 8) vertList[3] = vertexInterp(0.5f, pos(x, y + 1, z), pos(x, y, z), cube[3], cube[0]);
-        if (edgeTable[cubeIndex] & 16) vertList[4] = vertexInterp(0.5f, pos(x, y, z + 1), pos(x + 1, y, z + 1), cube[4], cube[5]);
-        if (edgeTable[cubeIndex] & 32) vertList[5] = vertexInterp(0.5f, pos(x + 1, y, z + 1), pos(x + 1, y + 1, z + 1), cube[5], cube[6]);
-        if (edgeTable[cubeIndex] & 64) vertList[6] = vertexInterp(0.5f, pos(x + 1, y + 1, z + 1), pos(x, y + 1, z + 1), cube[6], cube[7]);
-        if (edgeTable[cubeIndex] & 128) vertList[7] = vertexInterp(0.5f, pos(x, y + 1, z + 1), pos(x, y, z + 1), cube[7], cube[4]);
-        if (edgeTable[cubeIndex] & 256) vertList[8] = vertexInterp(0.5f, pos(x, y, z), pos(x, y, z + 1), cube[0], cube[4]);
-        if (edgeTable[cubeIndex] & 512) vertList[9] = vertexInterp(0.5f, pos(x + 1, y, z), pos(x + 1, y, z + 1), cube[1], cube[5]);
-        if (edgeTable[cubeIndex] & 1024) vertList[10] = vertexInterp(0.5f, pos(x + 1, y + 1, z), pos(x + 1, y + 1, z + 1), cube[2], cube[6]);
-        if (edgeTable[cubeIndex] & 2048) vertList[11] = vertexInterp(0.5f, pos(x, y + 1, z), pos(x, y + 1, z + 1), cube[3], cube[7]);
+        if (edgeTable[cubeIndex] & 1) vertList[0] = vertexInterp(pos(x, y, z), pos(x + 1, y, z));
+        if (edgeTable[cubeIndex] & 2) vertList[1] = vertexInterp(pos(x + 1, y, z), pos(x + 1, y + 1, z));
+        if (edgeTable[cubeIndex] & 4) vertList[2] = vertexInterp(pos(x + 1, y + 1, z), pos(x, y + 1, z));
+        if (edgeTable[cubeIndex] & 8) vertList[3] = vertexInterp(pos(x, y + 1, z), pos(x, y, z));
+        if (edgeTable[cubeIndex] & 16) vertList[4] = vertexInterp(pos(x, y, z + 1), pos(x + 1, y, z + 1));
+        if (edgeTable[cubeIndex] & 32) vertList[5] = vertexInterp(pos(x + 1, y, z + 1), pos(x + 1, y + 1, z + 1));
+        if (edgeTable[cubeIndex] & 64) vertList[6] = vertexInterp(pos(x + 1, y + 1, z + 1), pos(x, y + 1, z + 1));
+        if (edgeTable[cubeIndex] & 128) vertList[7] = vertexInterp(pos(x, y + 1, z + 1), pos(x, y, z + 1));
+        if (edgeTable[cubeIndex] & 256) vertList[8] = vertexInterp(pos(x, y, z), pos(x, y, z + 1));
+        if (edgeTable[cubeIndex] & 512) vertList[9] = vertexInterp(pos(x + 1, y, z), pos(x + 1, y, z + 1));
+        if (edgeTable[cubeIndex] & 1024) vertList[10] = vertexInterp(pos(x + 1, y + 1, z), pos(x + 1, y + 1, z + 1));
+        if (edgeTable[cubeIndex] & 2048) vertList[11] = vertexInterp(pos(x, y + 1, z), pos(x, y + 1, z + 1));
 
         for (int i = 0; triTable[cubeIndex][i] != -1; i += 3) {
           glm::vec3 v0 = vertList[triTable[cubeIndex][i]];
@@ -218,13 +242,24 @@ void MarchingCubes::go() {
 
           for (int j = 0; j < 3; ++j) {
             glm::vec3 v = (j == 0) ? v0 : (j == 1) ? v1 : v2;
-            verticesFlat.insert(verticesFlat.end(), {v.x, v.y, v.z});
-            normalsFlat.insert(normalsFlat.end(), {faceNormal.x, faceNormal.y, faceNormal.z});
+            verticesFlat.push_back(v.x);
+            verticesFlat.push_back(v.y);
+            verticesFlat.push_back(v.z);
+
+            normalsFlat.push_back(faceNormal.x);
+            normalsFlat.push_back(faceNormal.y);
+            normalsFlat.push_back(faceNormal.z);
+
             trianglesFlat.push_back(baseIndex + j);
           }
         }
       }
     }
+
+    // Shift and refill
+    std::swap(occupancyPrev, occupancyCurr);
+    std::swap(occupancyCurr, occupancyNext);
+    fillOccupancy(x + 2, occupancyNext);
   }
 }
 

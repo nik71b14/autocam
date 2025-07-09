@@ -622,6 +622,11 @@ void GcodeViewer::drawWorkpieceVO() {
   shader_raymarching->dismiss();  // Dismiss the shader after use
 }
 
+void GcodeViewer::printCounter(int value) {
+    std::cout << "\rCounter: " << value << std::string(10, ' ') << std::flush;
+}
+
+
 void GcodeViewer::initWorkpieceVO(const std::string& path) { initVO(path, VOType::WORKPIECE); }
 
 void GcodeViewer::initToolVO(const std::string& path) { initVO(path, VOType::TOOL); }
@@ -635,8 +640,7 @@ void GcodeViewer::carve(glm::vec3 pos) {
 
   //@@@ DEBUG: Increment a counter to track the number of carvings
   carvingCounter++;
-  std::cout << "Counter: " << carvingCounter << std::endl;
-
+  printCounter(carvingCounter);
   //@@@ DEBUG: stop here (no need to update the workpieceVO_VAO for now)
   return;
 
