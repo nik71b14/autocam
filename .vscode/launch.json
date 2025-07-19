@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug voxelize (Linux)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/debug/voxelize_debug",
+      //"args": ["models/cube.stl"],
+      //"args": ["models/cylinder.stl"],
+      //"args": ["models/model.stl"],
+      //"args": ["models/model2_bin.stl"],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "environment": [],
+      "externalConsole": false
+    }
+  ]
+}
