@@ -88,19 +88,22 @@ int runSimulate(const CliArgs& args) {
         ++steps;
       }
     }
-    auto tEnqueued = std::chrono::high_resolution_clock::now();  // dispatches enqueued (GPU still working)
+    // Wait for the GPU carving to actually complete, to measure the net carving time
+    // separately from copyBack. This sync is free: copyBack() syncs anyway, so the
+    // total is unchanged.
+    gCodeViewer.finishGPU();
+    auto tCarveDone = std::chrono::high_resolution_clock::now();
 
-    // Pull the carved workpiece back from the GPU to CPU memory.
-    // copyBack() forces GPU completion (sync) + readback + CPU recompression.
+    // Pull the carved workpiece back from the GPU to CPU memory (readback + GPU compaction).
     gCodeViewer.copyBack();
     auto tDone = std::chrono::high_resolution_clock::now();
 
-    const double enqueueMs = std::chrono::duration<double, std::milli>(tEnqueued - tStart).count();
+    const double carveMs = std::chrono::duration<double, std::milli>(tCarveDone - tStart).count();
     const double totalMs = std::chrono::duration<double, std::milli>(tDone - tStart).count();
     std::cout << "\n";  // terminate the in-place carving counter line
     std::cout << "Carving [" << (legacy ? "legacy" : "swept") << "]: " << steps
-              << (legacy ? " passi" : " segmenti") << " | enqueue " << enqueueMs
-              << " ms | totale (incl. GPU sync + copyback) " << totalMs << " ms\n";
+              << (legacy ? " passi" : " segmenti") << " | carving netto " << carveMs
+              << " ms | totale (incl. copyback) " << totalMs << " ms\n";
 
     // Optionally persist the carved result (reuses BoolOps' .bin format).
     if (args.has("--out")) {

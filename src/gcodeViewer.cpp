@@ -690,3 +690,5 @@ void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1) {
   carvingCounter++;
   if (carvingCounter % 64 == 0) printCounter(carvingCounter);
 }
+
+void GcodeViewer::finishGPU() { glFinish(); }
