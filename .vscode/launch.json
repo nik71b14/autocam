@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug voxelize (Linux)",
+      "name": "Debug autocam (Linux)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/debug/voxelize_debug",
+      "program": "${workspaceFolder}/debug/autocam",
       //"args": ["models/cube.stl"],
       //"args": ["models/cylinder.stl"],
       //"args": ["models/model.stl"],

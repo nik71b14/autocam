@@ -350,9 +350,11 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
   std::string cmd;
   parseLine(line, params, cmd);
 
-  std::cout << "Executing command: " << cmd << std::endl;
-  for (const auto& p : params) {
-    std::cout << "  Param " << p.first << " = " << p.second << std::endl;
+  if (verbose) {
+    std::cout << "Executing command: " << cmd << std::endl;
+    for (const auto& p : params) {
+      std::cout << "  Param " << p.first << " = " << p.second << std::endl;
+    }
   }
 
   if (cmd.empty() || line.empty() || line[0] == ';' || line[0] == '(') {
@@ -456,7 +458,7 @@ std::vector<GcodePoint> GCodeInterpreter::getToolpath() {
 
   previewMode = true;
   for (const auto& line : gcodeLines) {
-    std::cout << line << std::endl;
+    if (verbose) std::cout << line << std::endl;
     executeCommand(line);  // reuses actual logic
   }
   previewMode = false;

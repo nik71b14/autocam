@@ -41,6 +41,9 @@ class GCodeInterpreter {
   bool isRunning() const;
   void stop();
 
+  // Enable/disable the noisy per-command logging (off by default).
+  void setVerbose(bool v) { verbose = v; }
+
   glm::vec3 getCurrentPosition() const;
   double getCurrentFeedRate() const;
   double getCurrentSpindleSpeed() const;
@@ -57,6 +60,7 @@ class GCodeInterpreter {
   std::thread simulationThread;
   std::vector<GcodePoint> toolpath;
   bool previewMode = false;
+  bool verbose = false;  // gate noisy per-command logging
 
   mutable std::mutex stateMutex;
   SimulationState state;
