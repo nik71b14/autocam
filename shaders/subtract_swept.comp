@@ -1,0 +1,134 @@
+// Swept-tool subtraction: for a single linear toolpath segment, remove the volume
+// swept by the tool (tool ⊕ segment) from the workpiece in ONE dispatch — instead
+// of stamping the full tool at every micro-step.
+//
+// Per workpiece column (gx,gy) inside the swept bounding box:
+//   1) build the swept-tool column by taking the Z envelope of the tool over the
+//      sub-positions sampled along the segment (convex-in-Z tool => one interval
+//      [zbMin, ztMax]); then
+//   2) subtract that interval from the workpiece column (same merge as subtract_flat).
+//
+// Reuses the existing buffers: obj1 flat (in/out), obj2 = original tool (compressed).
+#version 460
+#extension GL_ARB_shader_storage_buffer_object : enable
+
+layout(std430, binding = 0) buffer Obj1FlatData { uint obj1_flatData[]; };
+layout(std430, binding = 1) buffer Obj1DataNum { uint obj1_dataNum[]; };
+layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
+layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
+
+uniform int w1, h1, z1;       // workpiece grid
+uniform int w2, h2, z2;       // tool grid
+uniform uint maxTransitions;  // per-column slot count of the flat workpiece
+uniform int baseX, baseY;     // workpiece-space origin of this dispatch (swept bbox)
+uniform ivec3 translateStart; // tool-center (workpiece coords) at the segment start
+uniform ivec3 translateDelta; // translate(end) - translate(start)
+uniform int numSubsteps;      // sub-positions sampled along the segment (>= 0)
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main() {
+    uint gx = uint(baseX) + gl_GlobalInvocationID.x;
+    uint gy = uint(baseY) + gl_GlobalInvocationID.y;
+    if (gx >= uint(w1) || gy >= uint(h1)) return;
+
+    uint idx1 = gx + gy * uint(w1);
+    uint start1 = idx1 * maxTransitions;
+    uint count1 = obj1_dataNum[idx1];
+
+    // --- (1) Swept-tool column: Z envelope of the tool over the segment ---------
+    int zbMin = 2147483647;
+    int ztMax = -2147483648;
+    bool hasMat = false;
+
+    int steps = max(numSubsteps, 0);
+
+    // Bound the substep loop to the range [k0,k1] where the tool CAN cover this
+    // column (from the linear center motion tr ~= start + k*delta/K), instead of
+    // scanning all `steps`. The exact in-bounds test below still guarantees
+    // correctness; the +/-1 margins keep the range a safe superset.
+    int k0 = 0, k1 = steps;
+    if (steps > 0) {
+        float Kf = float(steps);
+        if (translateDelta.x != 0) {
+            float ka = float(int(gx) - w2 / 2 - translateStart.x) * Kf / float(translateDelta.x);
+            float kb = float(int(gx) + w2 / 2 - translateStart.x) * Kf / float(translateDelta.x);
+            k0 = max(k0, int(floor(min(ka, kb))) - 1);
+            k1 = min(k1, int(ceil(max(ka, kb))) + 1);
+        } else if ((int(gx) - (translateStart.x - w2 / 2)) < 0 || (int(gx) - (translateStart.x - w2 / 2)) >= w2) {
+            k1 = -1;  // tool never covers this column in X
+        }
+        if (translateDelta.y != 0) {
+            float ka = float(int(gy) - h2 / 2 - translateStart.y) * Kf / float(translateDelta.y);
+            float kb = float(int(gy) + h2 / 2 - translateStart.y) * Kf / float(translateDelta.y);
+            k0 = max(k0, int(floor(min(ka, kb))) - 1);
+            k1 = min(k1, int(ceil(max(ka, kb))) + 1);
+        } else if ((int(gy) - (translateStart.y - h2 / 2)) < 0 || (int(gy) - (translateStart.y - h2 / 2)) >= h2) {
+            k1 = -1;  // tool never covers this column in Y
+        }
+        k0 = max(k0, 0);
+        k1 = min(k1, steps);
+    }
+
+    for (int k = k0; k <= k1; ++k) {
+        float t = (steps > 0) ? float(k) / float(steps) : 0.0;
+        ivec3 tr = translateStart + ivec3(round(t * vec3(translateDelta)));
+
+        int x2 = int(gx) - (tr.x - w2 / 2);
+        int y2 = int(gy) - (tr.y - h2 / 2);
+        if (x2 < 0 || x2 >= w2 || y2 < 0 || y2 >= h2) continue;  // tool doesn't cover this column here
+
+        uint idx2 = uint(x2) + uint(y2) * uint(w2);
+        uint s2 = obj2_prefixSumData[idx2];
+        uint e2 = (idx2 + 1u < obj2_prefixSumData.length()) ? obj2_prefixSumData[idx2 + 1u] : obj2_compressedData.length();
+        if (e2 <= s2) continue;  // empty tool column
+
+        int zShift = tr.z - z2 / 2;
+        int toolBottom = int(obj2_compressedData[s2]) + zShift;       // lowest transition
+        int toolTop    = int(obj2_compressedData[e2 - 1u]) + zShift;  // highest transition
+        zbMin = min(zbMin, toolBottom);
+        ztMax = max(ztMax, toolTop);
+        hasMat = true;
+    }
+
+    uint count2 = hasMat ? 2u : 0u;  // swept-tool column = single interval [zbMin, ztMax]
+
+    // --- (2) Subtract [zbMin, ztMax] from the workpiece column ------------------
+    uint i1 = 0u, i2 = 0u;
+    uint outCount = 0u;
+    uint localOut[64];
+    bool obj1On = false, obj2On = false;
+
+    while ((i1 < count1 || i2 < count2) && outCount < maxTransitions) {
+        int za = (i1 < count1) ? int(obj1_flatData[start1 + i1]) : 2147483647;
+        int zb = (i2 < count2) ? ((i2 == 0u) ? zbMin : ztMax) : 2147483647;
+
+        int zVal = min(za, zb);
+        bool has1 = (za == zVal);
+        bool has2 = (zb == zVal);
+        if (has1) ++i1;
+        if (has2) ++i2;
+
+        bool prev1 = obj1On;
+        bool prev2 = obj2On;
+        if (has2) obj2On = !obj2On;
+        if (has1) obj1On = !obj1On;
+
+        if (has1 && has2) {
+            if (prev1 != obj1On && !obj2On) localOut[outCount++] = uint(zVal);
+        } else if (has1) {
+            if ((prev1 != obj1On) && !obj2On) localOut[outCount++] = uint(zVal);
+        } else if (has2) {
+            if ((prev2 != obj2On) && obj1On) localOut[outCount++] = uint(zVal);
+        }
+    }
+
+    // Filter out-of-bounds Z and write the result back in place.
+    uint writeCount = 0u;
+    for (uint i = 0u; i < outCount; ++i) {
+        int z = int(localOut[i]);
+        if (z >= 0 && z < z1) obj1_flatData[start1 + writeCount++] = uint(z);
+    }
+    for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
+    obj1_dataNum[idx1] = writeCount;
+}

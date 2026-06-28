@@ -637,7 +637,7 @@ void GcodeViewer::carve(glm::vec3 pos) {
 
   //@@@ DEBUG: Increment a counter to track the number of carvings
   carvingCounter++;
-  printCounter(carvingCounter);
+  if (carvingCounter % 64 == 0) printCounter(carvingCounter);  // throttle: avoid a cout flush per step
   //@@@ DEBUG: stop here (no need to update the workpieceVO_VAO for now)
   return;
 
@@ -680,3 +680,15 @@ void GcodeViewer::carve(glm::vec3 pos) {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, workpieceVO_compressedBuffer);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, workpieceVO_prefixSumBuffer);
 }
+
+void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1) {
+  // Subtract the volume swept by the tool along the segment p0 -> p1 in one dispatch.
+  glm::ivec3 startOffset = glm::ivec3(glm::round(p0));
+  glm::ivec3 displacement = glm::ivec3(glm::round(p1)) - startOffset;
+  ops.subtractSwept(startOffset, displacement);
+
+  carvingCounter++;
+  if (carvingCounter % 64 == 0) printCounter(carvingCounter);
+}
+
+void GcodeViewer::finishGPU() { glFinish(); }

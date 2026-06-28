@@ -31,19 +31,25 @@ int runView(const CliArgs& args) {
   GLFWwindow* window = nullptr;
   setupGLContext(&window, 1, 1, "autocam - view (loader)", true);
 
-  BoolOps ops;
-  if (!ops.load(binPath)) {
+  // Load inside a scope so BoolOps (which owns GL resources) is destroyed while
+  // the loader context is still current — BEFORE destroyGLContext().
+  VoxelObject obj;
+  bool ok = false;
+  {
+    BoolOps ops;
+    ok = ops.load(binPath);
+    if (ok) obj = ops.getObjects()[0];
+  }
+  destroyGLContext(window);
+
+  if (!ok) {
     std::cerr << "Failed to load voxel object: " << binPath << "\n";
-    destroyGLContext(window);
     return EXIT_FAILURE;
   }
-  const VoxelObject& obj = ops.getObjects()[0];
 
-  // VoxelViewer creates its own window/context for the render loop.
+  // VoxelViewer manages its own OpenGL context/window for the render loop.
   VoxelViewer viewer(obj.compressedData, obj.prefixSumData, obj.params);
   viewer.setOrthographic(ortho);
   viewer.run();
-
-  destroyGLContext(window);
   return EXIT_SUCCESS;
 }

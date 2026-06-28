@@ -28,7 +28,9 @@ BoolOps::BoolOps() {
   // Load and compile shader using Shader class
   // shader = new Shader("shaders/subtract.comp");            // Path to your compute shader file
   // shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
-  shader_flat = new Shader("shaders/subtract_flat.comp");  // Path to your compute shader file
+  shader_flat = new Shader("shaders/subtract_flat.comp");            // per-step subtraction
+  shader_swept = new Shader("shaders/subtract_swept.comp");          // swept-segment subtraction
+  compressShader = new Shader("shaders/compress_transitions.comp");  // GPU compaction for copyback
 }
 
 BoolOps::~BoolOps() {
@@ -58,6 +60,14 @@ BoolOps::~BoolOps() {
   if (shader_flat) {
     delete shader_flat;
     shader_flat = nullptr;
+  }
+  if (shader_swept) {
+    delete shader_swept;
+    shader_swept = nullptr;
+  }
+  if (compressShader) {
+    delete compressShader;
+    compressShader = nullptr;
   }
 
   // destroyGLContext(glContext);
@@ -860,29 +870,102 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   return true;
 }
 
+bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
+  if (objects.size() != 2) {
+    std::cerr << "BoolOps::subtractSwept: Expected exactly 2 objects, got " << objects.size() << std::endl;
+    return false;
+  }
+  const VoxelObject& obj1 = objects[0];  // workpiece
+  const VoxelObject& obj2 = objects[1];  // tool
+
+  long w1 = obj1.params.resolutionXYZ.x, h1 = obj1.params.resolutionXYZ.y, z1 = obj1.params.resolutionXYZ.z;
+  long w2 = obj2.params.resolutionXYZ.x, h2 = obj2.params.resolutionXYZ.y, z2 = obj2.params.resolutionXYZ.z;
+
+  // Tool-center positions (workpiece coords) at the segment endpoints. Same
+  // offset->translate convention as subtractGPU (note the Z inversion).
+  glm::ivec3 endOffset = startOffset + displacement;
+  glm::ivec3 tStart(w1 / 2 + startOffset.x, h1 / 2 + startOffset.y, z1 / 2 - startOffset.z);
+  glm::ivec3 tEnd(w1 / 2 + endOffset.x, h1 / 2 + endOffset.y, z1 / 2 - endOffset.z);
+  glm::ivec3 tDelta = tEnd - tStart;
+
+  // Sub-positions sampled at ~1-voxel spacing along the dominant axis.
+  glm::ivec3 ad = glm::abs(tDelta);
+  int K = glm::max(glm::max(ad.x, ad.y), ad.z);
+
+  // Swept bounding box in workpiece space (tool footprint over the whole segment).
+  long minTx = glm::min(tStart.x, tEnd.x), maxTx = glm::max(tStart.x, tEnd.x);
+  long minTy = glm::min(tStart.y, tEnd.y), maxTy = glm::max(tStart.y, tEnd.y);
+  long baseX = glm::clamp(minTx - w2 / 2, 0L, w1);
+  long endX = glm::clamp(maxTx + w2 / 2, 0L, w1);
+  long baseY = glm::clamp(minTy - h2 / 2, 0L, h1);
+  long endY = glm::clamp(maxTy + h2 / 2, 0L, h1);
+  if (endX <= baseX || endY <= baseY) return true;  // swept tool entirely outside the workpiece
+
+  shader_swept->use();
+  shader_swept->setInt("w1", w1);
+  shader_swept->setInt("h1", h1);
+  shader_swept->setInt("z1", z1);
+  shader_swept->setInt("w2", w2);
+  shader_swept->setInt("h2", h2);
+  shader_swept->setInt("z2", z2);
+  shader_swept->setUInt("maxTransitions", MAX_TRANSITIONS);
+  shader_swept->setInt("baseX", (int)baseX);
+  shader_swept->setInt("baseY", (int)baseY);
+  shader_swept->setIVec3("translateStart", tStart);
+  shader_swept->setIVec3("translateDelta", tDelta);
+  shader_swept->setInt("numSubsteps", K);
+
+  GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  return true;
+}
+
 void BoolOps::subtractGPU_copyback(VoxelObject& out) {
-  // Read output buffers recycling existing buffers
-  unpacked = readBuffer(obj1_flat, unpacked.size());
+  // Make all carving writes to obj1_flat / obj1_dataNum complete and visible.
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+  glFinish();
+
+  // 1. Read back only the per-column transition counts (small: w*h uints).
   dataNum = readBuffer(obj1_dataNum, dataNum.size());
 
-  // Generate compressedData and create prefixSumData
-  std::vector<GLuint> compressedData;
-  std::vector<GLuint> prefixSumData(dataNum.size(), 0);
-
-  compressedData.reserve(unpacked.size());  // Reserve upper bound
-
-  GLuint outOffset = 0;
-  for (size_t i = 0; i < dataNum.size(); ++i) {
-    prefixSumData[i] = outOffset;
-    for (GLuint j = 0; j < dataNum[i]; ++j) {
-      compressedData.push_back(unpacked[i * MAX_TRANSITIONS + j]);
-      ++outOffset;
-    }
+  // 2. CPU exclusive prefix sum of the counts -> per-column offsets (= prefixSumData) + total.
+  const size_t n = dataNum.size();
+  std::vector<GLuint> prefixSumData(n);
+  GLuint total = 0;
+  for (size_t i = 0; i < n; ++i) {
+    prefixSumData[i] = total;
+    total += dataNum[i];
   }
 
-  // Assign to outData
-  const_cast<VoxelObject&>(out).compressedData = std::move(compressedData);
-  const_cast<VoxelObject&>(out).prefixSumData = std::move(prefixSumData);
+  // 3. Compact the unpacked flat buffer on the GPU, so we read back ~`total`
+  //    transitions instead of the whole 32-slots-per-column buffer (e.g. 128 MB).
+  //    Bindings 2,3 (the tool obj2) are free now that carving is done.
+  GLuint prefixBuf = createBuffer((GLsizeiptr)(n * sizeof(GLuint)), 2, GL_DYNAMIC_COPY);
+  loadBuffer(prefixBuf, prefixSumData);
+  GLuint compBuf = createBuffer((GLsizeiptr)((size_t)total * sizeof(GLuint)), 3, GL_DYNAMIC_COPY);
+
+  compressShader->use();
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, obj1_flat);     // Transitions (flat, stride MAX_TRANSITIONS)
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, obj1_dataNum);  // Counts
+  // bindings 2 (prefixBuf) and 3 (compBuf) already bound by createBuffer
+  GLuint groups = (GLuint)((n + 255) / 256);
+  glDispatchCompute(groups, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+  glFinish();
+
+  // 4. Read back the tightly packed transitions (small).
+  std::vector<GLuint> compressedData = readBuffer(compBuf, total);
+
+  // 5. Free temporaries and restore the carving bindings (so a later carve still works).
+  glDeleteBuffers(1, &prefixBuf);
+  glDeleteBuffers(1, &compBuf);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, obj2_compressed);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, obj2_prefix);
+
+  out.compressedData = std::move(compressedData);
+  out.prefixSumData = std::move(prefixSumData);
 }
 
 bool BoolOps::subtractGPU(glm::ivec3 offset) {
@@ -890,7 +973,7 @@ bool BoolOps::subtractGPU(glm::ivec3 offset) {
     std::cerr << "BoolOps::subtractGPU: Expected exactly 2 objects, got " << objects.size() << std::endl;
     return false;
   }
-  VoxelObject obj1 = objects[0];  // Assuming obj1 is the first object in the list
+  const VoxelObject& obj1 = objects[0];  // reference: avoid copying the whole workpiece each step
 
 
 #ifdef DEBUG_SPEED_OUTPUT
@@ -905,10 +988,25 @@ bool BoolOps::subtractGPU(glm::ivec3 offset) {
   glm::vec3 translate(w1 / 2 + offset.x, h1 / 2 + offset.y, z1 / 2 - offset.z);
   shader_flat->setIVec3("translate", translate);
 
-  // Dispatch compute shader (about 0.5 ms for 1M transitions)
-  glDispatchCompute(groupsX, groupsY, 1);
-  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
-  glFinish();
+  // Restrict the dispatch to the tool's bounding box in workpiece space: threads
+  // outside the tool AOI would only early-return, so don't even launch them.
+  long w2 = objects[1].params.resolutionXYZ.x;
+  long h2 = objects[1].params.resolutionXYZ.y;
+  long baseX = glm::clamp((long)translate.x - w2 / 2, 0L, w1);
+  long baseY = glm::clamp((long)translate.y - h2 / 2, 0L, h1);
+  long endX = glm::clamp((long)translate.x + w2 / 2, 0L, w1);
+  long endY = glm::clamp((long)translate.y + h2 / 2, 0L, h1);
+  if (endX <= baseX || endY <= baseY) return true;  // tool fully outside the workpiece
+  shader_flat->setInt("baseX", (int)baseX);
+  shader_flat->setInt("baseY", (int)baseY);
+  GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+
+  // Dispatch the merge. No glFinish per step: consecutive subtractions have a RAW
+  // hazard on obj1_flat handled by the SSBO barrier, so they pipeline without CPU
+  // stalls. The final CPU-visible sync happens once in subtractGPU_copyback().
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 #ifdef DEBUG_SPEED_OUTPUT
   auto end = std::chrono::high_resolution_clock::now();  // ====> End timing

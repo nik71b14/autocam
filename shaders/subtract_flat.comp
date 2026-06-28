@@ -15,12 +15,14 @@ uniform int w1, h1, z1;
 uniform int w2, h2, z2;
 uniform ivec3 translate;
 uniform uint maxTransitions;
+uniform int baseX, baseY;  // workpiece-space origin of this dispatch (tool/swept bbox)
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 void main() {
-    uint gx = gl_GlobalInvocationID.x;
-    uint gy = gl_GlobalInvocationID.y;
+    // Map the local invocation onto a workpiece column inside the dispatched bbox.
+    uint gx = uint(baseX) + gl_GlobalInvocationID.x;
+    uint gy = uint(baseY) + gl_GlobalInvocationID.y;
 
     if (gx >= uint(w1) || gy >= uint(h1)) return;
 
