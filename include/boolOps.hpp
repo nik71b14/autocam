@@ -92,8 +92,9 @@ class BoolOps {
   // Shaders
   // Shader* shader = nullptr;       // Shader for GPU operations
   // Shader* shader2 = nullptr;      // Shader for GPU operations
-  Shader* shader_flat = nullptr;   // Shader for flat per-step subtraction
-  Shader* shader_swept = nullptr;  // Shader for swept-segment subtraction (Phase 2)
+  Shader* shader_flat = nullptr;     // Shader for flat per-step subtraction
+  Shader* shader_swept = nullptr;    // Shader for swept-segment subtraction (Phase 2)
+  Shader* compressShader = nullptr;  // GPU compaction (unpacked flat -> compressed) for copyback
 
   // OpenGL utilities
   GLFWwindow* createGLContext();

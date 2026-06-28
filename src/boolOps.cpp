@@ -28,8 +28,9 @@ BoolOps::BoolOps() {
   // Load and compile shader using Shader class
   // shader = new Shader("shaders/subtract.comp");            // Path to your compute shader file
   // shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
-  shader_flat = new Shader("shaders/subtract_flat.comp");    // per-step subtraction
-  shader_swept = new Shader("shaders/subtract_swept.comp");  // swept-segment subtraction
+  shader_flat = new Shader("shaders/subtract_flat.comp");            // per-step subtraction
+  shader_swept = new Shader("shaders/subtract_swept.comp");          // swept-segment subtraction
+  compressShader = new Shader("shaders/compress_transitions.comp");  // GPU compaction for copyback
 }
 
 BoolOps::~BoolOps() {
@@ -63,6 +64,10 @@ BoolOps::~BoolOps() {
   if (shader_swept) {
     delete shader_swept;
     shader_swept = nullptr;
+  }
+  if (compressShader) {
+    delete compressShader;
+    compressShader = nullptr;
   }
 
   // destroyGLContext(glContext);
@@ -918,33 +923,49 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
 }
 
 void BoolOps::subtractGPU_copyback(VoxelObject& out) {
-  // Per-step glFinish was removed; make all queued compute writes visible to the
-  // client-side reads below with a single sync here before reading back.
-  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+  // Make all carving writes to obj1_flat / obj1_dataNum complete and visible.
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
   glFinish();
 
-  // Read output buffers recycling existing buffers
-  unpacked = readBuffer(obj1_flat, unpacked.size());
+  // 1. Read back only the per-column transition counts (small: w*h uints).
   dataNum = readBuffer(obj1_dataNum, dataNum.size());
 
-  // Generate compressedData and create prefixSumData
-  std::vector<GLuint> compressedData;
-  std::vector<GLuint> prefixSumData(dataNum.size(), 0);
-
-  compressedData.reserve(unpacked.size());  // Reserve upper bound
-
-  GLuint outOffset = 0;
-  for (size_t i = 0; i < dataNum.size(); ++i) {
-    prefixSumData[i] = outOffset;
-    for (GLuint j = 0; j < dataNum[i]; ++j) {
-      compressedData.push_back(unpacked[i * MAX_TRANSITIONS + j]);
-      ++outOffset;
-    }
+  // 2. CPU exclusive prefix sum of the counts -> per-column offsets (= prefixSumData) + total.
+  const size_t n = dataNum.size();
+  std::vector<GLuint> prefixSumData(n);
+  GLuint total = 0;
+  for (size_t i = 0; i < n; ++i) {
+    prefixSumData[i] = total;
+    total += dataNum[i];
   }
 
-  // Assign to outData
-  const_cast<VoxelObject&>(out).compressedData = std::move(compressedData);
-  const_cast<VoxelObject&>(out).prefixSumData = std::move(prefixSumData);
+  // 3. Compact the unpacked flat buffer on the GPU, so we read back ~`total`
+  //    transitions instead of the whole 32-slots-per-column buffer (e.g. 128 MB).
+  //    Bindings 2,3 (the tool obj2) are free now that carving is done.
+  GLuint prefixBuf = createBuffer((GLsizeiptr)(n * sizeof(GLuint)), 2, GL_DYNAMIC_COPY);
+  loadBuffer(prefixBuf, prefixSumData);
+  GLuint compBuf = createBuffer((GLsizeiptr)((size_t)total * sizeof(GLuint)), 3, GL_DYNAMIC_COPY);
+
+  compressShader->use();
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, obj1_flat);     // Transitions (flat, stride MAX_TRANSITIONS)
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, obj1_dataNum);  // Counts
+  // bindings 2 (prefixBuf) and 3 (compBuf) already bound by createBuffer
+  GLuint groups = (GLuint)((n + 255) / 256);
+  glDispatchCompute(groups, 1, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+  glFinish();
+
+  // 4. Read back the tightly packed transitions (small).
+  std::vector<GLuint> compressedData = readBuffer(compBuf, total);
+
+  // 5. Free temporaries and restore the carving bindings (so a later carve still works).
+  glDeleteBuffers(1, &prefixBuf);
+  glDeleteBuffers(1, &compBuf);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, obj2_compressed);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, obj2_prefix);
+
+  out.compressedData = std::move(compressedData);
+  out.prefixSumData = std::move(prefixSumData);
 }
 
 bool BoolOps::subtractGPU(glm::ivec3 offset) {
