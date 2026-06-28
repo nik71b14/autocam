@@ -28,7 +28,8 @@ BoolOps::BoolOps() {
   // Load and compile shader using Shader class
   // shader = new Shader("shaders/subtract.comp");            // Path to your compute shader file
   // shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
-  shader_flat = new Shader("shaders/subtract_flat.comp");  // Path to your compute shader file
+  shader_flat = new Shader("shaders/subtract_flat.comp");    // per-step subtraction
+  shader_swept = new Shader("shaders/subtract_swept.comp");  // swept-segment subtraction
 }
 
 BoolOps::~BoolOps() {
@@ -58,6 +59,10 @@ BoolOps::~BoolOps() {
   if (shader_flat) {
     delete shader_flat;
     shader_flat = nullptr;
+  }
+  if (shader_swept) {
+    delete shader_swept;
+    shader_swept = nullptr;
   }
 
   // destroyGLContext(glContext);
@@ -857,6 +862,58 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   groupsX = (GLuint)((w1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in X, rounding up
   groupsY = (GLuint)((h1 + (WORKGROUPS_FLAT - 1)) / WORKGROUPS_FLAT);  // Assuming WORKGROUPS threads per work group in Y, rounding up
 
+  return true;
+}
+
+bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
+  if (objects.size() != 2) {
+    std::cerr << "BoolOps::subtractSwept: Expected exactly 2 objects, got " << objects.size() << std::endl;
+    return false;
+  }
+  const VoxelObject& obj1 = objects[0];  // workpiece
+  const VoxelObject& obj2 = objects[1];  // tool
+
+  long w1 = obj1.params.resolutionXYZ.x, h1 = obj1.params.resolutionXYZ.y, z1 = obj1.params.resolutionXYZ.z;
+  long w2 = obj2.params.resolutionXYZ.x, h2 = obj2.params.resolutionXYZ.y, z2 = obj2.params.resolutionXYZ.z;
+
+  // Tool-center positions (workpiece coords) at the segment endpoints. Same
+  // offset->translate convention as subtractGPU (note the Z inversion).
+  glm::ivec3 endOffset = startOffset + displacement;
+  glm::ivec3 tStart(w1 / 2 + startOffset.x, h1 / 2 + startOffset.y, z1 / 2 - startOffset.z);
+  glm::ivec3 tEnd(w1 / 2 + endOffset.x, h1 / 2 + endOffset.y, z1 / 2 - endOffset.z);
+  glm::ivec3 tDelta = tEnd - tStart;
+
+  // Sub-positions sampled at ~1-voxel spacing along the dominant axis.
+  glm::ivec3 ad = glm::abs(tDelta);
+  int K = glm::max(glm::max(ad.x, ad.y), ad.z);
+
+  // Swept bounding box in workpiece space (tool footprint over the whole segment).
+  long minTx = glm::min(tStart.x, tEnd.x), maxTx = glm::max(tStart.x, tEnd.x);
+  long minTy = glm::min(tStart.y, tEnd.y), maxTy = glm::max(tStart.y, tEnd.y);
+  long baseX = glm::clamp(minTx - w2 / 2, 0L, w1);
+  long endX = glm::clamp(maxTx + w2 / 2, 0L, w1);
+  long baseY = glm::clamp(minTy - h2 / 2, 0L, h1);
+  long endY = glm::clamp(maxTy + h2 / 2, 0L, h1);
+  if (endX <= baseX || endY <= baseY) return true;  // swept tool entirely outside the workpiece
+
+  shader_swept->use();
+  shader_swept->setInt("w1", w1);
+  shader_swept->setInt("h1", h1);
+  shader_swept->setInt("z1", z1);
+  shader_swept->setInt("w2", w2);
+  shader_swept->setInt("h2", h2);
+  shader_swept->setInt("z2", z2);
+  shader_swept->setUInt("maxTransitions", MAX_TRANSITIONS);
+  shader_swept->setInt("baseX", (int)baseX);
+  shader_swept->setInt("baseY", (int)baseY);
+  shader_swept->setIVec3("translateStart", tStart);
+  shader_swept->setIVec3("translateDelta", tDelta);
+  shader_swept->setInt("numSubsteps", K);
+
+  GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   return true;
 }
 

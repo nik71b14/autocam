@@ -24,6 +24,8 @@ class GcodeViewer {
   void pollEvents();
   void drawFrame();
   void carve(glm::vec3 pos);
+  // Subtract the volume swept by the tool along the linear segment p0 -> p1 in one dispatch.
+  void carveSwept(glm::vec3 p0, glm::vec3 p1);
 
   // Set Voxelized Objects
   void setWorkpiece(std::string workpiecePath);

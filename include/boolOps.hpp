@@ -52,6 +52,9 @@ class BoolOps {
   // Subtract using GPU with flat buffers
   bool subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2);
   bool subtractGPU(glm::ivec3 offset);
+  // Subtract the volume swept by the tool along a linear segment (start -> start+displacement)
+  // in a single dispatch. Requires subtractGPU_init() to have been called.
+  bool subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement);
   void subtractGPU_copyback(VoxelObject& outData);
 
  private:
@@ -89,7 +92,8 @@ class BoolOps {
   // Shaders
   // Shader* shader = nullptr;       // Shader for GPU operations
   // Shader* shader2 = nullptr;      // Shader for GPU operations
-  Shader* shader_flat = nullptr;  // Shader for flat GPU operations
+  Shader* shader_flat = nullptr;   // Shader for flat per-step subtraction
+  Shader* shader_swept = nullptr;  // Shader for swept-segment subtraction (Phase 2)
 
   // OpenGL utilities
   GLFWwindow* createGLContext();

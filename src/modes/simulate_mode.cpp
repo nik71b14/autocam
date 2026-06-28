@@ -32,6 +32,7 @@ int runSimulate(const CliArgs& args) {
   const std::string toolPath = args.get("--tool", DEFAULT_TOOL_BIN);
   const float step = args.getFloat("--step", 2.0f);
   const bool showViewer = !args.has("--no-view");
+  const bool legacy = args.has("--legacy");  // per-step stamping (Phase 1) instead of swept (Phase 2)
   // The simulation defaults to an orthographic (top-down CNC) view; --perspective switches it.
   const ProjectionType projection =
       args.has("--perspective") ? ProjectionType::PERSPECTIVE : ProjectionType::ORTHOGRAPHIC;
@@ -60,23 +61,34 @@ int runSimulate(const CliArgs& args) {
   // run with no live context and crash.
   VoxelObject carved;
   {
-    GcodeViewer gCodeViewer(window, interpreter.getToolpath());
+    // Extract the toolpath once (getToolpath re-parses the program, so don't call it twice).
+    const std::vector<GcodePoint> toolpath = interpreter.getToolpath();
+
+    GcodeViewer gCodeViewer(window, toolpath);
     gCodeViewer.setProjectionType(projection);
     gCodeViewer.setWorkpiece(workpiecePath);
     gCodeViewer.setTool(toolPath);
 
-    // Step the tool along the toolpath, carving the workpiece each step.
-    interpreter.beginJog();
     auto tStart = std::chrono::high_resolution_clock::now();
     long steps = 0;
-    while (!interpreter.jogComplete()) {
-      interpreter.jog(step);  // advance by `step` voxel units (TODO: real mm units)
-      glm::vec3 pos = interpreter.getCurrentPosition();
-      gCodeViewer.carve(pos);
-      ++steps;
+    if (legacy) {
+      // Phase 1: stamp the full tool at every fixed jog step.
+      interpreter.beginJog();
+      while (!interpreter.jogComplete()) {
+        interpreter.jog(step);  // advance by `step` voxel units (TODO: real mm units)
+        glm::vec3 pos = interpreter.getCurrentPosition();
+        gCodeViewer.carve(pos);
+        ++steps;
+      }
+      interpreter.resetJog();
+    } else {
+      // Phase 2: one swept subtraction per linear toolpath segment.
+      for (size_t i = 0; i + 1 < toolpath.size(); ++i) {
+        gCodeViewer.carveSwept(toolpath[i].position, toolpath[i + 1].position);
+        ++steps;
+      }
     }
     auto tEnqueued = std::chrono::high_resolution_clock::now();  // dispatches enqueued (GPU still working)
-    interpreter.resetJog();
 
     // Pull the carved workpiece back from the GPU to CPU memory.
     // copyBack() forces GPU completion (sync) + readback + CPU recompression.
@@ -86,7 +98,8 @@ int runSimulate(const CliArgs& args) {
     const double enqueueMs = std::chrono::duration<double, std::milli>(tEnqueued - tStart).count();
     const double totalMs = std::chrono::duration<double, std::milli>(tDone - tStart).count();
     std::cout << "\n";  // terminate the in-place carving counter line
-    std::cout << "Carving: " << steps << " passi | enqueue " << enqueueMs
+    std::cout << "Carving [" << (legacy ? "legacy" : "swept") << "]: " << steps
+              << (legacy ? " passi" : " segmenti") << " | enqueue " << enqueueMs
               << " ms | totale (incl. GPU sync + copyback) " << totalMs << " ms\n";
 
     // Optionally persist the carved result (reuses BoolOps' .bin format).
