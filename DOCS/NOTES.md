@@ -13,4 +13,3 @@ The voxelization result lives in [0,1] x [0,1] x [0, zSpan] where zSpan = 0.5.
 
 In the gocode viewer, I want to display the object in its original size (100x100x50 units), rather than the normalized form.
 Currently it appears tiny because you're drawing it as a 1x1x0.5 object.
-
