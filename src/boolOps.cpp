@@ -861,6 +861,11 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
 }
 
 void BoolOps::subtractGPU_copyback(VoxelObject& out) {
+  // Per-step glFinish was removed; make all queued compute writes visible to the
+  // client-side reads below with a single sync here before reading back.
+  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+  glFinish();
+
   // Read output buffers recycling existing buffers
   unpacked = readBuffer(obj1_flat, unpacked.size());
   dataNum = readBuffer(obj1_dataNum, dataNum.size());
@@ -890,7 +895,7 @@ bool BoolOps::subtractGPU(glm::ivec3 offset) {
     std::cerr << "BoolOps::subtractGPU: Expected exactly 2 objects, got " << objects.size() << std::endl;
     return false;
   }
-  VoxelObject obj1 = objects[0];  // Assuming obj1 is the first object in the list
+  const VoxelObject& obj1 = objects[0];  // reference: avoid copying the whole workpiece each step
 
 
 #ifdef DEBUG_SPEED_OUTPUT
@@ -905,10 +910,25 @@ bool BoolOps::subtractGPU(glm::ivec3 offset) {
   glm::vec3 translate(w1 / 2 + offset.x, h1 / 2 + offset.y, z1 / 2 - offset.z);
   shader_flat->setIVec3("translate", translate);
 
-  // Dispatch compute shader (about 0.5 ms for 1M transitions)
-  glDispatchCompute(groupsX, groupsY, 1);
-  glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_ATOMIC_COUNTER_BARRIER_BIT);
-  glFinish();
+  // Restrict the dispatch to the tool's bounding box in workpiece space: threads
+  // outside the tool AOI would only early-return, so don't even launch them.
+  long w2 = objects[1].params.resolutionXYZ.x;
+  long h2 = objects[1].params.resolutionXYZ.y;
+  long baseX = glm::clamp((long)translate.x - w2 / 2, 0L, w1);
+  long baseY = glm::clamp((long)translate.y - h2 / 2, 0L, h1);
+  long endX = glm::clamp((long)translate.x + w2 / 2, 0L, w1);
+  long endY = glm::clamp((long)translate.y + h2 / 2, 0L, h1);
+  if (endX <= baseX || endY <= baseY) return true;  // tool fully outside the workpiece
+  shader_flat->setInt("baseX", (int)baseX);
+  shader_flat->setInt("baseY", (int)baseY);
+  GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+
+  // Dispatch the merge. No glFinish per step: consecutive subtractions have a RAW
+  // hazard on obj1_flat handled by the SSBO barrier, so they pipeline without CPU
+  // stalls. The final CPU-visible sync happens once in subtractGPU_copyback().
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 #ifdef DEBUG_SPEED_OUTPUT
   auto end = std::chrono::high_resolution_clock::now();  // ====> End timing

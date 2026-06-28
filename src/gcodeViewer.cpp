@@ -637,7 +637,7 @@ void GcodeViewer::carve(glm::vec3 pos) {
 
   //@@@ DEBUG: Increment a counter to track the number of carvings
   carvingCounter++;
-  printCounter(carvingCounter);
+  if (carvingCounter % 64 == 0) printCounter(carvingCounter);  // throttle: avoid a cout flush per step
   //@@@ DEBUG: stop here (no need to update the workpieceVO_VAO for now)
   return;
 

@@ -12,6 +12,8 @@
 // =============================================================================
 
 #include <glm/glm.hpp>
+
+#include <chrono>
 #include <iostream>
 #include <string>
 
@@ -52,46 +54,64 @@ int runSimulate(const CliArgs& args) {
     return EXIT_FAILURE;
   }
 
-  // Set up the viewer with the toolpath, then load the workpiece and tool.
-  GcodeViewer gCodeViewer(window, interpreter.getToolpath());
-  gCodeViewer.setProjectionType(projection);
-  gCodeViewer.setWorkpiece(workpiecePath);
-  gCodeViewer.setTool(toolPath);
+  // Carve inside a scope so that GcodeViewer (which owns GL resources, including a
+  // BoolOps member) is destroyed while the OpenGL context is still current — BEFORE
+  // destroyGLContext()/glfwTerminate(). Otherwise its destructor's GL calls would
+  // run with no live context and crash.
+  VoxelObject carved;
+  {
+    GcodeViewer gCodeViewer(window, interpreter.getToolpath());
+    gCodeViewer.setProjectionType(projection);
+    gCodeViewer.setWorkpiece(workpiecePath);
+    gCodeViewer.setTool(toolPath);
 
-  // Step the tool along the toolpath, carving the workpiece each step.
-  interpreter.beginJog();
-  while (!interpreter.jogComplete()) {
-    interpreter.jog(step);  // advance by `step` voxel units (TODO: real mm units)
-    glm::vec3 pos = interpreter.getCurrentPosition();
-    gCodeViewer.carve(pos);
-  }
-  std::cout << "\n";  // terminate the in-place carving counter line
-  interpreter.resetJog();
+    // Step the tool along the toolpath, carving the workpiece each step.
+    interpreter.beginJog();
+    auto tStart = std::chrono::high_resolution_clock::now();
+    long steps = 0;
+    while (!interpreter.jogComplete()) {
+      interpreter.jog(step);  // advance by `step` voxel units (TODO: real mm units)
+      glm::vec3 pos = interpreter.getCurrentPosition();
+      gCodeViewer.carve(pos);
+      ++steps;
+    }
+    auto tEnqueued = std::chrono::high_resolution_clock::now();  // dispatches enqueued (GPU still working)
+    interpreter.resetJog();
 
-  // Pull the carved workpiece back from the GPU to CPU memory.
-  gCodeViewer.copyBack();
+    // Pull the carved workpiece back from the GPU to CPU memory.
+    // copyBack() forces GPU completion (sync) + readback + CPU recompression.
+    gCodeViewer.copyBack();
+    auto tDone = std::chrono::high_resolution_clock::now();
 
-  // Optionally persist the carved result (reuses BoolOps' .bin format).
-  if (args.has("--out")) {
-    const std::string outPath = args.get("--out", "");
-    if (gCodeViewer.saveWorkpiece(outPath))
-      std::cout << "Saved carved workpiece -> " << outPath << "\n";
-    else
-      std::cerr << "Failed to save carved workpiece to: " << outPath << "\n";
-  }
+    const double enqueueMs = std::chrono::duration<double, std::milli>(tEnqueued - tStart).count();
+    const double totalMs = std::chrono::duration<double, std::milli>(tDone - tStart).count();
+    std::cout << "\n";  // terminate the in-place carving counter line
+    std::cout << "Carving: " << steps << " passi | enqueue " << enqueueMs
+              << " ms | totale (incl. GPU sync + copyback) " << totalMs << " ms\n";
 
-  // TODO: Marching Cubes mesh extraction of the carved result is disabled here
-  // (a face at the extreme X value does not generate a corresponding mesh face).
-  // Kept as a future feature; see marchingCubes.{hpp,cpp} and MeshViewer.
+    // Optionally persist the carved result (reuses BoolOps' .bin format).
+    if (args.has("--out")) {
+      const std::string outPath = args.get("--out", "");
+      if (gCodeViewer.saveWorkpiece(outPath))
+        std::cout << "Saved carved workpiece -> " << outPath << "\n";
+      else
+        std::cerr << "Failed to save carved workpiece to: " << outPath << "\n";
+    }
+
+    if (showViewer) carved = gCodeViewer.getWorkpiece();
+
+    // TODO: Marching Cubes mesh extraction of the carved result is disabled here
+    // (a face at the extreme X value does not generate a corresponding mesh face).
+    // Kept as a future feature; see marchingCubes.{hpp,cpp} and MeshViewer.
+  }  // gCodeViewer destroyed here, while the context is still current
+
+  destroyGLContext(window);
 
   if (showViewer) {
-    VoxelObject workpiece = gCodeViewer.getWorkpiece();
-    // TODO: pass `window` to VoxelViewer instead of creating a second context,
-    // and let VoxelViewer accept a VoxelObject directly.
-    VoxelViewer viewer(workpiece.compressedData, workpiece.prefixSumData, workpiece.params);
+    // VoxelViewer manages its own OpenGL context/window (re-inits GLFW).
+    VoxelViewer viewer(carved.compressedData, carved.prefixSumData, carved.params);
     viewer.run();
   }
 
-  destroyGLContext(window);
   return EXIT_SUCCESS;
 }
