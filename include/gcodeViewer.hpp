@@ -43,6 +43,10 @@ class GcodeViewer {
     return ops.getObjects()[0];  // Return the first object (workpiece)
   }
 
+  // Save the carved workpiece (object 0) to a .bin voxel file.
+  // Call after copyBack() so the CPU-side data is populated.
+  bool saveWorkpiece(const std::string& path) { return ops.save(path, 0); }
+
  private:
   void init();
   bool shouldClose() const;
