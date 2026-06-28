@@ -20,6 +20,7 @@
 #include "voxelizer.hpp"
 #include "voxelizerUtils.hpp"
 
+// Choose which test to run by uncommenting the corresponding line below. Only one test should be active at a time.
 #define GCODE_TESTING
 // #define VOXELIZATION_TESTING
 // #define BOOLEAN_OPERATIONS_TESTING
