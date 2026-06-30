@@ -341,7 +341,10 @@ void MarchingCubes::smooth(int taubinIterations) {
 
   std::vector<glm::ivec3> tris;
   tris.reserve(triCount);
+  size_t reportEvery = triCount / 40;  // ~40 progress updates over the welding pass
+  if (reportEvery == 0) reportEvery = 1;
   for (size_t t = 0; t < triCount; ++t) {
+    if (t % reportEvery == 0) std::cout << "\rSmoothing: " << static_cast<int>(40.0 * t / triCount) << "%   " << std::flush;
     int a = weldIndex(trianglesFlat[3 * t + 0]);
     int b = weldIndex(trianglesFlat[3 * t + 1]);
     int c = weldIndex(trianglesFlat[3 * t + 2]);
@@ -390,6 +393,8 @@ void MarchingCubes::smooth(int taubinIterations) {
     for (int it = 0; it < taubinIterations; ++it) {
       pass(lambda);
       pass(mu);
+      // Taubin is the part that scales with --smooth N, so map it across 40..99%.
+      std::cout << "\rSmoothing: " << static_cast<int>(40.0 + 59.0 * (it + 1) / taubinIterations) << "%   " << std::flush;
     }
   }
 
@@ -428,6 +433,7 @@ void MarchingCubes::smooth(int taubinIterations) {
     trianglesFlat.push_back(tr.z);
   }
 
+  std::cout << "\rSmoothing: 100%   " << std::endl;
   std::cout << "Smoothed mesh: " << V << " verts, " << tris.size() << " tris (" << taubinIterations << " Taubin iters)" << std::endl;
 }
 
