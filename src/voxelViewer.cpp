@@ -3,15 +3,17 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <stdexcept>
 
+#include "coordinateSystem.hpp"
 #include "voxelizer.hpp"
 
-#define AXES_LENGTH 1000.0f
 #define IDENTITY_MODEL glm::mat4(1.0f)  // Identity matrix for model transformations
 
 VoxelViewer::VoxelViewer(const std::string& compressedFile, const std::string& prefixSumFile, VoxelizationParams params) : params(params) {
@@ -27,16 +29,11 @@ VoxelViewer::VoxelViewer(const std::vector<unsigned int>& compressed, const std:
   initGL();
   setupShaderAndBuffers();
 
-  // Compute distance based on actual bounding box dimensions
-  float halfX = 0.5f;
-  float halfY = 0.5f;
-  float halfZ = params.zSpan * 0.5f;
-
-  // Calculate bounding sphere radius
-  float radius = glm::length(glm::vec3(halfX, halfY, halfZ));
-
-  // Calculate distance to fit object in view
-  distance = radius / std::tan(glm::radians(45.0f / 2.0f)) + radius;
+  // Auto-fit: place the camera to frame the object's real mm bounding sphere.
+  // `distance` is the camera distance in millimetres (and the zoom handle for scroll).
+  const CoordinateSystem cs = CoordinateSystem::fromParams(params);
+  const float radiusMm = 0.5f * glm::length(cs.extentMm());
+  distance = radiusMm / std::tan(glm::radians(45.0f / 2.0f)) + radiusMm;
 }
 
 VoxelViewer::~VoxelViewer() {
@@ -114,7 +111,9 @@ void VoxelViewer::onMouseButton(int button, int action, int mods) {
 void VoxelViewer::onScroll(double xoffset, double yoffset) {
   (void)xoffset;  // Ignore horizontal scroll for now
   distance *= (1.0f - yoffset * 0.1f);
-  distance = glm::clamp(distance, 0.01f, 100.0f);  // Prevent negative or excessive zoom
+  // `distance` is in mm now and depends on object size, so use a wide guard that
+  // only prevents a non-positive (flipped) camera, not a fixed normalized range.
+  distance = glm::clamp(distance, 1e-3f, 1e9f);
 }
 
 void VoxelViewer::setupShaderAndBuffers() {
@@ -175,70 +174,55 @@ void VoxelViewer::run() {
     // Calculate aspect ratio from current window size
     float windowAspect = (float)width / (float)height;
 
-    // Calculate object dimensions based on voxelization parameters
-    // float voxelScale = 1.0f / std::max(params.resolutionXYZ.x, params.resolutionXYZ.y); // or Z
-    // if 3D
-    float voxelScale = 1.0f / std::max({params.resolutionXYZ.x, params.resolutionXYZ.y, params.resolutionXYZ.z});
-    float objectWidth = params.resolutionXYZ.x * voxelScale;
-    float objectHeight = params.resolutionXYZ.y * voxelScale;
-    float objectAspect = objectWidth / objectHeight;
+    // --- Camera & projection in world millimetres -------------------------------
+    // The object is placed and sized in mm by the model matrix (CoordinateSystem);
+    // the camera auto-fits its mm bounding sphere. `distance` (mm) is the single zoom
+    // handle shared by ortho and perspective, so scrolling zooms both identically.
+    const CoordinateSystem cs = CoordinateSystem::fromParams(params);
+    const glm::vec3 objExtentMm = cs.extentMm();
+    const glm::vec3 objCenterMm = cs.centerMm;
+    const float radiusMm = 0.5f * glm::length(objExtentMm);
 
-    // Fit object in view while preserving aspect ratio
-    float viewWidth, viewHeight;
+    const float fovY = glm::radians(45.0f);
+    const float nearP = std::max(0.001f * radiusMm, distance - 2.0f * radiusMm);
+    const float farP = distance + 2.0f * radiusMm;
 
-    if (windowAspect > objectAspect) {
-      // Window is wider than object → expand horizontally
-      viewHeight = objectHeight;
-      viewWidth = objectHeight * windowAspect;
-    } else {
-      // Window is taller than object → expand vertically
-      viewWidth = objectWidth;
-      viewHeight = objectWidth / windowAspect;
-    }
-
-    // Set up projection matrix
     glm::mat4 proj;
     if (this->ortho) {
-      float left, right, bottom, top, zNear, zFar;
-
-      left = -viewWidth / 2.0f * distance;
-      right = viewWidth / 2.0f * distance;
-      bottom = -viewHeight / 2.0f * distance;
-      top = viewHeight / 2.0f * distance;
-      zNear = -params.zSpan * 0.6f;  // Near plane (negative to include behind camera)
-      zFar = params.zSpan * 1.4f;    // Far plane
-
-      proj = glm::ortho(left, right, bottom, top, zNear, zFar);
+      // At camera distance `distance`, a `fovY` cone spans this half-height; reusing
+      // it keeps ortho and perspective framing (and the scroll zoom) consistent.
+      const float halfH = distance * std::tan(fovY * 0.5f);
+      const float halfW = halfH * windowAspect;
+      proj = glm::ortho(-halfW, halfW, -halfH, halfH, nearP, farP);
     } else {
-      float fov = glm::clamp(static_cast<float>(glm::degrees(2.0f * std::atan(1.0f / distance))), 30.0f, 90.0f);
-      proj = glm::perspective(glm::radians(fov), windowAspect, 0.1f, distance * 4.0f);
+      proj = glm::perspective(fovY, windowAspect, nearP, farP);
     }
 
-    // Calculate camera position based on pitch, yaw, distance and target (mouse interaction)
+    // Orbit direction from yaw/pitch.
     glm::vec3 dir;
-    dir.x = -sin(glm::radians(yaw)) * cos(glm::radians(pitch));  // Changed sign
+    dir.x = -sin(glm::radians(yaw)) * cos(glm::radians(pitch));
     dir.y = sin(glm::radians(pitch));
-    dir.z = cos(glm::radians(yaw)) * cos(glm::radians(pitch));  // Changed from sin to cos
+    dir.z = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
 
-    // Calculate actual center of bounding box
-    float zCenter = 0.0f;  // Since we're symmetric in Z
-    glm::vec3 actualCenter = glm::vec3(0.0f, 0.0f, zCenter);
+    // Pan is a fraction of the object radius, so it feels scale-independent.
+    const glm::vec3 lookTarget = objCenterMm + glm::vec3(panOffset * radiusMm, 0.0f);
+    const glm::vec3 cameraPos = lookTarget + dir * distance;
+    const glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::mat4 view = glm::lookAt(cameraPos, lookTarget, up);
 
-    // glm::vec3 cameraPos = actualCenter + glm::vec3(panOffset, 0.0f) + (-dir * distance); //%%%%%%%
-    glm::vec3 cameraPos = actualCenter + glm::vec3(panOffset, 0.0f) + (dir * distance);
-
-    // glm::vec3 up = glm::vec3(1.0f, 0.0f, 0.0f); // Up vector remains unchanged
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);  // Up vector remains unchanged
-    glm::mat4 view = glm::lookAt(cameraPos, actualCenter + glm::vec3(panOffset, 0.0f), up);
+    // Model matrix maps the shader's fixed local box to the mm world box (per-axis
+    // scale, so non-square footprints are NOT distorted). Folding it into invViewProj
+    // keeps the raymarch shader unchanged: its rays simply arrive in box-local space.
+    const glm::mat4 model = cs.renderModelMatrix();
 
     // @@@ RENDER VOXEL
     raymarchingShader->use();
-    glm::mat4 invViewProj = glm::inverse(proj * view);  // Calculate inverse view-projection matrix
+    const glm::mat4 invViewProj = glm::inverse(proj * view * model);
 
     raymarchingShader->setMat4("invViewProj", invViewProj);
     raymarchingShader->setVec3("cameraPos", cameraPos);
     raymarchingShader->setIVec2("screenResolution", glm::ivec2(width, height));
-    raymarchingShader->setVec3("color", params.color);  //&&&
+    raymarchingShader->setVec3("color", params.color);
 
     renderFullScreenQuad();
     // @@@ END RENDER VOXEL
@@ -246,8 +230,8 @@ void VoxelViewer::run() {
     flatShader->use();
     flatShader->setMat4("uProj", proj);
     flatShader->setMat4("uView", view);
-    flatShader->setMat4("uModel", IDENTITY_MODEL);  // Identity model matrix for static objects
-    drawAxes();                                     // Draw axes for reference
+    flatShader->setMat4("uModel", IDENTITY_MODEL);  // axes live directly in mm world space
+    drawAxes();                                     // length scaled to the object (see initAxes)
 
     glfwSwapBuffers(window);
   }
@@ -303,11 +287,16 @@ void VoxelViewer::drawAxes() {
 void VoxelViewer::initAxes() {
   if (axesInitialized) return;
 
-  // 3 axis segments, each from origin to positive direction
+  // Axis length scaled to the object so the gizmo is readable at any object size
+  // (it used to be a fixed 1000 units around a ~1-unit normalized object).
+  const glm::vec3 ext = CoordinateSystem::fromParams(params).extentMm();
+  const float axisLen = 0.6f * std::max(ext.x, std::max(ext.y, ext.z));
+
+  // 3 axis segments, each from the world origin to the positive direction
   std::vector<float> axesVertices = {
-      0.0f, 0.0f, 0.0f, AXES_LENGTH, 0.0f,        0.0f,        // X (red)
-      0.0f, 0.0f, 0.0f, 0.0f,        AXES_LENGTH, 0.0f,        // Y (green)
-      0.0f, 0.0f, 0.0f, 0.0f,        0.0f,        AXES_LENGTH  // Z (blue)
+      0.0f, 0.0f, 0.0f, axisLen, 0.0f,    0.0f,     // X (red)
+      0.0f, 0.0f, 0.0f, 0.0f,    axisLen, 0.0f,     // Y (green)
+      0.0f, 0.0f, 0.0f, 0.0f,    0.0f,    axisLen   // Z (blue)
   };
 
   glGenVertexArrays(1, &axesVAO);

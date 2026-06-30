@@ -14,6 +14,7 @@
 #include "GLUtils.hpp"
 #include "prefixSum.hpp"
 #include "shader.hpp"
+#include "voxelFile.hpp"
 
 #define MIN_RESOLUTION_XYZ 32  // Minimum resolution for each axis, used for very small objects
 #define DEBUG_OUTPUT           // Enable debug output for detailed information
@@ -163,43 +164,8 @@ void Voxelizer::normalizeMesh() {
 }
 
 bool Voxelizer::save(const std::string& filename) {
-  if (this->compressedData.empty() || this->prefixSumData.empty()) {
-    std::cerr << "No data to save. Run voxelization first." << std::endl;
-    return false;
-  }
-
-  std::ofstream file(filename, std::ios::binary);
-  if (!file) {
-    std::cerr << "Failed to open file for writing: " << filename << std::endl;
-    return false;
-  }
-
-  // Save params first
-  file.write(reinterpret_cast<const char*>(&params), sizeof(VoxelizationParams));
-  if (!file) {
-    std::cerr << "Failed to write params to file: " << filename << std::endl;
-    return false;
-  }
-
-  size_t dataSize = compressedData.size() * sizeof(GLuint);
-  size_t prefixSize = prefixSumData.size() * sizeof(GLuint);
-
-  std::cout << "Data size write (compressedData): " << dataSize << " bytes\n";
-  std::cout << "Prefix size write (prefixSumData): " << prefixSize << " bytes\n";
-
-  file.write(reinterpret_cast<const char*>(&dataSize), sizeof(size_t));
-  file.write(reinterpret_cast<const char*>(&prefixSize), sizeof(size_t));
-
-  file.write(reinterpret_cast<const char*>(compressedData.data()), dataSize);
-  file.write(reinterpret_cast<const char*>(prefixSumData.data()), prefixSize);
-
-  if (!file) {
-    throw std::runtime_error("Failed to write data to file: " + filename);
-  }
-
-  file.close();
-
-  return true;
+  // The on-disk layout lives in voxelfile (versioned, self-describing header).
+  return voxelfile::write(filename, params, compressedData, prefixSumData);
 }
 
 std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ_OLD(const std::vector<float>& vertices, const std::vector<unsigned int>& indices,
@@ -321,8 +287,16 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ_OLD(co
   const float nearPlane = 0.0f;         // Near plane distance
   const float farPlane = 2.0f * zSpan;  // Far plane distance, slightly beyond the zSpan (2x)
 
-  // lefe, right, bottom, top represents a 1.0f x 1.0f square in the XY plane, due to the coosen normalization scale
-  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, nearPlane, farPlane);  //%%%%%
+  // The slicing ortho must match the normalized XY footprint so the object FILLS the
+  // grid with CUBIC voxels. The larger of X/Y is normalized to span 1.0 (half 0.5);
+  // the smaller spans the resolutionXYZ ratio. For a square footprint both halves are
+  // exactly 0.5 (identical to the old hardcoded box); for a rectangular footprint the
+  // minor axis shrinks proportionally, instead of leaving empty grid margins / making
+  // voxels non-cubic (voxel size 2*half/resolutionXYZ is then equal on X and Y).
+  const float maxXY = static_cast<float>(std::max(params.resolutionXYZ.x, params.resolutionXYZ.y));
+  const float halfX = 0.5f * static_cast<float>(params.resolutionXYZ.x) / maxXY;
+  const float halfY = 0.5f * static_cast<float>(params.resolutionXYZ.y) / maxXY;
+  glm::mat4 projection = glm::ortho(-halfX, halfX, -halfY, halfY, nearPlane, farPlane);
 
   const glm::vec3 eye = glm::vec3(0, 0, zSpan / 2 + 0.1f);  // Camera position
   const glm::vec3 center = glm::vec3(0, 0, 0);              // Point to look at
@@ -925,8 +899,16 @@ std::pair<std::vector<GLuint>, std::vector<GLuint>> Voxelizer::voxelizerZ(const 
   const float nearPlane = 0.0f;         // Near plane distance
   const float farPlane = 2.0f * zSpan;  // Far plane distance, slightly beyond the zSpan (2x)
 
-  // lefe, right, bottom, top represents a 1.0f x 1.0f square in the XY plane, due to the coosen normalization scale
-  glm::mat4 projection = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, nearPlane, farPlane);  //%%%%%
+  // The slicing ortho must match the normalized XY footprint so the object FILLS the
+  // grid with CUBIC voxels. The larger of X/Y is normalized to span 1.0 (half 0.5);
+  // the smaller spans the resolutionXYZ ratio. For a square footprint both halves are
+  // exactly 0.5 (identical to the old hardcoded box); for a rectangular footprint the
+  // minor axis shrinks proportionally, instead of leaving empty grid margins / making
+  // voxels non-cubic (voxel size 2*half/resolutionXYZ is then equal on X and Y).
+  const float maxXY = static_cast<float>(std::max(params.resolutionXYZ.x, params.resolutionXYZ.y));
+  const float halfX = 0.5f * static_cast<float>(params.resolutionXYZ.x) / maxXY;
+  const float halfY = 0.5f * static_cast<float>(params.resolutionXYZ.y) / maxXY;
+  glm::mat4 projection = glm::ortho(-halfX, halfX, -halfY, halfY, nearPlane, farPlane);
 
   const glm::vec3 eye = glm::vec3(0, 0, zSpan / 2 + 0.1f);  // Camera position
   const glm::vec3 center = glm::vec3(0, 0, 0);              // Point to look at

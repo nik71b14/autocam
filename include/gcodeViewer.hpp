@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "boolOps.hpp"
+#include "coordinateSystem.hpp"
 #include "gcode.hpp"
 #include "gcode_params.hpp"
 #include "shader.hpp"
@@ -13,6 +14,14 @@
 // Enums
 enum class ProjectionType { ORTHOGRAPHIC, PERSPECTIVE };
 enum class VOType { WORKPIECE, TOOL };
+
+// How to interpret the numeric X/Y/Z in the G-code program:
+//   MM    - millimetres in world space (canonical, physically correct). Converted
+//           to stock voxels host-side via the stock CoordinateSystem; requires the
+//           tool and stock to share a voxel size.
+//   VOXEL - raw stock voxel indices (legacy). 1 G-code unit == 1 stock voxel. Kept
+//           for the original sample programs (e.g. gcode/square_600.gcode).
+enum class GcodeUnits { MM, VOXEL };
 
 struct GLFWwindow;  // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
@@ -35,6 +44,16 @@ class GcodeViewer {
 
   void setToolPosition(const glm::vec3& pos);
   void setProjectionType(ProjectionType type) { projectionType = type; };
+
+  // G-code unit handling (see GcodeUnits). Defaults: VOXEL, zero work offset.
+  void setGcodeUnits(GcodeUnits u) { gcodeUnits = u; }
+  void setWorkOffsetMm(const glm::vec3& mm) { workOffsetMm = mm; }
+  // Validate the stock/tool pairing for the active units mode. In MM mode the
+  // voxel sizes MUST match (the integer GPU kernels add tool transitions straight
+  // into stock indices); returns false with an explanatory error if they differ.
+  // In VOXEL mode it only warns on a mismatch, since that mode is grid-index only.
+  // Call after setWorkpiece()+setTool(), before carving.
+  bool checkUnitsConsistency() const;
 
   void copyBack() {
     // Copy back the voxelized workpiece data after carving
@@ -65,6 +84,11 @@ class GcodeViewer {
   glm::vec3 toolPosition;
   glm::mat4 projection, view;
   ProjectionType projectionType = ProjectionType::ORTHOGRAPHIC;  // Default to orthographic projection
+
+  // G-code unit interpretation. VOXEL (default) reproduces the legacy behaviour
+  // where a G-code number is a stock voxel index; MM treats it as world mm.
+  GcodeUnits gcodeUnits = GcodeUnits::VOXEL;
+  glm::vec3 workOffsetMm = glm::vec3(0.0f);  // G-code origin offset from the stock centre, in mm (MM mode only)
 
   void checkContext();
   void createShaders();

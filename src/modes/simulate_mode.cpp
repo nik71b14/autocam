@@ -13,8 +13,10 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #include "GLUtils.hpp"
@@ -36,6 +38,33 @@ int runSimulate(const CliArgs& args) {
   // The simulation defaults to an orthographic (top-down CNC) view; --perspective switches it.
   const ProjectionType projection =
       args.has("--perspective") ? ProjectionType::PERSPECTIVE : ProjectionType::ORTHOGRAPHIC;
+
+  // How to interpret the G-code numbers. Default 'voxel' = legacy stock-voxel
+  // indices (the original sample programs); 'mm' = world millimetres (canonical,
+  // physically correct — needs the tool and stock voxelized at the same resolution).
+  const std::string unitsStr = args.get("--gcode-units", "voxel");
+  GcodeUnits gcodeUnits;
+  if (unitsStr == "voxel") {
+    gcodeUnits = GcodeUnits::VOXEL;
+  } else if (unitsStr == "mm") {
+    gcodeUnits = GcodeUnits::MM;
+  } else {
+    std::cerr << "Invalid --gcode-units '" << unitsStr << "' (expected 'mm' or 'voxel').\n";
+    return EXIT_FAILURE;
+  }
+
+  // Optional G-code origin offset from the stock centre, in mm (MM mode only),
+  // written as "--work-origin x,y,z". Default: origin at the stock centre.
+  glm::vec3 workOriginMm(0.0f);
+  if (args.has("--work-origin")) {
+    std::string s = args.get("--work-origin", "0,0,0");
+    std::replace(s.begin(), s.end(), ',', ' ');
+    std::istringstream iss(s);
+    if (!(iss >> workOriginMm.x >> workOriginMm.y >> workOriginMm.z)) {
+      std::cerr << "Invalid --work-origin '" << args.get("--work-origin", "") << "' (expected x,y,z in mm).\n";
+      return EXIT_FAILURE;
+    }
+  }
 
   // A visible OpenGL context/window is required for the carving pipeline.
   GLFWwindow* window = nullptr;
@@ -60,6 +89,7 @@ int runSimulate(const CliArgs& args) {
   // destroyGLContext()/glfwTerminate(). Otherwise its destructor's GL calls would
   // run with no live context and crash.
   VoxelObject carved;
+  bool ok = true;  // set false on a units/setup error so we can clean up GL before returning
   {
     // Extract the toolpath once (getToolpath re-parses the program, so don't call it twice).
     const std::vector<GcodePoint> toolpath = interpreter.getToolpath();
@@ -68,6 +98,12 @@ int runSimulate(const CliArgs& args) {
     gCodeViewer.setProjectionType(projection);
     gCodeViewer.setWorkpiece(workpiecePath);
     gCodeViewer.setTool(toolPath);
+    gCodeViewer.setGcodeUnits(gcodeUnits);
+    gCodeViewer.setWorkOffsetMm(workOriginMm);
+
+    // Reject a stock/tool voxel-size mismatch in MM mode (only warns in VOXEL mode).
+    ok = gCodeViewer.checkUnitsConsistency();
+    if (ok) {
 
     auto tStart = std::chrono::high_resolution_clock::now();
     long steps = 0;
@@ -119,9 +155,12 @@ int runSimulate(const CliArgs& args) {
     // TODO: Marching Cubes mesh extraction of the carved result is disabled here
     // (a face at the extreme X value does not generate a corresponding mesh face).
     // Kept as a future feature; see marchingCubes.{hpp,cpp} and MeshViewer.
+    }  // end if (ok) — carving block ran only when the units/tool check passed
   }  // gCodeViewer destroyed here, while the context is still current
 
   destroyGLContext(window);
+
+  if (!ok) return EXIT_FAILURE;  // units/setup error; GL already cleaned up above
 
   if (showViewer) {
     // VoxelViewer manages its own OpenGL context/window (re-inits GLFW).

@@ -24,6 +24,52 @@ I valori di default delle opzioni sono definiti in un unico posto: `include/main
 
 ---
 
+## Scale, unità e sistemi di coordinate
+
+Il mondo di autocam è in **millimetri**. Ogni oggetto voxel è una griglia intera `[0, resolutionXYZ)`
+ancorata in quel mondo. Storicamente convivevano tre spazi che venivano confusi ai bordi; oggi le
+conversioni sono centralizzate in un'unica fonte di verità: `include/coordinateSystem.hpp`
+(`CoordinateSystem`), costruita dai metadati del `.bin`.
+
+**Campi canonici** (in `VoxelizationParams`, scritti dal voxelizer):
+- `resolution` — **mm per voxel** (`voxelSizeMm`).
+- `resolutionXYZ` — dimensioni della griglia in voxel.
+- `center` — centro del bounding box, in **mm**.
+- Dimensione fisica = `resolutionXYZ * resolution`. Origine (angolo del voxel 0,0,0) = `center - extent/2`.
+
+**Campi derivati** (interni, non usarli come input): `scale = 1/max(sizeX, sizeY)` (solo XY!) e
+`zSpan` (estensione Z normalizzata). Servono solo al pass di slicing del voxelizer e al box del
+raymarch shader.
+
+> **Nota storica (correzione).** Una vecchia nota affermava `scale = 1/max(X,Y,Z)` con il risultato
+> in `[0,1]³`. È **sbagliato**: lo `scale` usa solo `max(X,Y)` (la Z è esclusa), e l'oggetto
+> normalizzato è **centrato** in `[-0.5,0.5]² × [-zSpan/2, +zSpan/2]`. Esempio: un utensile 10×10×50
+> ha `scale = 1/10 = 0.1`, non `1/50`.
+
+**I tre spazi e le conversioni:**
+1. **mm mondo** — l'unità canonica (G-code in `mm`, viewer, assi, camera).
+2. **indice-voxel** `[0, resolutionXYZ)` — il dato realmente memorizzato (colonne sparse di
+   transizioni Z); tutto il carving GPU vive qui. `mm → voxel` = `round((mm - origin)/voxelSizeMm)`.
+3. **normalizzato** `[-0.5,0.5]² × [-zSpan/2, zSpan/2]` — dettaglio interno (slicing + box shader);
+   la `renderModelMatrix()` lo mappa alla scatola mm (scala **per-asse**, così i footprint
+   rettangolari non vengono distorti).
+
+**Carving e risoluzione.** I kernel GPU sommano le transizioni dell'utensile direttamente negli indici
+dello stock, quindi sono fisicamente corretti **solo se utensile e workpiece condividono la
+`voxelSizeMm`** (stessa `--res`). In modalità `--gcode-units mm` questo è obbligatorio (altrimenti
+errore); in `voxel` è solo un warning. Per cambiare utensile o stock, **ri-voxelizza alla stessa
+`--res`** (gli artefatti `.bin` sono rigenerabili a piacere con `autocam voxelize`).
+
+**Footprint rettangolari.** Il voxelizer produce voxel **cubici** anche per stock non quadrati (es.
+200×100×50): la griglia viene riempita correttamente, senza margini vuoti né voxel non cubici.
+
+**Formato `.bin`.** I file voxel sono versionati e auto-descrittivi (magic `AVOX`, versione 1). Un
+vecchio `.bin` senza header viene **rifiutato** con un messaggio che invita a rigenerarlo — non esiste
+un lettore legacy. Layout: `[AVOX][u32 version][u32 paramsBytes][VoxelizationParams][u64 dataBytes]
+[u64 prefixBytes][transizioni][prefix-sum]` (vedi `include/voxelFile.hpp`).
+
+---
+
 ## Comandi
 
 ### `voxelize` — voxelizza una mesh STL
@@ -31,7 +77,7 @@ I valori di default delle opzioni sono definiti in un unico posto: `include/main
 Carica una mesh STL, la voxelizza sulla GPU e salva il risultato come oggetto voxel `.bin`.
 
 ```
-voxelize voxelize <input.stl> [--out <file.bin>] [--res <float>] [--mem-mb <int>]
+autocam voxelize <input.stl> [--out <file.bin>] [--res <float>] [--mem-mb <int>]
 ```
 
 | Opzione      | Default                         | Descrizione                                   |
@@ -43,8 +89,8 @@ voxelize voxelize <input.stl> [--out <file.bin>] [--res <float>] [--mem-mb <int>
 
 Esempi:
 ```
-voxelize voxelize models/cube100.stl
-voxelize voxelize models/hemispheric_mill_10.stl --out test/mill.bin --res 0.05
+autocam voxelize models/cube100.stl
+autocam voxelize models/hemispheric_mill_10.stl --out test/mill.bin --res 0.05
 ```
 
 ---
@@ -56,30 +102,45 @@ lungo il percorso sottraendolo dal workpiece a ogni passo. Opzionalmente salva i
 visualizza.
 
 ```
-voxelize simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>
-                  [--out <r.bin>] [--step <float>] [--perspective] [--no-view] [--verbose]
+autocam simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>
+                 [--out <r.bin>] [--gcode-units mm|voxel] [--work-origin x,y,z]
+                 [--step <float>] [--perspective] [--no-view] [--verbose]
 ```
 
-| Opzione        | Default                                  | Descrizione                                         |
-|----------------|------------------------------------------|-----------------------------------------------------|
-| `--gcode`      | `GCODE_PATH` (`gcode/square_600.gcode`)  | Toolpath G-code.                                    |
-| `--workpiece`  | `DEFAULT_WORKPIECE_BIN`                   | Workpiece voxelizzato `.bin`.                       |
-| `--tool`       | `DEFAULT_TOOL_BIN`                        | Utensile voxelizzato `.bin`.                        |
-| `--out`        | (nessuno)                                | Se presente, salva il workpiece lavorato in `.bin`. |
-| `--step`       | `2.0`                                     | Avanzamento per passo (unità voxel, non mm — TODO). |
-| `--perspective`| (off → ortografica)                      | Usa proiezione prospettica invece dell'ortografica. |
-| `--no-view`    | (off → mostra il viewer)                 | Esegue headless, senza aprire finestre (batch).     |
-| `--verbose`    | (off)                                     | Stampa ogni comando G-code interpretato.            |
+| Opzione         | Default                                  | Descrizione                                          |
+|-----------------|------------------------------------------|------------------------------------------------------|
+| `--gcode`       | `GCODE_PATH` (`gcode/square_600.gcode`)  | Toolpath G-code.                                     |
+| `--workpiece`   | `DEFAULT_WORKPIECE_BIN`                   | Workpiece voxelizzato `.bin`.                        |
+| `--tool`        | `DEFAULT_TOOL_BIN`                        | Utensile voxelizzato `.bin`.                         |
+| `--out`         | (nessuno)                                | Se presente, salva il workpiece lavorato in `.bin`.  |
+| `--gcode-units` | `voxel`                                  | Interpretazione delle coordinate G-code: `mm` (mondo, fisicamente corretto) o `voxel` (indici griglia stock, legacy). Vedi sotto. |
+| `--work-origin` | `0,0,0`                                  | Offset mm dell'origine G-code dal **centro** dello stock (solo `mm`). |
+| `--step`        | `2.0`                                     | Avanzamento per passo del jog `--legacy` (in unità coerenti con `--gcode-units`). |
+| `--perspective` | (off → ortografica)                      | Usa proiezione prospettica invece dell'ortografica.  |
+| `--no-view`     | (off → mostra il viewer)                 | Esegue headless, senza aprire finestre (batch).      |
+| `--verbose`     | (off)                                     | Stampa ogni comando G-code interpretato.             |
+
+> **Unità G-code e risoluzione.** In modalità `mm` (canonica) le coordinate sono millimetri mondo e
+> vengono convertite in voxel dello stock; questo richiede che **utensile e workpiece siano stati
+> voxelizzati alla stessa `--res`** (stessa `voxelSizeMm`) — altrimenti `simulate` rifiuta con un
+> errore che invita a ri-voxelizzare. In modalità `voxel` (default, legacy) 1 unità G-code = 1 voxel
+> stock; un mismatch di risoluzione produce solo un warning.
+>
+> Il sample `gcode/square_600.gcode` è **legacy in unità-voxel** ed è co-tarato con
+> `test/hemispheric_mill_10.bin` (voxelizzato a `--res 0.0390625`, diverso dallo stock a `0.1`):
+> per questo la run di default stampa il warning di mismatch — è atteso. Per una pipeline in `mm`
+> ri-voxelizza **entrambi** alla stessa `--res` e scrivi il G-code in mm con profondità Z adatte
+> all'utensile reale. Vedi "[Scale, unità e sistemi di coordinate](#scale-unità-e-sistemi-di-coordinate)".
 
 Esempi:
 ```
-# carving con i default + visualizzazione
-voxelize simulate --gcode gcode/square_600.gcode \
-                  --workpiece test/workpiece_100_100_50.bin \
-                  --tool test/hemispheric_mill_10.bin
+# carving con i default + visualizzazione (G-code in unità-voxel, legacy; stampa il warning di mismatch)
+autocam simulate --gcode gcode/square_600.gcode \
+                 --workpiece test/workpiece_100_100_50.bin \
+                 --tool test/hemispheric_mill_10.bin
 
 # headless: produce solo il risultato su file (utile per generare dataset)
-voxelize simulate --gcode gcode/pocket.gcode --out test/pocket_result.bin --no-view
+autocam simulate --gcode gcode/pocket.gcode --out test/pocket_result.bin --no-view
 ```
 
 ---
@@ -89,7 +150,7 @@ voxelize simulate --gcode gcode/pocket.gcode --out test/pocket_result.bin --no-v
 Carica un oggetto voxel `.bin` e lo mostra con il viewer raymarching.
 
 ```
-voxelize view <file.bin> [--ortho]
+autocam view <file.bin> [--ortho]
 ```
 
 | Opzione      | Default                       | Descrizione                              |
@@ -99,7 +160,7 @@ voxelize view <file.bin> [--ortho]
 
 Esempio:
 ```
-voxelize view test/workpiece_100_100_50.bin --ortho
+autocam view test/workpiece_100_100_50.bin --ortho
 ```
 
 ---
@@ -107,7 +168,7 @@ voxelize view test/workpiece_100_100_50.bin --ortho
 ### `help`
 
 ```
-voxelize help        # oppure: voxelize --help, oppure nessun argomento
+autocam help        # oppure: autocam --help, oppure nessun argomento
 ```
 
 ---
