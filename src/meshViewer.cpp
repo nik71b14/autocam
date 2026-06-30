@@ -86,6 +86,7 @@ screen. Please include:
 #include <GLFW/glfw3.h>
 
 #include <algorithm>  // for std::clamp
+#include <cmath>      // for std::tan
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -116,29 +117,42 @@ MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, co
 
   glfwSetCursorPosCallback(window, [](GLFWwindow* w, double xpos, double ypos) {
     auto* self = static_cast<MeshViewer*>(glfwGetWindowUserPointer(w));
-    if (!self->leftPressed) return;
+    if (!self->leftPressed && !self->middlePressed) return;
     if (self->firstMouse) {
       self->lastX = xpos;
       self->lastY = ypos;
       self->firstMouse = false;
     }
 
-    float xoffset = xpos - self->lastX;
-    float yoffset = self->lastY - ypos;
+    float xoffset = static_cast<float>(xpos - self->lastX);
+    float yoffset = static_cast<float>(self->lastY - ypos);  // screen-up = positive
     self->lastX = xpos;
     self->lastY = ypos;
 
-    float sensitivity = 0.1f;
-    self->yaw += xoffset * sensitivity;
-    self->pitch -= yoffset * sensitivity;
-    self->pitch = std::clamp(self->pitch, -89.0f, 89.0f);  // clamp pitch to avoid gimbal lock
-    self->updateCameraVectors();
+    if (self->leftPressed) {
+      // Left drag = orbit.
+      const float sensitivity = 0.1f;
+      self->yaw += xoffset * sensitivity;
+      self->pitch -= yoffset * sensitivity;
+      self->pitch = std::clamp(self->pitch, -89.0f, 89.0f);  // clamp pitch to avoid gimbal lock
+      self->updateCameraVectors();
+    } else {
+      // Middle drag = pan: move the orbit target in the camera's view plane so the
+      // mesh tracks the cursor (perspective: visible height at the target is
+      // 2*radius*tan(fov/2), so this is a 1:1 grab-and-drag).
+      glm::vec3 right = glm::normalize(glm::cross(self->cameraFront, glm::vec3(0.0f, 1.0f, 0.0f)));
+      glm::vec3 up = glm::normalize(glm::cross(right, self->cameraFront));
+      float panScale = 2.0f * self->radius * std::tan(glm::radians(self->zoom) * 0.5f) / static_cast<float>(self->height);
+      self->target -= (right * xoffset + up * yoffset) * panScale;
+      self->updateCameraVectors();
+    }
   });
 
   glfwSetMouseButtonCallback(window, [](GLFWwindow* w, int button, int action, int) {
     auto* self = static_cast<MeshViewer*>(glfwGetWindowUserPointer(w));
     if (button == GLFW_MOUSE_BUTTON_LEFT) self->leftPressed = (action == GLFW_PRESS);
-    if (action == GLFW_RELEASE) self->firstMouse = true;
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE) self->middlePressed = (action == GLFW_PRESS);
+    if (action == GLFW_RELEASE) self->firstMouse = true;  // re-baseline the next drag
   });
 
   glfwSetScrollCallback(window, [](GLFWwindow* w, double, double yoffset) {

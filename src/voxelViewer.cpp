@@ -84,7 +84,8 @@ void VoxelViewer::onMouseMove(double xpos, double ypos) {
     // pitch -= delta.y * 0.3f; //%%%%%%%
     pitch += delta.y * 0.3f;
     pitch = glm::clamp(pitch, -89.0f, 89.0f);
-  } else if (rightMousePressed) {
+  } else if (rightMousePressed || middleMousePressed) {
+    // Right OR middle drag = pan.
     panOffset += delta * 0.005f;
   }
 

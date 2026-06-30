@@ -44,6 +44,7 @@ class MeshViewer {
   float lastX = 0.0f, lastY = 0.0f;
   bool firstMouse = true;
   bool leftPressed = false;
+  bool middlePressed = false;  // middle-button drag = pan
 
   glm::vec3 target = glm::vec3(0.0f);  // center of orbit (mesh center)
   float radius = 10.0f;                // distance from center
