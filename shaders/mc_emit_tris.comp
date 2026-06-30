@@ -1,0 +1,47 @@
+// GPU Marching Cubes — Pass D: emit triangle indices.
+// One thread per padded cell. For each triangle in triTable[cubeIndex], maps the 3
+// cube-edges to their owning lattice edge's global vertex index (via the
+// edge-ownership table + edgeVertexIndex) and writes 3 indices into the index
+// buffer at the cell's prefix-sum offset. The 2nd/3rd edge are swapped to match the
+// CPU winding so faces stay CCW (front-facing) under GL_BACK culling.
+#version 460 core
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(std430, binding = 0) readonly buffer TriTableBuffer { int triTable[]; };          // [256*16]
+layout(std430, binding = 1) readonly buffer TriPrefixBuffer { uint triPrefix[]; };
+layout(std430, binding = 2) readonly buffer CubeIndexBuffer { uint cubeIndexIn[]; };
+layout(std430, binding = 3) readonly buffer EdgeVertexIndexBuffer { uint edgeVertexIndex[]; };
+layout(std430, binding = 4) writeonly buffer IndexBuffer { uint ebo[]; };
+
+uniform ivec3 cellDims;
+uniform ivec3 pointDims;
+
+// 12 cube-edges -> owner lattice-point offset (xyz) + axis (w: 0=X,1=Y,2=Z).
+const ivec4 edgeOwner[12] = ivec4[](ivec4(0, 0, 0, 0), ivec4(1, 0, 0, 1), ivec4(0, 1, 0, 0), ivec4(0, 0, 0, 1), ivec4(0, 0, 1, 0), ivec4(1, 0, 1, 1),
+                                    ivec4(0, 1, 1, 0), ivec4(0, 0, 1, 1), ivec4(0, 0, 0, 2), ivec4(1, 0, 0, 2), ivec4(1, 1, 0, 2), ivec4(0, 1, 0, 2));
+
+uint vertexOfEdge(ivec3 c, int cubeEdge) {
+  ivec4 ow = edgeOwner[cubeEdge];
+  ivec3 op = c + ow.xyz;  // owner lattice point
+  int pidx = (op.z * pointDims.y + op.y) * pointDims.x + op.x;
+  return edgeVertexIndex[uint(pidx) * 3u + uint(ow.w)];
+}
+
+void main() {
+  ivec3 c = ivec3(gl_GlobalInvocationID);
+  if (c.x >= cellDims.x || c.y >= cellDims.y || c.z >= cellDims.z) return;
+  int cidx = (c.z * cellDims.y + c.y) * cellDims.x + c.x;
+
+  uint ci = cubeIndexIn[cidx];
+  uint base = ci * 16u;
+  if (triTable[base] == -1) return;  // empty cell
+
+  uint oi = 3u * triPrefix[cidx];
+  for (uint t = 0u; triTable[base + t] != -1; t += 3u) {
+    // CPU winding: emit cube-edges (t, t+2, t+1).
+    ebo[oi + 0u] = vertexOfEdge(c, triTable[base + t + 0u]);
+    ebo[oi + 1u] = vertexOfEdge(c, triTable[base + t + 2u]);
+    ebo[oi + 2u] = vertexOfEdge(c, triTable[base + t + 1u]);
+    oi += 3u;
+  }
+}

@@ -41,7 +41,8 @@ int runSimulate(const CliArgs& args) {
   // subsamples for a lighter/faster mesh.
   const std::string outMesh = args.get("--out-mesh", "");
   const int meshStep = args.getInt("--mesh-step", 1);
-  const int meshSmooth = args.getInt("--smooth", 8);
+  const int meshSmooth = args.getInt("--smooth", 0);  // 0 = GPU smooth normals only; >0 = CPU Taubin
+  const bool useGpuMesh = !args.has("--cpu");
   const bool meshMode = args.has("--mesh") || !outMesh.empty();
   const bool legacy = args.has("--legacy");  // per-step stamping (Phase 1) instead of swept (Phase 2)
   // The simulation defaults to an orthographic (top-down CNC) view; --perspective switches it.
@@ -175,7 +176,7 @@ int runSimulate(const CliArgs& args) {
   // show it (interactive, unless --no-view) and/or save it as STL.
   if (meshMode) {
     const bool interactive = showViewer && args.has("--mesh");
-    return showVoxelObjectAsMesh(carved, meshStep, meshSmooth, outMesh, interactive) ? EXIT_SUCCESS : EXIT_FAILURE;
+    return showVoxelObjectAsMesh(carved, meshStep, meshSmooth, outMesh, interactive, useGpuMesh) ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
   if (showViewer) {

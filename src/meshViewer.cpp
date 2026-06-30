@@ -108,6 +108,25 @@ MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, co
   fitViewToMesh();
 
   glViewport(0, 0, width, height);
+  installCallbacks();
+}
+
+// GPU-buffer constructor: draw an existing interleaved VBO + index EBO directly.
+MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, GLuint vbo, GLuint ebo, GLsizei idxCount, glm::vec3 bboxMin, glm::vec3 bboxMax)
+    : window(window), width(windowWidth), height(windowHeight) {
+  checkContext();
+  ownsBuffers = false;  // GpuMarchingCubes owns vbo/ebo; we only build a VAO over them
+  indexCount = idxCount;
+  createShaders();
+  buildMeshBuffersFromGPU(vbo, ebo);
+  fitViewToBounds(bboxMin, bboxMax);
+
+  glViewport(0, 0, width, height);
+  installCallbacks();
+}
+
+// Orbit (left drag) + pan (middle drag) + zoom (scroll). Shared by both ctors.
+void MeshViewer::installCallbacks() {
   glfwSetWindowUserPointer(window, this);
   glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int w_, int h_) {
     glViewport(0, 0, w_, h_);
@@ -162,10 +181,28 @@ MeshViewer::MeshViewer(GLFWwindow* window, int windowWidth, int windowHeight, co
   });
 }
 
+// Build a VAO over externally-owned GPU buffers (interleaved pos+normal, stride 6
+// floats; uint indices) — no CPU copy. Mirrors buildMeshBuffers' attribute layout.
+void MeshViewer::buildMeshBuffersFromGPU(GLuint vbo, GLuint ebo) {
+  VBO = vbo;
+  EBO = ebo;
+  glGenVertexArrays(1, &VAO);
+  glBindVertexArray(VAO);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+  glEnableVertexAttribArray(1);
+  glBindVertexArray(0);
+}
+
 MeshViewer::~MeshViewer() {
-  glDeleteBuffers(1, &VBO);
-  glDeleteBuffers(1, &EBO);
-  glDeleteVertexArrays(1, &VAO);
+  if (ownsBuffers) {
+    glDeleteBuffers(1, &VBO);
+    glDeleteBuffers(1, &EBO);
+  }
+  glDeleteVertexArrays(1, &VAO);  // the VAO is always ours
   delete shader;
   delete shader_flat;
   delete shader_raymarching;
@@ -237,6 +274,7 @@ void MeshViewer::buildMeshBuffers() {
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, triangles.size() * sizeof(int), triangles.data(), GL_STATIC_DRAW);
+  indexCount = static_cast<GLsizei>(triangles.size());
 
   // Vertex positions at location 0
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
@@ -290,7 +328,7 @@ void MeshViewer::drawMesh() {
   shader->setVec3("lightDir", LIGHT_DIRECTION);
 
   glBindVertexArray(VAO);
-  glDrawElements(GL_TRIANGLES, triangles.size(), GL_UNSIGNED_INT, 0);
+  glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
   glBindVertexArray(0);
 }
 
@@ -319,14 +357,16 @@ void MeshViewer::fitViewToMesh() {
     minBounds = glm::min(minBounds, v);
     maxBounds = glm::max(maxBounds, v);
   }
+  fitViewToBounds(minBounds, maxBounds);
+}
 
-  target = 0.5f * (minBounds + maxBounds);
-  // radius = glm::length(maxBounds - minBounds) * 0.6f;
-  radius = glm::length(maxBounds - minBounds) * 2.0f;
-
+// Frame the camera to a known bounding box (used by the GPU-buffer ctor, which has
+// no CPU vertex array to scan).
+void MeshViewer::fitViewToBounds(glm::vec3 mn, glm::vec3 mx) {
+  target = 0.5f * (mn + mx);
+  radius = glm::length(mx - mn) * 2.0f;
   yaw = -90.0f;
   pitch = 0.0f;
-
   updateCameraVectors();
 }
 

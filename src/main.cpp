@@ -38,9 +38,10 @@ void printUsage() {
       "      --legacy uses per-step stamping instead of the swept subtraction.\n"
       "      --mesh shows the result as a marching-cubes mesh (instead of raymarching);\n"
       "      --out-mesh saves that mesh as a binary STL; --mesh-step N subsamples it;\n"
-      "      --smooth N sets the Taubin smoothing passes (default 8, 0 = exact geometry).\n\n"
-      "  view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>] [--smooth <int>]\n"
-      "      Raymarch-view a .bin voxel object (or --mesh for a smoothed marching-cubes mesh).\n\n"
+      "      --smooth N adds N CPU Taubin smoothing passes (default 0); --cpu forces the\n"
+      "      CPU mesher (GPU marching cubes is the default).\n\n"
+      "  view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>] [--smooth <int>] [--cpu]\n"
+      "      Raymarch-view a .bin voxel object (or --mesh for a GPU marching-cubes mesh).\n\n"
       "  help, --help\n"
       "      Show this message.\n";
 }
@@ -48,7 +49,7 @@ void printUsage() {
 int main(int argc, char** argv) {
   // Valueless flags: tokens the parser must NOT treat as "--key <value>".
   const std::unordered_set<std::string> valuelessFlags = {
-      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--mesh", "--help"};
+      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--mesh", "--cpu", "--help"};
 
   try {
     CliArgs args = parseCli(argc, argv, valuelessFlags);

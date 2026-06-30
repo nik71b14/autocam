@@ -6,14 +6,23 @@
 #include <iostream>
 
 #include "GLUtils.hpp"
+#include "gpuMarchingCubes.hpp"
 #include "marchingCubes.hpp"
 #include "meshViewer.hpp"
 
-bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, int smoothIterations, const std::string& outStl, bool interactive) {
-  // A GL context must be current: MarchingCubes::go() calls glfwPollEvents() and
-  // MeshViewer needs the context for its buffers/shaders. Create one window (hidden
-  // when we are not displaying, e.g. headless STL export) and keep it alive for
-  // both the mesher and the viewer.
+// Run the mesh viewer's interactive loop with the existing CPU-buffer MeshViewer
+// constructor (used by the CPU path and the GPU readback path).
+static void runViewerLoop(GLFWwindow* window, int W, int H, const std::vector<float>& verts, const std::vector<int>& tris, const std::vector<float>& norms) {
+  MeshViewer viewer(window, W, H, verts, tris, norms);
+  while (!glfwWindowShouldClose(window)) {
+    glfwPollEvents();
+    viewer.drawFrame();
+  }
+}
+
+bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, int smoothIterations, const std::string& outStl, bool interactive, bool useGpu) {
+  // A GL context must be current for both the (CPU or GPU) mesher and MeshViewer.
+  // Create one window (hidden for headless STL export) and keep it alive for both.
   const int W = 1200;
   const int H = 800;
   GLFWwindow* window = nullptr;
@@ -21,32 +30,47 @@ bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, int smoothItera
 
   bool ok = true;
   {
-    // Marching Cubes consumes the voxel object directly (same parity walk as the
-    // raymarch shader); see marchingCubes.cpp.
-    MarchingCubes mc(obj);
-    mc.setStep(meshStep);
-    mc.go();
-    // Weld + averaged normals (always) + Taubin geometry smoothing, to de-step the
-    // surface. Both the STL export and the viewer below use the smoothed result.
-    mc.smooth(smoothIterations);
-
-    if (mc.getTriangles().empty()) {
-      std::cerr << "Mesh is empty: no surface extracted (is the object empty?)." << std::endl;
-      ok = false;
+    if (!useGpu) {
+      // ---- CPU reference path (unchanged) ----
+      MarchingCubes mc(obj);
+      mc.setStep(meshStep);
+      mc.go();
+      mc.smooth(smoothIterations);  // weld + averaged normals + optional Taubin
+      if (mc.getTriangles().empty()) {
+        std::cerr << "Mesh is empty: no surface extracted (is the object empty?)." << std::endl;
+        ok = false;
+      } else {
+        if (!outStl.empty()) mc.saveStl(outStl);
+        if (interactive) runViewerLoop(window, W, H, mc.getVertices(), mc.getTriangles(), mc.getNormals());
+      }
     } else {
-      if (!outStl.empty()) mc.saveStl(outStl);
-
-      if (interactive) {
-        // MeshViewer owns GL resources, so keep it in this inner scope: it must be
-        // destroyed while the context is still current, before destroyGLContext().
-        MeshViewer viewer(window, W, H, mc.getVertices(), mc.getTriangles(), mc.getNormals());
-        while (!glfwWindowShouldClose(window)) {
-          glfwPollEvents();
-          viewer.drawFrame();
+      // ---- GPU path: edge-indexed Marching Cubes (smooth gradient normals) ----
+      GpuMarchingCubes gmc(obj);
+      gmc.setStep(meshStep);
+      if (!gmc.run()) {
+        ok = false;  // empty / failed (message printed by run())
+      } else {
+        // Geometric Taubin smoothing and STL export need the mesh on the CPU; read
+        // it back into a MarchingCubes (reusing its smooth()/saveStl()). The pure
+        // interactive view (smooth 0, no STL) draws the GPU buffers directly.
+        const bool needReadback = !outStl.empty() || smoothIterations > 0;
+        if (needReadback) {
+          MarchingCubes mc(obj);
+          gmc.readbackTo(mc);
+          if (smoothIterations > 0) mc.smooth(smoothIterations);
+          if (!outStl.empty()) mc.saveStl(outStl);
+          if (interactive) runViewerLoop(window, W, H, mc.getVertices(), mc.getTriangles(), mc.getNormals());
+        } else if (interactive) {
+          // Zero readback: bind the GPU vertex/index buffers straight into MeshViewer.
+          MeshViewer viewer(window, W, H, gmc.vbo(), gmc.ebo(), gmc.indexCount(), gmc.bboxMin(), gmc.bboxMax());
+          while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+            viewer.drawFrame();
+          }
         }
       }
     }
-  }  // MeshViewer destroyed here, while the context is still current
+  }  // GpuMarchingCubes / MeshViewer destroyed here, while the context is still current
 
   destroyGLContext(window);
   return ok;

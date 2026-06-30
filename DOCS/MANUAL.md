@@ -123,7 +123,8 @@ autocam simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>
 | `--mesh`        | (off → raymarch)                         | Mostra il risultato come **mesh** (marching cubes) invece del raymarcher. |
 | `--out-mesh`    | (nessuno)                                | Salva la mesh marching-cubes come STL binario (funziona anche con `--no-view`). |
 | `--mesh-step`   | `1`                                      | Sottocampiona la mesh: un voxel ogni N (più alto = mesh più leggera/veloce). |
-| `--smooth`      | `8`                                      | Iterazioni di smoothing Taubin della mesh (`0` = geometria esatta + normali lisce). |
+| `--smooth`      | `0`                                      | Iterazioni di smoothing Taubin (CPU) sopra le normali lisce GPU (`0` = nessuna). |
+| `--cpu`         | (off → GPU)                              | Forza il marching cubes su CPU (riferimento/fallback; il GPU è il default). |
 
 > **Unità G-code e risoluzione.** In modalità `mm` (canonica) le coordinate sono millimetri mondo e
 > vengono convertite in voxel dello stock; questo richiede che **utensile e workpiece siano stati
@@ -161,35 +162,39 @@ autocam simulate --gcode gcode/square_600.gcode --no-view --out-mesh carved.stl 
 Carica un oggetto voxel `.bin` e lo mostra con il viewer raymarching (o come mesh con `--mesh`).
 
 ```
-autocam view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>]
+autocam view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>] [--smooth <int>] [--cpu]
 ```
 
 | Opzione       | Default                       | Descrizione                                                   |
 |---------------|-------------------------------|---------------------------------------------------------------|
 | `<file.bin>`  | — (obbligatorio, posizionale) | Oggetto voxel da visualizzare.                                |
 | `--ortho`     | (off → prospettica)           | Usa proiezione ortografica (solo raymarcher).                 |
-| `--mesh`      | (off → raymarch)              | Mostra una **mesh** (marching cubes) invece del raymarcher.   |
+| `--mesh`      | (off → raymarch)              | Mostra una **mesh** (marching cubes su GPU) invece del raymarcher. |
 | `--out-mesh`  | (nessuno)                     | Salva la mesh come STL binario (funziona anche con `--no-view`).|
 | `--mesh-step` | `1`                           | Sottocampiona la mesh: un voxel ogni N.                       |
-| `--smooth`    | `8`                           | Iterazioni di smoothing Taubin (`0` = geometria esatta + normali lisce). |
+| `--smooth`    | `0`                           | Iterazioni di smoothing Taubin (CPU) sopra le normali lisce GPU. |
+| `--cpu`       | (off → GPU)                   | Forza il marching cubes su CPU (riferimento/fallback).        |
 
 Esempi:
 ```
 autocam view test/workpiece_100_100_50.bin --ortho
-autocam view test/cube100.bin --mesh                 # mesh liscia (smoothing default)
-autocam view test/cyl_mill_12.bin --mesh --smooth 0  # geometria esatta (solo normali lisce)
-autocam view test/cube100.bin --out-mesh cube.stl --no-view   # solo export STL, headless
+autocam view test/cube100.bin --mesh                 # mesh GPU (normali lisce)
+autocam view test/cyl_mill_12.bin --mesh --smooth 8  # + smoothing geometrico Taubin (CPU)
+autocam view test/cube100.bin --out-mesh cube.stl --no-view --mesh-step 4   # export STL headless
 ```
 
 > **Visualizzazione a mesh (`--mesh` / `--out-mesh`).** Estrae una mesh a triangoli dal volume voxel
-> con marching cubes (consuma direttamente il formato a transizioni; mesh e STL sono in **mm** mondo,
-> coerenti con `CoordinateSystem`). La mesh viene poi **lisciata**: i vertici coincidenti vengono
-> saldati, si usano **normali mediate** per-vertice (shading liscio invece che sfaccettato) e si
-> applicano `--smooth N` iterazioni di **Taubin** (anti-restringimento) per de-steppare anche la
-> geometria; `--smooth 0` mantiene la geometria esatta dei voxel (utile per spigoli vivi). L'estrazione
-> è **su CPU**: a piena risoluzione (`--mesh-step 1`) un pezzo grande (es. 1000×1000×500) richiede
-> decine di secondi e produce milioni di triangoli — usa `--mesh-step N` per una mesh più
-> leggera/veloce in interattivo. (Ottimizzazione GPU = lavoro futuro.)
+> con marching cubes **su GPU** (di default; compute shader edge-indexed, vertici condivisi con
+> **normali lisce da gradiente**). Mesh e STL sono in **mm** mondo, coerenti con `CoordinateSystem`.
+> La vista interattiva di default non fa alcun readback (i buffer GPU vanno dritti al viewer).
+> `--smooth N` (N>0) aggiunge N iterazioni di **Taubin** geometrico **su CPU** (richiede un readback);
+> `--smooth 0` (default) usa solo le normali lisce, geometria esatta dei voxel. `--cpu` forza il
+> marching cubes su CPU (path di riferimento, fa streaming e gestisce la piena risoluzione).
+>
+> **Memoria.** I buffer GPU sono proporzionali al **volume** della griglia (virtuale, dopo
+> `--mesh-step`): a `--mesh-step 1` su un pezzo grande (es. 1000×1000×500) servirebbero molti GB, quindi
+> il path GPU **aborta con un avviso** chiedendo di alzare `--mesh-step` (o usare `--cpu`). Per l'uso
+> interattivo conviene comunque `--mesh-step ≥ 2`.
 
 ---
 

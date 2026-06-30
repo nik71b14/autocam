@@ -1,0 +1,50 @@
+// GPU Marching Cubes — Pass C: classify cells.
+// One thread per padded cell. Computes the 8-corner cube index and the number of
+// triangles it emits (from triCountTable). The triangle counts are prefix-summed
+// to give each cell a write offset into the index buffer.
+#version 460 core
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(std430, binding = 0) readonly buffer TransitionBuffer { uint transitions[]; };
+layout(std430, binding = 1) readonly buffer PrefixSumBuffer { uint prefixSums[]; };
+layout(std430, binding = 2) readonly buffer TriCountTableBuffer { uint triCountTable[]; };  // [256]
+layout(std430, binding = 3) writeonly buffer TriCountBuffer { uint triCount[]; };
+layout(std430, binding = 4) writeonly buffer CubeIndexBuffer { uint cubeIndexOut[]; };
+
+uniform ivec3 resolution;
+uniform ivec3 cellDims;  // padded cell dims (CX,CY,CZ)
+uniform int step;
+
+bool occAt(ivec3 g) {
+  if (g.x < 0 || g.y < 0 || g.z < 0 || g.x >= resolution.x || g.y >= resolution.y || g.z >= resolution.z) return false;
+  int ci = g.y * resolution.x + g.x;
+  uint start = prefixSums[ci];
+  uint end = (uint(ci) + 1u < prefixSums.length()) ? prefixSums[ci + 1] : uint(transitions.length());
+  bool inside = false;
+  for (uint i = start; i < end && i < transitions.length(); ++i) {
+    if (g.z < int(transitions[i])) break;
+    inside = !inside;
+  }
+  return inside;
+}
+bool occPoint(ivec3 p) { return occAt((p - ivec3(1)) * step); }
+
+void main() {
+  ivec3 c = ivec3(gl_GlobalInvocationID);
+  if (c.x >= cellDims.x || c.y >= cellDims.y || c.z >= cellDims.z) return;
+  int cidx = (c.z * cellDims.y + c.y) * cellDims.x + c.x;
+
+  // Corner order matches the CPU cube[] order; cell corner-0 is lattice point `c`.
+  int idx = 0;
+  if (occPoint(c + ivec3(0, 0, 0))) idx |= 1;
+  if (occPoint(c + ivec3(1, 0, 0))) idx |= 2;
+  if (occPoint(c + ivec3(1, 1, 0))) idx |= 4;
+  if (occPoint(c + ivec3(0, 1, 0))) idx |= 8;
+  if (occPoint(c + ivec3(0, 0, 1))) idx |= 16;
+  if (occPoint(c + ivec3(1, 0, 1))) idx |= 32;
+  if (occPoint(c + ivec3(1, 1, 1))) idx |= 64;
+  if (occPoint(c + ivec3(0, 1, 1))) idx |= 128;
+
+  cubeIndexOut[cidx] = uint(idx);
+  triCount[cidx] = triCountTable[idx];
+}

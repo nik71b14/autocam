@@ -1,0 +1,46 @@
+// GPU Marching Cubes — Pass A: classify candidate edges.
+// One thread per padded lattice point; writes a 0/1 active flag for each of the
+// point's 3 owned edges (+X,+Y,+Z). An edge is active (carries a vertex) iff its
+// two endpoints have different occupancy. The flag buffer is then prefix-summed to
+// assign a unique vertex index per active edge.
+#version 460 core
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(std430, binding = 0) readonly buffer TransitionBuffer { uint transitions[]; };
+layout(std430, binding = 1) readonly buffer PrefixSumBuffer { uint prefixSums[]; };
+layout(std430, binding = 2) writeonly buffer EdgeFlagBuffer { uint edgeFlag[]; };
+
+uniform ivec3 resolution;  // voxel grid size
+uniform ivec3 pointDims;   // padded lattice point dims (PX,PY,PZ)
+uniform int step;          // voxel subsampling
+
+// Occupancy parity scan of a voxel column (guarded: prefixSums has no trailing
+// sentinel, so the last column's end is the transitions length).
+bool occAt(ivec3 g) {
+  if (g.x < 0 || g.y < 0 || g.z < 0 || g.x >= resolution.x || g.y >= resolution.y || g.z >= resolution.z) return false;
+  int ci = g.y * resolution.x + g.x;
+  uint start = prefixSums[ci];
+  uint end = (uint(ci) + 1u < prefixSums.length()) ? prefixSums[ci + 1] : uint(transitions.length());
+  bool inside = false;
+  for (uint i = start; i < end && i < transitions.length(); ++i) {
+    if (g.z < int(transitions[i])) break;
+    inside = !inside;
+  }
+  return inside;
+}
+
+// Occupancy at a padded lattice point (index space): virtual coord = point - 1,
+// sampled voxel = virtualCoord * step.
+bool occPoint(ivec3 p) { return occAt((p - ivec3(1)) * step); }
+
+void main() {
+  ivec3 p = ivec3(gl_GlobalInvocationID);
+  if (p.x >= pointDims.x || p.y >= pointDims.y || p.z >= pointDims.z) return;
+
+  int base = (p.z * pointDims.y + p.y) * pointDims.x + p.x;  // pidx(p)
+  bool o = occPoint(p);
+
+  edgeFlag[base * 3 + 0] = (o != occPoint(p + ivec3(1, 0, 0))) ? 1u : 0u;
+  edgeFlag[base * 3 + 1] = (o != occPoint(p + ivec3(0, 1, 0))) ? 1u : 0u;
+  edgeFlag[base * 3 + 2] = (o != occPoint(p + ivec3(0, 0, 1))) ? 1u : 0u;
+}
