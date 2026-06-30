@@ -3,6 +3,7 @@
 #include <glad/glad.h>
 
 #include <glm/glm.hpp>
+#include <vector>
 
 #include "boolOps.hpp"        // VoxelObject
 #include "marchingCubes.hpp"  // for readbackTo(MarchingCubes&)
@@ -44,6 +45,11 @@ class GpuMarchingCubes {
   glm::vec3 bboxMin() const { return bbMin; }
   glm::vec3 bboxMax() const { return bbMax; }
 
+  // True when the whole mesh lives in vbo()/ebo() (single-shot, fits the budget) and
+  // can be drawn with no readback. False when the grid was too large and the mesh was
+  // streamed in Z-slabs into CPU buffers (use readbackTo / the CPU MeshViewer ctor).
+  bool gpuResident() const { return resident; }
+
   // Read the GPU mesh back into a MarchingCubes (flat verts/normals/indices), for
   // saveStl() and the CPU smooth(N) path. Reuses MC's setVertices/Normals/Triangles.
   void readbackTo(MarchingCubes& mc) const;
@@ -61,8 +67,15 @@ class GpuMarchingCubes {
   glm::vec3 bbMin = glm::vec3(0.0f);
   glm::vec3 bbMax = glm::vec3(0.0f);
 
-  GLuint vertTotal = 0;  // V
+  GLuint vertTotal = 0;  // V (single-shot: in vbo; streamed: accumulated total)
   GLuint triTotal = 0;   // T
+  bool resident = true;  // see gpuResident()
+
+  // Accumulators for the streamed (large-grid) path: the per-slab meshes are read
+  // back and concatenated here, then handed to the CPU MeshViewer ctor / saveStl.
+  std::vector<float> accVerts;
+  std::vector<float> accNorms;
+  std::vector<int> accTris;
 
   // Occupancy inputs (uploaded from the VoxelObject).
   GLuint transitionsBuf = 0;
@@ -97,4 +110,12 @@ class GpuMarchingCubes {
   GLuint readUintAt(GLuint buf, size_t index) const;       // single-element readback
   void uploadInputs();                                     // occupancy SSBOs + tables
   void freeBuffers();
+
+  // Run the 4-pass pipeline over a Z-slab (cellZ cells, pointZ points; zBase = the
+  // global virtual-cell Z of the slab's first cell minus one). Leaves the slab mesh
+  // in vboBuf/eboBuf and sets vertTotal/triTotal for the slab. Single-shot calls it
+  // once with the full Z range (zBase = -1).
+  bool runPipeline(int zBase, int cellZ, int pointZ);
+  void appendSlab(GLuint vBase);  // readback the slab vbo/ebo and append to acc* (indices += vBase)
+  void freeSlabBuffers();         // free the per-slab working + output buffers (kept across slabs)
 };

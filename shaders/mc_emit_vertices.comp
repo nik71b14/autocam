@@ -16,6 +16,7 @@ layout(std430, binding = 4) writeonly buffer VertexBuffer { float vbo[]; };  // 
 uniform ivec3 resolution;
 uniform ivec3 pointDims;
 uniform int step;
+uniform int zBase;      // global virtual-Z offset of this (slab's) local Z=0; -1 for single-shot
 uniform vec3 originMm;  // world-mm corner of voxel (0,0,0)
 uniform vec3 stepMm;    // voxelSizeMm * step
 
@@ -31,7 +32,7 @@ bool occAt(ivec3 g) {
   }
   return inside;
 }
-bool occPoint(ivec3 p) { return occAt((p - ivec3(1)) * step); }
+bool occPoint(ivec3 p) { return occAt((p + ivec3(-1, -1, zBase)) * step); }
 float fOcc(ivec3 p) { return occPoint(p) ? 1.0 : 0.0; }
 
 // Central-difference gradient of the occupancy field at a lattice point.
@@ -40,7 +41,7 @@ vec3 grad(ivec3 p) {
               fOcc(p + ivec3(0, 0, 1)) - fOcc(p - ivec3(0, 0, 1)));
 }
 
-vec3 worldPos(ivec3 p) { return originMm + vec3(p - ivec3(1)) * stepMm; }
+vec3 worldPos(ivec3 p) { return originMm + vec3(p + ivec3(-1, -1, zBase)) * stepMm; }
 
 void writeVertex(uint vIdx, vec3 pos, vec3 nrm) {
   uint o = 6u * vIdx;

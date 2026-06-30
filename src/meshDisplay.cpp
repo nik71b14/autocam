@@ -53,7 +53,9 @@ bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, int smoothItera
         // Geometric Taubin smoothing and STL export need the mesh on the CPU; read
         // it back into a MarchingCubes (reusing its smooth()/saveStl()). The pure
         // interactive view (smooth 0, no STL) draws the GPU buffers directly.
-        const bool needReadback = !outStl.empty() || smoothIterations > 0;
+        // Streamed (large-grid) meshes live in CPU accumulators, not vbo/ebo, so they
+        // also go through the readback (CPU MeshViewer) path.
+        const bool needReadback = !outStl.empty() || smoothIterations > 0 || !gmc.gpuResident();
         if (needReadback) {
           MarchingCubes mc(obj);
           gmc.readbackTo(mc);

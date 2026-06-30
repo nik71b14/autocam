@@ -191,10 +191,13 @@ autocam view test/cube100.bin --out-mesh cube.stl --no-view --mesh-step 4   # ex
 > `--smooth 0` (default) usa solo le normali lisce, geometria esatta dei voxel. `--cpu` forza il
 > marching cubes su CPU (path di riferimento, fa streaming e gestisce la piena risoluzione).
 >
-> **Memoria.** I buffer GPU sono proporzionali al **volume** della griglia (virtuale, dopo
-> `--mesh-step`): a `--mesh-step 1` su un pezzo grande (es. 1000×1000×500) servirebbero molti GB, quindi
-> il path GPU **aborta con un avviso** chiedendo di alzare `--mesh-step` (o usare `--cpu`). Per l'uso
-> interattivo conviene comunque `--mesh-step ≥ 2`.
+> **Memoria.** I buffer di lavoro GPU sono proporzionali al **volume** della griglia (virtuale, dopo
+> `--mesh-step`). Quando superano un budget (~2 GiB), il marching cubes passa **automaticamente a
+> elaborazione a blocchi (slab-Z)**: ogni slab usa memoria limitata e i risultati vengono concatenati,
+> così anche griglie grandi (es. `--mesh-step 1` su 1000×1000×500) vengono renderizzate senza abortire.
+> Lo slabbing limita il *working set* GPU, non la dimensione della mesh finale — per mesh più
+> leggere/veloci in interattivo conviene comunque alzare `--mesh-step`. (Per `--cpu` il path resta CPU,
+> a streaming di slice.)
 
 ---
 

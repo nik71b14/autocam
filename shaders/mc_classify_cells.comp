@@ -12,8 +12,9 @@ layout(std430, binding = 3) writeonly buffer TriCountBuffer { uint triCount[]; }
 layout(std430, binding = 4) writeonly buffer CubeIndexBuffer { uint cubeIndexOut[]; };
 
 uniform ivec3 resolution;
-uniform ivec3 cellDims;  // padded cell dims (CX,CY,CZ)
+uniform ivec3 cellDims;  // padded cell dims (CX,CY,CZ) — Z may be a slab
 uniform int step;
+uniform int zBase;       // global virtual-Z offset of this (slab's) local Z=0; -1 for single-shot
 
 bool occAt(ivec3 g) {
   if (g.x < 0 || g.y < 0 || g.z < 0 || g.x >= resolution.x || g.y >= resolution.y || g.z >= resolution.z) return false;
@@ -27,7 +28,7 @@ bool occAt(ivec3 g) {
   }
   return inside;
 }
-bool occPoint(ivec3 p) { return occAt((p - ivec3(1)) * step); }
+bool occPoint(ivec3 p) { return occAt((p + ivec3(-1, -1, zBase)) * step); }
 
 void main() {
   ivec3 c = ivec3(gl_GlobalInvocationID);

@@ -11,8 +11,9 @@ layout(std430, binding = 1) readonly buffer PrefixSumBuffer { uint prefixSums[];
 layout(std430, binding = 2) writeonly buffer EdgeFlagBuffer { uint edgeFlag[]; };
 
 uniform ivec3 resolution;  // voxel grid size
-uniform ivec3 pointDims;   // padded lattice point dims (PX,PY,PZ)
+uniform ivec3 pointDims;   // padded lattice point dims (PX,PY,PZ) — Z may be a slab
 uniform int step;          // voxel subsampling
+uniform int zBase;         // global virtual-Z offset of this (slab's) local Z=0; -1 for single-shot
 
 // Occupancy parity scan of a voxel column (guarded: prefixSums has no trailing
 // sentinel, so the last column's end is the transitions length).
@@ -31,7 +32,8 @@ bool occAt(ivec3 g) {
 
 // Occupancy at a padded lattice point (index space): virtual coord = point - 1,
 // sampled voxel = virtualCoord * step.
-bool occPoint(ivec3 p) { return occAt((p - ivec3(1)) * step); }
+// Local lattice point -> global virtual coord (X,Y offset by -1; Z by zBase for slabs).
+bool occPoint(ivec3 p) { return occAt((p + ivec3(-1, -1, zBase)) * step); }
 
 void main() {
   ivec3 p = ivec3(gl_GlobalInvocationID);
