@@ -52,10 +52,13 @@ write a marching cubes algorithm which takes this VoxelObject and generates a me
 #include <GLFW/glfw3.h>
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "coordinateSystem.hpp"
 #include "marching_cubes_tables.hpp"
@@ -295,6 +298,137 @@ void MarchingCubes::go() {
     std::swap(occCurr, occNext);
   }
   std::cout << "\rMarching Cubes: 100%   " << std::endl;
+}
+
+void MarchingCubes::smooth(int taubinIterations) {
+  const size_t triCount = trianglesFlat.size() / 3;
+  if (triCount == 0) return;
+
+  // --- 1. Weld coincident vertices -------------------------------------------------
+  // MC emits each triangle's 3 vertices separately, but vertices shared between
+  // adjacent cubes are bit-identical (vertexInterp/pos are deterministic), so an
+  // EXACT float key welds them with no epsilon. Welding gives the shared-vertex
+  // connectivity that smoothing and averaged normals both need.
+  struct Key {
+    float x, y, z;
+    bool operator==(const Key& o) const { return x == o.x && y == o.y && z == o.z; }
+  };
+  struct KeyHash {
+    size_t operator()(const Key& k) const {
+      uint32_t a, b, c;
+      std::memcpy(&a, &k.x, 4);
+      std::memcpy(&b, &k.y, 4);
+      std::memcpy(&c, &k.z, 4);
+      size_t h = a;
+      h = h * 1000003u ^ b;
+      h = h * 1000003u ^ c;
+      return h;
+    }
+  };
+  std::unordered_map<Key, int, KeyHash> remap;
+  remap.reserve(verticesFlat.size() / 3);
+  std::vector<glm::vec3> verts;
+  verts.reserve(verticesFlat.size() / 6);
+  auto weldIndex = [&](int oldIdx) -> int {
+    Key k{verticesFlat[3 * oldIdx], verticesFlat[3 * oldIdx + 1], verticesFlat[3 * oldIdx + 2]};
+    auto it = remap.find(k);
+    if (it != remap.end()) return it->second;
+    int ni = static_cast<int>(verts.size());
+    remap.emplace(k, ni);
+    verts.emplace_back(k.x, k.y, k.z);
+    return ni;
+  };
+
+  std::vector<glm::ivec3> tris;
+  tris.reserve(triCount);
+  for (size_t t = 0; t < triCount; ++t) {
+    int a = weldIndex(trianglesFlat[3 * t + 0]);
+    int b = weldIndex(trianglesFlat[3 * t + 1]);
+    int c = weldIndex(trianglesFlat[3 * t + 2]);
+    if (a == b || b == c || a == c) continue;  // drop degenerate (zero-area) triangles
+    tris.emplace_back(a, b, c);
+  }
+  const int V = static_cast<int>(verts.size());
+  if (tris.empty()) return;
+
+  // --- 2. Vertex adjacency (neighbour lists) from triangle edges -------------------
+  std::vector<std::vector<int>> nbr(V);
+  {
+    std::vector<std::unordered_set<int>> sets(V);
+    auto addEdge = [&](int i, int j) {
+      sets[i].insert(j);
+      sets[j].insert(i);
+    };
+    for (const auto& tr : tris) {
+      addEdge(tr.x, tr.y);
+      addEdge(tr.y, tr.z);
+      addEdge(tr.z, tr.x);
+    }
+    for (int i = 0; i < V; ++i) nbr[i].assign(sets[i].begin(), sets[i].end());
+  }
+
+  // --- 3. Taubin smoothing (lambda / mu): a positive Laplacian step followed by a
+  // slightly larger negative one, which de-steps the surface with almost no shrink. -
+  if (taubinIterations > 0) {
+    const float lambda = 0.5f;
+    const float mu = -0.53f;
+    std::vector<glm::vec3> next(V);
+    auto pass = [&](float factor) {
+      for (int i = 0; i < V; ++i) {
+        const auto& ns = nbr[i];
+        if (ns.empty()) {
+          next[i] = verts[i];
+          continue;
+        }
+        glm::vec3 avg(0.0f);
+        for (int j : ns) avg += verts[j];
+        avg /= static_cast<float>(ns.size());
+        next[i] = verts[i] + factor * (avg - verts[i]);
+      }
+      verts.swap(next);
+    };
+    for (int it = 0; it < taubinIterations; ++it) {
+      pass(lambda);
+      pass(mu);
+    }
+  }
+
+  // --- 4. Averaged per-vertex normals (area-weighted: accumulate the un-normalized
+  // face cross-product, same winding as go(), then normalize once per vertex) -------
+  std::vector<glm::vec3> norms(V, glm::vec3(0.0f));
+  for (const auto& tr : tris) {
+    glm::vec3 fn = glm::cross(verts[tr.y] - verts[tr.x], verts[tr.z] - verts[tr.x]);
+    norms[tr.x] += fn;
+    norms[tr.y] += fn;
+    norms[tr.z] += fn;
+  }
+  for (int i = 0; i < V; ++i) {
+    float len = glm::length(norms[i]);
+    norms[i] = (len > 1e-20f) ? norms[i] / len : glm::vec3(0.0f, 0.0f, 1.0f);
+  }
+
+  // --- 5. Rewrite the flat buffers (now welded/shared) -----------------------------
+  verticesFlat.clear();
+  verticesFlat.reserve(static_cast<size_t>(V) * 3);
+  normalsFlat.clear();
+  normalsFlat.reserve(static_cast<size_t>(V) * 3);
+  for (int i = 0; i < V; ++i) {
+    verticesFlat.push_back(verts[i].x);
+    verticesFlat.push_back(verts[i].y);
+    verticesFlat.push_back(verts[i].z);
+    normalsFlat.push_back(norms[i].x);
+    normalsFlat.push_back(norms[i].y);
+    normalsFlat.push_back(norms[i].z);
+  }
+  trianglesFlat.clear();
+  trianglesFlat.reserve(tris.size() * 3);
+  for (const auto& tr : tris) {
+    trianglesFlat.push_back(tr.x);
+    trianglesFlat.push_back(tr.y);
+    trianglesFlat.push_back(tr.z);
+  }
+
+  std::cout << "Smoothed mesh: " << V << " verts, " << tris.size() << " tris (" << taubinIterations << " Taubin iters)" << std::endl;
 }
 
 void MarchingCubes::saveStl(const std::string& filename) const {

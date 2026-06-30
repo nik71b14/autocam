@@ -17,9 +17,10 @@
 //   - if `outStl` is non-empty, write it as a binary STL there;
 //   - if `interactive` is true, open a window and display it until closed.
 //
-//   meshStep    subsampling factor (>= 1); higher = lighter / faster mesh.
-//   outStl      STL output path ("" = don't save).
-//   interactive open a viewer window (false for headless, e.g. with --no-view).
+//   meshStep         subsampling factor (>= 1); higher = lighter / faster mesh.
+//   smoothIterations Taubin smoothing passes (0 = exact geometry + smooth shading).
+//   outStl           STL output path ("" = don't save).
+//   interactive      open a viewer window (false for headless, e.g. with --no-view).
 //
 // Returns false if no surface could be extracted (empty mesh) or on a GL error.
-bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, const std::string& outStl, bool interactive);
+bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, int smoothIterations, const std::string& outStl, bool interactive);

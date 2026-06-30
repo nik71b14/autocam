@@ -53,7 +53,8 @@ int runView(const CliArgs& args) {
   const std::string outMesh = args.get("--out-mesh", "");
   if (args.has("--mesh") || !outMesh.empty()) {
     const int meshStep = args.getInt("--mesh-step", 1);
-    return showVoxelObjectAsMesh(obj, meshStep, outMesh, args.has("--mesh")) ? EXIT_SUCCESS : EXIT_FAILURE;
+    const int meshSmooth = args.getInt("--smooth", 8);
+    return showVoxelObjectAsMesh(obj, meshStep, meshSmooth, outMesh, args.has("--mesh")) ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
   // VoxelViewer manages its own OpenGL context/window for the render loop.

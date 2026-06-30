@@ -9,7 +9,7 @@
 #include "marchingCubes.hpp"
 #include "meshViewer.hpp"
 
-bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, const std::string& outStl, bool interactive) {
+bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, int smoothIterations, const std::string& outStl, bool interactive) {
   // A GL context must be current: MarchingCubes::go() calls glfwPollEvents() and
   // MeshViewer needs the context for its buffers/shaders. Create one window (hidden
   // when we are not displaying, e.g. headless STL export) and keep it alive for
@@ -26,6 +26,9 @@ bool showVoxelObjectAsMesh(const VoxelObject& obj, int meshStep, const std::stri
     MarchingCubes mc(obj);
     mc.setStep(meshStep);
     mc.go();
+    // Weld + averaged normals (always) + Taubin geometry smoothing, to de-step the
+    // surface. Both the STL export and the viewer below use the smoothed result.
+    mc.smooth(smoothIterations);
 
     if (mc.getTriangles().empty()) {
       std::cerr << "Mesh is empty: no surface extracted (is the object empty?)." << std::endl;

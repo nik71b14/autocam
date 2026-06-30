@@ -123,6 +123,7 @@ autocam simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>
 | `--mesh`        | (off → raymarch)                         | Mostra il risultato come **mesh** (marching cubes) invece del raymarcher. |
 | `--out-mesh`    | (nessuno)                                | Salva la mesh marching-cubes come STL binario (funziona anche con `--no-view`). |
 | `--mesh-step`   | `1`                                      | Sottocampiona la mesh: un voxel ogni N (più alto = mesh più leggera/veloce). |
+| `--smooth`      | `8`                                      | Iterazioni di smoothing Taubin della mesh (`0` = geometria esatta + normali lisce). |
 
 > **Unità G-code e risoluzione.** In modalità `mm` (canonica) le coordinate sono millimetri mondo e
 > vengono convertite in voxel dello stock; questo richiede che **utensile e workpiece siano stati
@@ -170,19 +171,25 @@ autocam view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step 
 | `--mesh`      | (off → raymarch)              | Mostra una **mesh** (marching cubes) invece del raymarcher.   |
 | `--out-mesh`  | (nessuno)                     | Salva la mesh come STL binario (funziona anche con `--no-view`).|
 | `--mesh-step` | `1`                           | Sottocampiona la mesh: un voxel ogni N.                       |
+| `--smooth`    | `8`                           | Iterazioni di smoothing Taubin (`0` = geometria esatta + normali lisce). |
 
 Esempi:
 ```
 autocam view test/workpiece_100_100_50.bin --ortho
-autocam view test/cube100.bin --mesh                 # mesh marching-cubes a piena risoluzione
+autocam view test/cube100.bin --mesh                 # mesh liscia (smoothing default)
+autocam view test/cyl_mill_12.bin --mesh --smooth 0  # geometria esatta (solo normali lisce)
 autocam view test/cube100.bin --out-mesh cube.stl --no-view   # solo export STL, headless
 ```
 
 > **Visualizzazione a mesh (`--mesh` / `--out-mesh`).** Estrae una mesh a triangoli dal volume voxel
 > con marching cubes (consuma direttamente il formato a transizioni; mesh e STL sono in **mm** mondo,
-> coerenti con `CoordinateSystem`). L'estrazione è **su CPU**: a piena risoluzione (`--mesh-step 1`) un
-> pezzo grande (es. 1000×1000×500) richiede decine di secondi e produce milioni di triangoli — usa
-> `--mesh-step N` per una mesh più leggera/veloce in interattivo. (Ottimizzazione GPU = lavoro futuro.)
+> coerenti con `CoordinateSystem`). La mesh viene poi **lisciata**: i vertici coincidenti vengono
+> saldati, si usano **normali mediate** per-vertice (shading liscio invece che sfaccettato) e si
+> applicano `--smooth N` iterazioni di **Taubin** (anti-restringimento) per de-steppare anche la
+> geometria; `--smooth 0` mantiene la geometria esatta dei voxel (utile per spigoli vivi). L'estrazione
+> è **su CPU**: a piena risoluzione (`--mesh-step 1`) un pezzo grande (es. 1000×1000×500) richiede
+> decine di secondi e produce milioni di triangoli — usa `--mesh-step N` per una mesh più
+> leggera/veloce in interattivo. (Ottimizzazione GPU = lavoro futuro.)
 
 ---
 
