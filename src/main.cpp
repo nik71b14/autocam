@@ -32,11 +32,14 @@ void printUsage() {
       "      Default output: test/<stlname>.bin\n\n"
       "  simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>\n"
       "           [--out <r.bin>] [--step <float>] [--perspective] [--no-view] [--legacy]\n"
+      "           [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>]\n"
       "      Carve the workpiece along the G-code toolpath with the tool.\n"
       "      --no-view runs headless (no window); --out saves the carved result.\n"
-      "      --legacy uses per-step stamping instead of the swept subtraction.\n\n"
-      "  view <file.bin> [--ortho]\n"
-      "      Raymarch-view a .bin voxel object.\n\n"
+      "      --legacy uses per-step stamping instead of the swept subtraction.\n"
+      "      --mesh shows the result as a marching-cubes mesh (instead of raymarching);\n"
+      "      --out-mesh saves that mesh as a binary STL; --mesh-step N subsamples it.\n\n"
+      "  view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>]\n"
+      "      Raymarch-view a .bin voxel object (or --mesh for a marching-cubes mesh).\n\n"
       "  help, --help\n"
       "      Show this message.\n";
 }
@@ -44,7 +47,7 @@ void printUsage() {
 int main(int argc, char** argv) {
   // Valueless flags: tokens the parser must NOT treat as "--key <value>".
   const std::unordered_set<std::string> valuelessFlags = {
-      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--help"};
+      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--mesh", "--help"};
 
   try {
     CliArgs args = parseCli(argc, argv, valuelessFlags);

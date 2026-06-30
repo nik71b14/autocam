@@ -45,8 +45,13 @@ class MarchingCubes {
   void setTriangles(const std::vector<int>& triangles);
   void setNormals(const std::vector<float>& normals);
 
+  // Subsampling: sample one voxel every `s` along each axis (s >= 1). Higher = a
+  // coarser, lighter, faster mesh. Default 1 = full resolution. Set before go().
+  void setStep(int s);
+
  private:
   const VoxelObject* voxelObj = nullptr;
+  int step = 1;
 
   std::vector<float> verticesFlat;
   std::vector<int> trianglesFlat;

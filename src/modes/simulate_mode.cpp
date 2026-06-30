@@ -24,6 +24,7 @@
 #include "gcode.hpp"
 #include "gcodeViewer.hpp"  // GcodeViewer, ProjectionType (also pulls in VoxelObject)
 #include "main_params.hpp"
+#include "meshDisplay.hpp"
 #include "modes.hpp"
 #include "voxelViewer.hpp"
 
@@ -34,6 +35,13 @@ int runSimulate(const CliArgs& args) {
   const std::string toolPath = args.get("--tool", DEFAULT_TOOL_BIN);
   const float step = args.getFloat("--step", 2.0f);
   const bool showViewer = !args.has("--no-view");
+
+  // Final visualization as a marching-cubes mesh: --mesh shows it (instead of the
+  // raymarcher), --out-mesh saves a binary STL (works headless too), --mesh-step
+  // subsamples for a lighter/faster mesh.
+  const std::string outMesh = args.get("--out-mesh", "");
+  const int meshStep = args.getInt("--mesh-step", 1);
+  const bool meshMode = args.has("--mesh") || !outMesh.empty();
   const bool legacy = args.has("--legacy");  // per-step stamping (Phase 1) instead of swept (Phase 2)
   // The simulation defaults to an orthographic (top-down CNC) view; --perspective switches it.
   const ProjectionType projection =
@@ -150,7 +158,7 @@ int runSimulate(const CliArgs& args) {
         std::cerr << "Failed to save carved workpiece to: " << outPath << "\n";
     }
 
-    if (showViewer) carved = gCodeViewer.getWorkpiece();
+    if (showViewer || meshMode) carved = gCodeViewer.getWorkpiece();
 
     // TODO: Marching Cubes mesh extraction of the carved result is disabled here
     // (a face at the extreme X value does not generate a corresponding mesh face).
@@ -161,6 +169,13 @@ int runSimulate(const CliArgs& args) {
   destroyGLContext(window);
 
   if (!ok) return EXIT_FAILURE;  // units/setup error; GL already cleaned up above
+
+  // --mesh / --out-mesh: extract a marching-cubes mesh of the carved result and
+  // show it (interactive, unless --no-view) and/or save it as STL.
+  if (meshMode) {
+    const bool interactive = showViewer && args.has("--mesh");
+    return showVoxelObjectAsMesh(carved, meshStep, outMesh, interactive) ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
 
   if (showViewer) {
     // VoxelViewer manages its own OpenGL context/window (re-inits GLFW).

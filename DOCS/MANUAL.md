@@ -105,6 +105,7 @@ visualizza.
 autocam simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>
                  [--out <r.bin>] [--gcode-units mm|voxel] [--work-origin x,y,z]
                  [--step <float>] [--perspective] [--no-view] [--verbose]
+                 [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>]
 ```
 
 | Opzione         | Default                                  | Descrizione                                          |
@@ -119,6 +120,9 @@ autocam simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>
 | `--perspective` | (off → ortografica)                      | Usa proiezione prospettica invece dell'ortografica.  |
 | `--no-view`     | (off → mostra il viewer)                 | Esegue headless, senza aprire finestre (batch).      |
 | `--verbose`     | (off)                                     | Stampa ogni comando G-code interpretato.             |
+| `--mesh`        | (off → raymarch)                         | Mostra il risultato come **mesh** (marching cubes) invece del raymarcher. |
+| `--out-mesh`    | (nessuno)                                | Salva la mesh marching-cubes come STL binario (funziona anche con `--no-view`). |
+| `--mesh-step`   | `1`                                      | Sottocampiona la mesh: un voxel ogni N (più alto = mesh più leggera/veloce). |
 
 > **Unità G-code e risoluzione.** In modalità `mm` (canonica) le coordinate sono millimetri mondo e
 > vengono convertite in voxel dello stock; questo richiede che **utensile e workpiece siano stati
@@ -141,27 +145,44 @@ autocam simulate --gcode gcode/square_600.gcode \
 
 # headless: produce solo il risultato su file (utile per generare dataset)
 autocam simulate --gcode gcode/pocket.gcode --out test/pocket_result.bin --no-view
+
+# risultato come mesh marching-cubes (sottocampionata) invece del raymarcher
+autocam simulate --gcode gcode/square_600.gcode --mesh --mesh-step 4
+
+# headless: esporta la mesh del risultato come STL (per dataset di mesh)
+autocam simulate --gcode gcode/square_600.gcode --no-view --out-mesh carved.stl --mesh-step 4
 ```
 
 ---
 
 ### `view` — visualizza un oggetto voxel `.bin`
 
-Carica un oggetto voxel `.bin` e lo mostra con il viewer raymarching.
+Carica un oggetto voxel `.bin` e lo mostra con il viewer raymarching (o come mesh con `--mesh`).
 
 ```
-autocam view <file.bin> [--ortho]
+autocam view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>]
 ```
 
-| Opzione      | Default                       | Descrizione                              |
-|--------------|-------------------------------|------------------------------------------|
-| `<file.bin>` | — (obbligatorio, posizionale) | Oggetto voxel da visualizzare.            |
-| `--ortho`    | (off → prospettica)           | Usa proiezione ortografica.               |
+| Opzione       | Default                       | Descrizione                                                   |
+|---------------|-------------------------------|---------------------------------------------------------------|
+| `<file.bin>`  | — (obbligatorio, posizionale) | Oggetto voxel da visualizzare.                                |
+| `--ortho`     | (off → prospettica)           | Usa proiezione ortografica (solo raymarcher).                 |
+| `--mesh`      | (off → raymarch)              | Mostra una **mesh** (marching cubes) invece del raymarcher.   |
+| `--out-mesh`  | (nessuno)                     | Salva la mesh come STL binario (funziona anche con `--no-view`).|
+| `--mesh-step` | `1`                           | Sottocampiona la mesh: un voxel ogni N.                       |
 
-Esempio:
+Esempi:
 ```
 autocam view test/workpiece_100_100_50.bin --ortho
+autocam view test/cube100.bin --mesh                 # mesh marching-cubes a piena risoluzione
+autocam view test/cube100.bin --out-mesh cube.stl --no-view   # solo export STL, headless
 ```
+
+> **Visualizzazione a mesh (`--mesh` / `--out-mesh`).** Estrae una mesh a triangoli dal volume voxel
+> con marching cubes (consuma direttamente il formato a transizioni; mesh e STL sono in **mm** mondo,
+> coerenti con `CoordinateSystem`). L'estrazione è **su CPU**: a piena risoluzione (`--mesh-step 1`) un
+> pezzo grande (es. 1000×1000×500) richiede decine di secondi e produce milioni di triangoli — usa
+> `--mesh-step N` per una mesh più leggera/veloce in interattivo. (Ottimizzazione GPU = lavoro futuro.)
 
 ---
 

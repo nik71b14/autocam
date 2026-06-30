@@ -57,9 +57,12 @@ write a marching cubes algorithm which takes this VoxelObject and generates a me
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 
+#include "coordinateSystem.hpp"
 #include "marching_cubes_tables.hpp"
 
 MarchingCubes::MarchingCubes(const VoxelObject& obj) : voxelObj(&obj) {}
+
+void MarchingCubes::setStep(int s) { step = (s < 1) ? 1 : s; }
 
 const std::vector<float>& MarchingCubes::getVertices() const { return verticesFlat; }
 
@@ -116,7 +119,10 @@ bool MarchingCubes::isInsideWithPadding(int x, int y, int z, const VoxelObject& 
   // Normal case - check the voxel data
   int index = y * p.resolutionXYZ.x + x;
   GLuint start = obj.prefixSumData[index];
-  GLuint end = obj.prefixSumData[index + 1];
+  // prefixSumData has exactly resX*resY entries (no trailing sentinel), so the last
+  // column's end is the total transition count, not prefixSumData[index+1].
+  GLuint end = (static_cast<size_t>(index) + 1 < obj.prefixSumData.size()) ? obj.prefixSumData[index + 1]
+                                                                           : static_cast<GLuint>(obj.compressedData.size());
 
   bool inside = false;
   for (GLuint i = start; i < end; ++i) {
@@ -175,122 +181,92 @@ void MarchingCubes::go() {
   if (!voxelObj) return;
   const auto& obj = *voxelObj;
   const auto& p = obj.params;
-  int resX = p.resolutionXYZ.x;
-  int resY = p.resolutionXYZ.y;
-  int resZ = p.resolutionXYZ.z;
-  float s = p.resolution;
+  const int resX = p.resolutionXYZ.x;
+  const int resY = p.resolutionXYZ.y;
+  const int resZ = p.resolutionXYZ.z;
 
-  // Precompute some constants
-  int resXp2 = resX + 2;
-  int resYp2 = resY + 2;
-  int resZp2 = resZ + 2;
+  // Virtual (subsampled) grid: sample one voxel every `step`. Virtual coord n maps
+  // to voxel n*step; nX/nY/nZ are sized (ceil) so the far boundary (>= res) is
+  // reached, which lets the padding planes close the surface there.
+  const int nX = (resX + step - 1) / step;
+  const int nY = (resY + step - 1) / step;
+  const int nZ = (resZ + step - 1) / step;
+  const int nZp2 = nZ + 2;
+  const size_t sliceSize = static_cast<size_t>(nY + 2) * nZp2;
 
-  auto pos = [&](int x, int y, int z) -> glm::vec3 { return p.center + glm::vec3(x * s, y * s, z * s); };
+  // World position (mm) of a virtual corner, anchored at the CANONICAL grid origin
+  // (corner of voxel 0,0,0 = center - extent/2) with `step`-voxel spacing. This
+  // matches CoordinateSystem, so the mesh / STL live in the same mm world as the
+  // voxel object (the old code offset the mesh by +extent/2).
+  const CoordinateSystem cs = CoordinateSystem::fromParams(p);
+  const glm::vec3 originMm = cs.originMm();
+  const glm::vec3 stepMm = cs.voxelSizeMm * static_cast<float>(step);
+  auto pos = [&](int vx, int vy, int vz) -> glm::vec3 { return originMm + glm::vec3(vx, vy, vz) * stepMm; };
 
-  // Roughly reserve space for the output buffers to avoid reallocations
-  verticesFlat.reserve(1e6);  //@@@ Use heuristic based on resolution
-  normalsFlat.reserve(1e6);
-  trianglesFlat.reserve(1e6);
-
-  // Instantiate and initialize occupancy buffers for the current, previous, and next slices
-  // This stores the occupancy (0/1) for three consecutive x slices: x-1, x, x+1, each of shape (resY+2)*(resZ+2) to include padding
-  std::vector<uint8_t> occupancyPrev, occupancyCurr, occupancyNext;
-  occupancyPrev.resize(resYp2 * resZp2, 0);
-  occupancyCurr.resize(resYp2 * resZp2, 0);
-  occupancyNext.resize(resYp2 * resZp2, 0);
-
-  // Before entering the y/z loops for a given x, populate the current and next slices
-  // auto fillOccupancy = [&](int x, std::vector<uint8_t>& buffer) {
-  //   for (int y = -1; y <= resY; ++y) {
-  //     for (int z = -1; z <= resZ; ++z) {
-  //       int index = (y + 1) * resZp2 + (z + 1);
-  //       buffer[index] = isInsideWithPadding(x, y, z, obj);
-  //     }
-  //   }
-  // };
-  auto fillOccupancy = [&](int x, std::vector<uint8_t>& buffer) {
-    // For x values beyond the volume, fill with padding (all false)
-    if (x < 0 || x >= obj.params.resolutionXYZ.x) {
-      std::fill(buffer.begin(), buffer.end(), 0);
+  // Occupancy of one virtual X-slice over the padded plane [-1..nY] x [-1..nZ],
+  // sampled at voxel (vx*step, vy*step, vz*step). Slices outside the volume are empty.
+  auto fillSlice = [&](int vx, std::vector<uint8_t>& buf) {
+    const int gx = vx * step;
+    if (gx < 0 || gx >= resX) {
+      std::fill(buf.begin(), buf.end(), 0);
       return;
     }
-
-    // Normal case - fill from voxel data
-    for (int y = -1; y <= resY; ++y) {
-      for (int z = -1; z <= resZ; ++z) {
-        int index = (y + 1) * resZp2 + (z + 1);
-        buffer[index] = isInsideWithPadding(x, y, z, obj);
+    for (int vy = -1; vy <= nY; ++vy) {
+      for (int vz = -1; vz <= nZ; ++vz) {
+        buf[static_cast<size_t>(vy + 1) * nZp2 + (vz + 1)] = isInsideWithPadding(gx, vy * step, vz * step, obj) ? 1 : 0;
       }
     }
   };
+  auto at = [&](const std::vector<uint8_t>& buf, int vy, int vz) -> bool { return buf[static_cast<size_t>(vy + 1) * nZp2 + (vz + 1)] != 0; };
 
-  auto getCached = [&](int xOffset, int y, int z) -> bool {
-    const std::vector<uint8_t>* buffer = nullptr;
-    if (xOffset == 0)
-      buffer = &occupancyCurr;
-    else if (xOffset == -1)
-      buffer = &occupancyPrev;
-    else if (xOffset == 1)
-      buffer = &occupancyNext;
-    else
-      return false;  // safety
-    int index = (y + 1) * resZp2 + (z + 1);
-    return (*buffer)[index];
-  };
+  std::vector<uint8_t> occCurr(sliceSize, 0), occNext(sliceSize, 0);
 
-  // Pre-fill initial 3 x-slices
-  fillOccupancy(-1, occupancyPrev);
-  fillOccupancy(0, occupancyCurr);
-  fillOccupancy(1, occupancyNext);
+  verticesFlat.clear();
+  trianglesFlat.clear();
+  normalsFlat.clear();
 
-  for (int x = -1; x <= resX; ++x) {
-    glfwPollEvents();  //@@@ Just to avoid SO warnings during execution (move to working thread if needed)
-    //@@@ DEBUG: Print progress
-    int total = resXp2 * resYp2;
-    int current = (x + 1) * resYp2;
-    static int lastPercent = -1;
-    int percent = static_cast<int>(100.0f * current / total);
-    if (percent != lastPercent) {
-      std::cout << "\rMarching Cubes progress: " << percent << "%   " << std::flush;
-      lastPercent = percent;
-    }
-    //@@@
+  // A cube at virtual (vx,vy,vz) spans corners vx..vx+1, vy..vy+1, vz..vz+1. Iterate
+  // vx in [-1, nX-1] so corners cover [-1, nX]: the padding planes at -1 and nX
+  // close the surface at every boundary (this also fixes the old missing far-X face).
+  fillSlice(-1, occCurr);
+  for (int vx = -1; vx < nX; ++vx) {
+    glfwPollEvents();  // keep the window responsive during this CPU-heavy pass
+    std::cout << "\rMarching Cubes: " << static_cast<int>(100.0f * (vx + 1) / nX) << "%   " << std::flush;
 
-    fillOccupancy(x + 2, occupancyNext);
+    fillSlice(vx + 1, occNext);
 
-    for (int y = -1; y < resY; ++y) {
-      for (int z = -1; z < resZ; ++z) {
+    for (int vy = -1; vy < nY; ++vy) {
+      for (int vz = -1; vz < nZ; ++vz) {
         bool cube[8] = {
-            getCached(0, y, z),          // (x, y, z)
-            getCached(1, y, z),          // (x+1, y, z)
-            getCached(1, y + 1, z),      // (x+1, y+1, z)
-            getCached(0, y + 1, z),      // (x, y+1, z)
-            getCached(0, y, z + 1),      // (x, y, z+1)
-            getCached(1, y, z + 1),      // (x+1, y, z+1)
-            getCached(1, y + 1, z + 1),  // (x+1, y+1, z+1)
-            getCached(0, y + 1, z + 1)   // (x, y+1, z+1)
+            at(occCurr, vy, vz),          // 0: (x,   y,   z)
+            at(occNext, vy, vz),          // 1: (x+1, y,   z)
+            at(occNext, vy + 1, vz),      // 2: (x+1, y+1, z)
+            at(occCurr, vy + 1, vz),      // 3: (x,   y+1, z)
+            at(occCurr, vy, vz + 1),      // 4: (x,   y,   z+1)
+            at(occNext, vy, vz + 1),      // 5: (x+1, y,   z+1)
+            at(occNext, vy + 1, vz + 1),  // 6: (x+1, y+1, z+1)
+            at(occCurr, vy + 1, vz + 1)   // 7: (x,   y+1, z+1)
         };
 
         int cubeIndex = 0;
-        //%%%
         for (int i = 0; i < 8; ++i)
           if (cube[i]) cubeIndex |= (1 << i);
 
         if (edgeTable[cubeIndex] == 0) continue;
 
         glm::vec3 vertList[12];
-        if (edgeTable[cubeIndex] & 1) vertList[0] = vertexInterp(pos(x, y, z), pos(x + 1, y, z));
-        if (edgeTable[cubeIndex] & 2) vertList[1] = vertexInterp(pos(x + 1, y, z), pos(x + 1, y + 1, z));
-        if (edgeTable[cubeIndex] & 4) vertList[2] = vertexInterp(pos(x + 1, y + 1, z), pos(x, y + 1, z));
-        if (edgeTable[cubeIndex] & 8) vertList[3] = vertexInterp(pos(x, y + 1, z), pos(x, y, z));
-        if (edgeTable[cubeIndex] & 16) vertList[4] = vertexInterp(pos(x, y, z + 1), pos(x + 1, y, z + 1));
-        if (edgeTable[cubeIndex] & 32) vertList[5] = vertexInterp(pos(x + 1, y, z + 1), pos(x + 1, y + 1, z + 1));
-        if (edgeTable[cubeIndex] & 64) vertList[6] = vertexInterp(pos(x + 1, y + 1, z + 1), pos(x, y + 1, z + 1));
-        if (edgeTable[cubeIndex] & 128) vertList[7] = vertexInterp(pos(x, y + 1, z + 1), pos(x, y, z + 1));
-        if (edgeTable[cubeIndex] & 256) vertList[8] = vertexInterp(pos(x, y, z), pos(x, y, z + 1));
-        if (edgeTable[cubeIndex] & 512) vertList[9] = vertexInterp(pos(x + 1, y, z), pos(x + 1, y, z + 1));
-        if (edgeTable[cubeIndex] & 1024) vertList[10] = vertexInterp(pos(x + 1, y + 1, z), pos(x + 1, y + 1, z + 1));
-        if (edgeTable[cubeIndex] & 2048) vertList[11] = vertexInterp(pos(x, y + 1, z), pos(x, y + 1, z + 1));
+        if (edgeTable[cubeIndex] & 1) vertList[0] = vertexInterp(pos(vx, vy, vz), pos(vx + 1, vy, vz));
+        if (edgeTable[cubeIndex] & 2) vertList[1] = vertexInterp(pos(vx + 1, vy, vz), pos(vx + 1, vy + 1, vz));
+        if (edgeTable[cubeIndex] & 4) vertList[2] = vertexInterp(pos(vx + 1, vy + 1, vz), pos(vx, vy + 1, vz));
+        if (edgeTable[cubeIndex] & 8) vertList[3] = vertexInterp(pos(vx, vy + 1, vz), pos(vx, vy, vz));
+        if (edgeTable[cubeIndex] & 16) vertList[4] = vertexInterp(pos(vx, vy, vz + 1), pos(vx + 1, vy, vz + 1));
+        if (edgeTable[cubeIndex] & 32) vertList[5] = vertexInterp(pos(vx + 1, vy, vz + 1), pos(vx + 1, vy + 1, vz + 1));
+        if (edgeTable[cubeIndex] & 64) vertList[6] = vertexInterp(pos(vx + 1, vy + 1, vz + 1), pos(vx, vy + 1, vz + 1));
+        if (edgeTable[cubeIndex] & 128) vertList[7] = vertexInterp(pos(vx, vy + 1, vz + 1), pos(vx, vy, vz + 1));
+        if (edgeTable[cubeIndex] & 256) vertList[8] = vertexInterp(pos(vx, vy, vz), pos(vx, vy, vz + 1));
+        if (edgeTable[cubeIndex] & 512) vertList[9] = vertexInterp(pos(vx + 1, vy, vz), pos(vx + 1, vy, vz + 1));
+        if (edgeTable[cubeIndex] & 1024) vertList[10] = vertexInterp(pos(vx + 1, vy + 1, vz), pos(vx + 1, vy + 1, vz + 1));
+        if (edgeTable[cubeIndex] & 2048) vertList[11] = vertexInterp(pos(vx, vy + 1, vz), pos(vx, vy + 1, vz + 1));
 
         for (int i = 0; triTable[cubeIndex][i] != -1; i += 3) {
           glm::vec3 v0 = vertList[triTable[cubeIndex][i]];
@@ -316,12 +292,9 @@ void MarchingCubes::go() {
       }
     }
 
-    // Shift and refill
-    std::swap(occupancyPrev, occupancyCurr);
-    std::swap(occupancyCurr, occupancyNext);
-
-    fillOccupancy(x + 2, occupancyNext);
+    std::swap(occCurr, occNext);
   }
+  std::cout << "\rMarching Cubes: 100%   " << std::endl;
 }
 
 void MarchingCubes::saveStl(const std::string& filename) const {
