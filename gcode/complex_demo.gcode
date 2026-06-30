@@ -1,9 +1,9 @@
 %
-(autocam complex demo - tool: hemispheric_mill_3, stock 100x100x50mm)
-(coordinate in unita-voxel come square_600; Z piu basso = piu profondo; Z700 = sicura)
+(autocam carving program - tool: hemispheric_mill_3, stock 100x100x50mm)
+(voxel-unit coords (like square_600); lower Z = deeper; Z700 = safe)
 G0 Z700.0
-G0 X0 Y0
-(Feature 1: griglia 3x3 di fori, profondita 250/150/50)
+G0 X0.0 Y0.0
+(holes 3x3 region=(-400,-150,150,400) depths=[250, 150, 50])
 G0 Z700.0
 G0 X-400.0 Y150.0
 G1 Z250.0 F400
@@ -32,7 +32,7 @@ G0 Z700.0
 G0 X-150.0 Y400.0
 G1 Z50.0 F400
 G0 Z700.0
-(Feature 2: tasca rettangolare a raster, Z300)
+(raster pocket region=(100,420,-420,-120) Z300 step25)
 G0 Z700.0
 G0 X100.0 Y-420.0
 G1 Z300.0 F400
@@ -62,7 +62,7 @@ G1 X100.0 Y-145.0 Z300.0 F400
 G1 X100.0 Y-120.0 Z300.0 F400
 G1 X420.0 Y-120.0 Z300.0 F400
 G0 Z700.0
-(Feature 3: spirale di Archimede, Z350)
+(spiral center=(300,300) turns=4 rmax=150 Z350)
 G0 Z700.0
 G0 X300.0 Y300.0
 G1 Z350.0 F400
@@ -259,7 +259,7 @@ G1 X443.4 Y261.6 Z350.0 F400
 G1 X447.9 Y280.5 Z350.0 F400
 G1 X450.0 Y300.0 Z350.0 F400
 G0 Z700.0
-(Feature 4: stella a 5 punte freeform, Z250)
+(star center=(-280,-280) points=5 R=150/60 Z250)
 G0 Z700.0
 G0 X-280.0 Y-130.0
 G1 Z250.0 F400
@@ -274,5 +274,5 @@ G1 X-137.3 Y-233.6 Z250.0 F400
 G1 X-244.7 Y-231.5 Z250.0 F400
 G1 X-280.0 Y-130.0 Z250.0 F400
 G0 Z700.0
-G0 X0 Y0
+G0 X0.0 Y0.0
 %
