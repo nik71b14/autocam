@@ -34,9 +34,16 @@ class GcodeViewer {
   void drawFrame();
   void carve(glm::vec3 pos);
   // Subtract the volume swept by the tool along the linear segment p0 -> p1 in one dispatch.
-  void carveSwept(glm::vec3 p0, glm::vec3 p1);
+  // When per-segment removed-voxel tracking is active, pass this segment's index so the
+  // carver records how many voxels it removed (see beginRemovedTracking).
+  void carveSwept(glm::vec3 p0, glm::vec3 p1, int segmentIndex = -1);
   // Block until all queued GPU carving work has completed (for timing/sync).
   void finishGPU();
+
+  // --- Per-segment material-removal tracking (fitness evaluator) ------------------
+  void beginRemovedTracking(int nSegments) { ops.beginRemovedTracking(nSegments); }
+  void endRemovedTracking() { ops.endRemovedTracking(); }
+  std::vector<GLuint> readRemovedPerSegment() { return ops.readRemovedPerSegment(); }
 
   // Set Voxelized Objects
   void setWorkpiece(std::string workpiecePath);

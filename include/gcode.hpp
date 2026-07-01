@@ -22,6 +22,8 @@ struct SimulationState {
 
 struct GcodePoint {
   glm::vec3 position = glm::vec3(0.0f);
+  float feedRate = 0.0f;  // active feed F (G-code units/min) reaching this point
+  bool rapid = false;     // true if reached by a G0 rapid (air move), false for a G1 cut
 };
 
 class GCodeInterpreter {

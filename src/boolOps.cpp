@@ -752,6 +752,15 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   zeroAtomicCounter(debugCounter);  // Initialize atomic counter to zero
 #endif
 
+  // Per-segment removed-voxel accumulator for the swept shader's binding 4. Always
+  // present (size 1) so the binding is satisfied during normal carving; the fitness
+  // evaluator resizes it to one slot per segment via beginRemovedTracking().
+  deleteBuffer(removedBuf);
+  removedBuf = createBuffer(sizeof(GLuint), 4, GL_DYNAMIC_COPY);
+  zeroBuffer(removedBuf);
+  removedTracking = false;
+  removedCapacity = 1;
+
   loadBuffer(obj1_flat, unpacked);                   // Load data into the buffer
   loadBuffer(obj1_dataNum, dataNum);                 // Load valid data count into the buffer
   loadBuffer(obj2_compressed, obj2.compressedData);  // Load data into the buffer
@@ -781,7 +790,7 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   return true;
 }
 
-bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
+bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int segmentIndex) {
   if (objects.size() != 2) {
     std::cerr << "BoolOps::subtractSwept: Expected exactly 2 objects, got " << objects.size() << std::endl;
     return false;
@@ -826,11 +835,36 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
   shader_swept->setIVec3("translateDelta", tDelta);
   shader_swept->setInt("numSubsteps", K);
 
+  // Per-segment removed-voxel tracking (fitness). When active, this segment's removed
+  // voxels are accumulated into removedCount[segmentIndex]; otherwise the shader skips
+  // the accumulation entirely (countRemoved = 0). Bind removedBuf so binding 4 is valid.
+  bool track = removedTracking && segmentIndex >= 0 && segmentIndex < removedCapacity && removedBuf != 0;
+  shader_swept->setInt("countRemoved", track ? 1 : 0);
+  shader_swept->setInt("segmentIndex", track ? segmentIndex : 0);
+  if (removedBuf != 0) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, removedBuf);
+
   GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   glDispatchCompute(gX, gY, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   return true;
+}
+
+void BoolOps::beginRemovedTracking(int nSegments) {
+  int n = nSegments > 1 ? nSegments : 1;
+  deleteBuffer(removedBuf);
+  removedBuf = createBuffer((GLsizeiptr)n * sizeof(GLuint), 4, GL_DYNAMIC_COPY);
+  zeroBuffer(removedBuf);
+  removedCapacity = n;
+  removedTracking = true;
+}
+
+std::vector<GLuint> BoolOps::readRemovedPerSegment() {
+  if (removedBuf == 0 || removedCapacity <= 0) return {};
+  // Ensure every swept dispatch's atomicAdd is complete and visible to the client read.
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+  glFinish();
+  return readBuffer(removedBuf, removedCapacity);
 }
 
 void BoolOps::subtractGPU_copyback(VoxelObject& out) {

@@ -16,6 +16,9 @@ layout(std430, binding = 0) buffer Obj1FlatData { uint obj1_flatData[]; };
 layout(std430, binding = 1) buffer Obj1DataNum { uint obj1_dataNum[]; };
 layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
 layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
+// [segmentIndex] accumulates the voxels removed by this dispatch; only touched when
+// countRemoved != 0 (fitness evaluator: per-segment material-removal / engagement metric).
+layout(std430, binding = 4) buffer RemovedBuf { uint removedCount[]; };
 
 uniform int w1, h1, z1;       // workpiece grid
 uniform int w2, h2, z2;       // tool grid
@@ -24,8 +27,21 @@ uniform int baseX, baseY;     // workpiece-space origin of this dispatch (swept 
 uniform ivec3 translateStart; // tool-center (workpiece coords) at the segment start
 uniform ivec3 translateDelta; // translate(end) - translate(start)
 uniform int numSubsteps;      // sub-positions sampled along the segment (>= 0)
+uniform int countRemoved;     // 1 = accumulate removed voxels into removedCount[segmentIndex], 0 = off (no cost)
+uniform int segmentIndex;     // slot in removedCount[] for this segment (valid only when countRemoved != 0)
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Solid-voxel count of a workpiece column = total length of its "inside" runs, using
+// the SAME parity convention as the occupancy read-back: paired transitions bound a
+// run, and an unpaired final transition means the column stays solid up to the top z1.
+uint columnSolid(uint base, uint n) {
+    uint s = 0u;
+    uint k = 0u;
+    for (; k + 1u < n; k += 2u) s += obj1_flatData[base + k + 1u] - obj1_flatData[base + k];
+    if (k < n) s += uint(z1) - obj1_flatData[base + k];  // unpaired last transition -> solid to top
+    return s;
+}
 
 void main() {
     uint gx = uint(baseX) + gl_GlobalInvocationID.x;
@@ -35,6 +51,10 @@ void main() {
     uint idx1 = gx + gy * uint(w1);
     uint start1 = idx1 * maxTransitions;
     uint count1 = obj1_dataNum[idx1];
+
+    // Snapshot the column's solid before the subtract (the writeback below overwrites
+    // obj1_flatData in place); the removed voxels are oldSolid - newSolid afterwards.
+    uint oldSolid = (countRemoved != 0) ? columnSolid(start1, count1) : 0u;
 
     // --- (1) Swept-tool column: Z envelope of the tool over the segment ---------
     int zbMin = 2147483647;
@@ -131,4 +151,9 @@ void main() {
     }
     for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
     obj1_dataNum[idx1] = writeCount;
+
+    if (countRemoved != 0) {
+        uint newSolid = columnSolid(start1, writeCount);
+        if (oldSolid > newSolid) atomicAdd(removedCount[segmentIndex], oldSolid - newSolid);
+    }
 }

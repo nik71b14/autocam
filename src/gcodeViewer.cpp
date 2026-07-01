@@ -687,7 +687,7 @@ void GcodeViewer::carve(glm::vec3 pos) {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, workpieceVO_prefixSumBuffer);
 }
 
-void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1) {
+void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1, int segmentIndex) {
   // Subtract the volume swept by the tool along the segment p0 -> p1 in one dispatch.
   // Endpoints are converted to carving offsets per the active units mode: MM goes
   // through the stock CoordinateSystem; VOXEL keeps the legacy nearest-voxel round
@@ -701,7 +701,7 @@ void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1) {
     startOffset = glm::ivec3(glm::round(p0));
     endOffset = glm::ivec3(glm::round(p1));
   }
-  ops.subtractSwept(startOffset, endOffset - startOffset);
+  ops.subtractSwept(startOffset, endOffset - startOffset, segmentIndex);
 
   carvingCounter++;
   if (carvingCounter % 64 == 0) printCounter(carvingCounter);

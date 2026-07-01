@@ -201,6 +201,125 @@ autocam view test/cube100.bin --out-mesh cube.stl --no-view --mesh-step 4   # ex
 
 ---
 
+### `fitness` — valuta la "bontà" di un toolpath (per l'algoritmo genetico)
+
+Valutatore **headless** (nessuna finestra) pensato come funzione di fitness per un algoritmo
+genetico che evolve i toolpath: carica workpiece, utensile, un **gene** G-code e la **geometria
+target** (il pezzo finito, voxelizzato), esegue il carving sulla GPU e confronta il risultato con il
+target, producendo delle **metriche grezze** e una **fitness scalare** (più **bassa** = migliore).
+
+```
+autocam fitness --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin> --target <part.bin>
+                [--config <fitness.conf>] [--gcode-units mm|voxel] [--work-origin x,y,z]
+```
+
+| Opzione         | Default            | Descrizione                                                          |
+|-----------------|--------------------|---------------------------------------------------------------------|
+| `--gcode`       | `GCODE_PATH`       | Il gene da valutare (programma G-code).                              |
+| `--workpiece`   | `DEFAULT_WORKPIECE_BIN` | Grezzo di partenza voxelizzato `.bin`.                         |
+| `--tool`        | `DEFAULT_TOOL_BIN` | Utensile voxelizzato `.bin`.                                        |
+| `--target`      | — (**obbligatorio**) | **Pezzo finito** voxelizzato `.bin` da raggiungere.               |
+| `--config`      | `fitness.conf`     | File dei pesi/soglie (vedi sotto). Se assente si usano i default.    |
+| `--gcode-units` | `voxel`            | Interpretazione coordinate G-code: `mm` o `voxel` (come `simulate`). |
+| `--work-origin` | `0,0,0`            | Offset mm dell'origine G-code dal centro dello stock (solo `mm`).    |
+
+> **Allineamento del target.** Accuratezza = confronto voxel-per-voxel fra il pezzo carvato e il
+> target, allineati nello **spazio mondo (mm)** tramite `CoordinateSystem`. Perciò il target **deve
+> avere la stessa `voxelSizeMm` dello stock** (stessa `--res`) ed essere **allineato alla griglia**
+> dello stock: l'evaluator calcola l'offset intero di voxel fra le due griglie e rifiuta con un
+> errore se il residuo è > 0.25 voxel. Il caso più semplice e robusto è voxelizzare il target sullo
+> **stesso volume/centro** dello stock (offset nullo). Un `.bin` prodotto carvando lo stesso stock
+> (es. l'output di `simulate --out`) è già perfettamente allineato.
+
+**Obiettivi e parametri** (in `fitness.conf`, formato `chiave = valore`, `#` per i commenti). Ogni
+riga è un termine della fitness scalare; i pesi `w_*` scalano il relativo contributo.
+
+| Parametro        | Default  | Obiettivo   | Significato                                                                      |
+|------------------|----------|-------------|----------------------------------------------------------------------------------|
+| `w_gouge`        | `1000.0` | Accuratezza | Penalità per **voxel gougiato** (target presente ma materiale asportato). È di fatto **irreversibile** → peso dominante (quasi un vincolo rigido). |
+| `w_excess`       | `1.0`    | Accuratezza | Penalità per **voxel in eccesso** (materiale residuo dove il pezzo è vuoto). È **recuperabile** con altre passate → penalità lieve, da minimizzare. |
+| `w_time`         | `1.0`    | Tempo       | Penalità per **secondo** di tempo-ciclo stimato. Il tempo **assorbe** lunghezza percorso, spostamenti in aria e (via decelerazione agli spigoli) i cambi di direzione bruschi. |
+| `rapid_feed`     | `5000.0` | Tempo       | Velocità dei rapidi/spostamenti in aria, mm/min (modello di tempo).              |
+| `default_feed`   | `400.0`  | Tempo       | Feed usato per una passata di taglio priva di `F`, mm/min.                       |
+| `corner_decel_s` | `0.05`   | Tempo/finitura | Secondi aggiunti per un'inversione completa a 180° (scalati con l'angolo del cambio direzione). Modella la decelerazione dell'utensile a ogni spigolo. |
+| `w_engage`       | `5.0`    | Sicurezza   | Penalità per unità di **engagement** oltre `e_break`, sommata sui segmenti.       |
+| `e_break`        | `300.0`  | Sicurezza   | Soglia di engagement (voxel asportati per voxel di avanzamento ≈ sezione del truciolo): oltre, l'utensile **si romperebbe**. **Va calibrata** su utensile/unità. |
+| `w_turn`         | `10.0`   | Finitura    | Penalità per **frequenza** di cambi di direzione bruschi (giri per mm di taglio). Essendo una *frequenza*, i percorsi lunghi e regolari (bustrofedo, spirale) **non** vengono penalizzati; solo i percorsi "sfarfallanti" con molti giri stretti sì. |
+| `turn_angle_deg` | `60.0`   | Finitura    | Un cambio di direzione più netto di così conta come giro "brusco".               |
+| `w_air`          | `0.0`    | Parsimonia  | Penalità extra per mm di percorso **in aria** (non tagliente); di norma 0 (già coperto dal tempo). |
+| `w_moves`        | `0.0`    | Parsimonia  | Penalità per numero di movimenti (lunghezza del gene); 0 di default.             |
+
+La fitness scalare (più bassa = migliore) è la somma pesata:
+
+```
+fitness = w_gouge·gouge + w_excess·excess          (accuratezza)
+        + w_time·tempo_stimato                      (tempo)
+        + w_engage·engagement_overload              (sicurezza)
+        + w_turn·turn_freq                          (finitura)
+        + w_air·air_len_mm + w_moves·n_moves        (parsimonia)
+```
+
+dove `engagement_overload = Σ_segmenti max(0, engagement − e_break)`. Oltre alla fitness, l'evaluator
+stampa **tutte le metriche grezze** (una `chiave valore` per riga), così un GA può ricombinarle con
+pesi propri o usare un fronte di Pareto:
+
+`gouge_voxels`, `excess_voxels`, `gouge_mm3`, `excess_mm3`, `carved_voxels`, `target_voxels`,
+`coverage` (frazione del target correttamente ottenuta = `(target−gouge)/target`), `path_len_mm`,
+`cut_len_mm`, `air_len_mm` (segmenti che asportano 0 voxel), `est_time_s`, `move_time_s`,
+`corner_time_s`, `engage_max`, `engage_overload`, `abrupt_turns`, `turn_freq_per_mm`, `n_moves`,
+`voxel_mm`.
+
+> **Come nasce l'engagement.** Durante il carving swept, il kernel GPU accumula (via `atomicAdd`, con
+> costo nullo quando la valutazione non è attiva) i **voxel rimossi da ciascun segmento**; l'engagement
+> del segmento è `voxel_rimossi / avanzamento_in_voxel`. Un segmento che asporta 0 voxel è "in aria"
+> (rapido o taglio a vuoto). La somma dei rimossi coincide esattamente con `stock_solido − carved_solido`.
+
+> **Calibrazione.** I pesi e le soglie di default sono un punto di partenza: `gouge` è reso dominante
+> di proposito, ma `e_break` e `turn_angle_deg` dipendono da **utensile, stock e unità** e vanno tarati
+> (es. lancia una passata "buona" nota e osserva `engage_max` per fissare `e_break`).
+
+> **Set a risoluzione consistente + G-code in mm (consigliato).** Per una valutazione **fisicamente
+> corretta** conviene voxelizzare **stock, utensile e target alla stessa `--res`** e scrivere il gene
+> in **`mm`**. Così l'utensile taglia alla sua dimensione reale e non compare il warning
+> «*tool voxel size differs from stock*» (che in modalità `voxel` segnala che l'utensile è timbrato
+> 1 voxel-utensile = 1 voxel-stock, quindi con un raggio di taglio leggermente diverso da quello vero).
+>
+> Attenzione a una regola del voxelizer: ogni oggetto ha **almeno 32 voxel** sull'asse più corto
+> (`MIN_RESOLUTION_XYZ`). Un utensile piccolo (es. la fresa da 3 mm) a `--res 0.1` darebbe 30 voxel
+> < 32, quindi viene riscalato a 0.09375 mm/voxel — ecco perché `--res 0.1` **non** basta a farlo
+> combaciare con lo stock. Serve una `--res` abbastanza fine da dare all'utensile ≥ 32 voxel sull'asse
+> minore (per la fresa da 3 mm: `--res ≤ ~0.09`, es. **0.05**). A quel punto stock, utensile e target
+> condividono la stessa `voxelSizeMm` e il confronto è esatto.
+>
+> Il generatore `tools/gen_gcode.py --units mm` produce il gene direttamente in millimetri (le stesse
+> geometrie in unità-voxel moltiplicate ×0.1); l'output resta indipendente dalla risoluzione, quindi
+> lo stesso file carva su uno stock a qualsiasi `--res` purché l'utensile ne condivida la voxelSize.
+
+Esempi:
+```
+# valuta un gene contro il pezzo finito (target voxelizzato sulla griglia dello stock)
+autocam fitness --gcode gene.gcode --workpiece test/workpiece_100_100_50.bin \
+                --tool test/hemispheric_mill_3.bin --target part.bin
+
+# un target "di prova" perfettamente allineato = l'output di un carving noto
+autocam simulate --no-view --gcode ref.gcode --workpiece stock.bin --tool tool.bin --out part.bin
+
+# --- set a risoluzione consistente (0.05) + G-code in mm: niente warning, taglio a misura reale ---
+autocam voxelize models/workpiece_100_100_50.stl        --out test/workpiece_100_100_50_r05.bin       --res 0.05
+autocam voxelize models/hemispheric_mill_3.stl          --out test/hemispheric_mill_3_r05.bin          --res 0.05
+autocam voxelize models/workpiece_100_100_50_target.stl --out test/workpiece_100_100_50_target_r05.bin --res 0.05
+python3 tools/gen_gcode.py --out gcode/complex_demo_mm.gcode --units mm
+autocam fitness --gcode gcode/complex_demo_mm.gcode --gcode-units mm \
+                --workpiece test/workpiece_100_100_50_r05.bin \
+                --tool test/hemispheric_mill_3_r05.bin \
+                --target test/workpiece_100_100_50_target_r05.bin
+```
+> Su griglie grandi (a `--res 0.05` lo stock è 2000×2000×1000) la voxelizzazione può richiedere più
+> memoria GPU; se il renderer va in out-of-memory, abbassa il budget di slicing con `--mem-mb` (es.
+> `--mem-mb 64`): l'output è identico, cambia solo il numero di blocchi Z elaborati.
+
+---
+
 ### `help`
 
 ```

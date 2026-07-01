@@ -42,6 +42,10 @@ void printUsage() {
       "      CPU mesher (GPU marching cubes is the default).\n\n"
       "  view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>] [--smooth <int>] [--cpu]\n"
       "      Raymarch-view a .bin voxel object (or --mesh for a GPU marching-cubes mesh).\n\n"
+      "  fitness --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin> --target <part.bin>\n"
+      "          [--config <fitness.conf>] [--gcode-units mm|voxel] [--work-origin x,y,z]\n"
+      "      Headless: carve the workpiece with the gene and score it against the target\n"
+      "      part (accuracy/time/safety). Prints raw metrics and a scalar fitness for the GA.\n\n"
       "  help, --help\n"
       "      Show this message.\n";
 }
@@ -64,6 +68,7 @@ int main(int argc, char** argv) {
     if (args.command == "voxelize") return runVoxelize(args);
     if (args.command == "simulate") return runSimulate(args);
     if (args.command == "view") return runView(args);
+    if (args.command == "fitness") return runFitness(args);
 
     std::cerr << "Unknown command: '" << args.command << "'\n\n";
     printUsage();

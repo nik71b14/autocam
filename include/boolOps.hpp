@@ -54,8 +54,18 @@ class BoolOps {
   bool subtractGPU(glm::ivec3 offset);
   // Subtract the volume swept by the tool along a linear segment (start -> start+displacement)
   // in a single dispatch. Requires subtractGPU_init() to have been called.
-  bool subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement);
+  // If removed-voxel tracking is active (see beginRemovedTracking) and segmentIndex >= 0,
+  // the shader accumulates the voxels removed by this segment into removedCount[segmentIndex].
+  bool subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int segmentIndex = -1);
   void subtractGPU_copyback(VoxelObject& outData);
+
+  // --- Per-segment material-removal tracking (used by the fitness evaluator) ------
+  // Allocate a GPU accumulator of `nSegments` counters and start tracking. Each
+  // subsequent subtractSwept(..., i) adds its removed voxels into slot i. Read them
+  // all back once with readRemovedPerSegment(). Off by default (zero carving cost).
+  void beginRemovedTracking(int nSegments);
+  void endRemovedTracking() { removedTracking = false; }
+  std::vector<GLuint> readRemovedPerSegment();
 
  private:
   std::vector<VoxelObject> objects;
@@ -84,6 +94,11 @@ class BoolOps {
   // Atomic counters
   GLuint atomicCounter;
   GLuint debugCounter;
+
+  // Per-segment removed-voxel accumulator (SSBO at binding 4, one uint per segment).
+  GLuint removedBuf = 0;            // created in subtractGPU_init (size 1) / resized by beginRemovedTracking
+  bool removedTracking = false;     // gates the shader's atomicAdd via the countRemoved uniform
+  int removedCapacity = 0;          // number of segment slots currently allocated
 
   // Dispatch parameters
   GLuint groupsX;
