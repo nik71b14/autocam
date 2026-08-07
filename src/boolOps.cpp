@@ -813,6 +813,22 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
   glm::ivec3 ad = glm::abs(tDelta);
   int K = glm::max(glm::max(ad.x, ad.y), ad.z);
 
+  // Benchmark toggle (host + shader): AUTOCAM_SWEPT_SKIP=0 = baseline, 1 = pruning (default).
+  static const int sweptSkip = [] {
+    const char* e = std::getenv("AUTOCAM_SWEPT_SKIP");
+    return (e && e[0] == '0') ? 0 : 1;
+  }();
+
+  // Whole-segment skip: if the tool's Z-extent over the segment cannot reach the
+  // stock's [0,z1) range (e.g. an in-air G0 rapid), the segment removes nothing —
+  // skip the entire dispatch, not just per column. Conservative (uses the full tool
+  // grid height z2), so it never skips a segment that could cut.
+  if (sweptSkip) {
+    long zA = tStart.z < tEnd.z ? tStart.z : tEnd.z;
+    long zB = tStart.z > tEnd.z ? tStart.z : tEnd.z;
+    if (zB + z2 / 2 <= 0 || zA - z2 / 2 >= z1) return true;
+  }
+
   // Swept bounding box in workpiece space (tool footprint over the whole segment).
   long minTx = glm::min(tStart.x, tEnd.x), maxTx = glm::max(tStart.x, tEnd.x);
   long minTy = glm::min(tStart.y, tEnd.y), maxTy = glm::max(tStart.y, tEnd.y);
@@ -844,12 +860,6 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
   shader_swept->setInt("segmentIndex", track ? segmentIndex : 0);
   if (removedBuf != 0) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, removedBuf);
 
-  // Benchmark toggle: AUTOCAM_SWEPT_SKIP=0 disables the no-op-column early-out
-  // (baseline: rewrite every column in the AABB); default 1 (Step-1 tube pruning).
-  static const int sweptSkip = [] {
-    const char* e = std::getenv("AUTOCAM_SWEPT_SKIP");
-    return (e && e[0] == '0') ? 0 : 1;
-  }();
   shader_swept->setInt("enableSkip", sweptSkip);
 
   GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
