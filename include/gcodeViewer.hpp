@@ -2,9 +2,11 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <memory>
 #include <vector>
 
 #include "boolOps.hpp"
+#include "carveBackend.hpp"
 #include "coordinateSystem.hpp"
 #include "gcode.hpp"
 #include "gcode_params.hpp"
@@ -172,6 +174,9 @@ class GcodeViewer {
   // Boolean operations for voxel objects
   // BoolOps* ops = nullptr;  // Boolean operations for voxel objects
   BoolOps ops;
+  // Runtime-selected carve backend (env AUTOCAM_CARVE_BACKEND=flat|sparse); "flat"
+  // forwards to `ops` unchanged. See DOCS/DEV_PLAN/sparse-tile-carve-plan.md.
+  std::unique_ptr<ICarveBackend> carveBackend;
 
   void initVO(const std::string& path, VOType type);
 

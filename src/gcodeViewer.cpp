@@ -3,8 +3,10 @@
 #include <GLFW/glfw3.h>
 #include <glad/glad.h>
 
+#include <cstdlib>  // getenv (AUTOCAM_CARVE_BACKEND)
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 #include "boolOps.hpp"
 #include "meshLoader.hpp"
@@ -44,6 +46,22 @@ void GcodeViewer::checkContext() {
 
 void GcodeViewer::init() {
   checkContext();
+
+  // Select the carve backend at runtime (A/B without git). Default: flat. The
+  // sparse tiled backend is added in later stages; until then "sparse" warns and
+  // falls back to flat, so the toggle is wired end-to-end with no behaviour change.
+  {
+    const char* be = std::getenv("AUTOCAM_CARVE_BACKEND");
+    std::string bn = be ? be : "flat";
+    if (bn == "sparse") {
+      std::cout << "[carve] AUTOCAM_CARVE_BACKEND=sparse requested but not implemented yet; using flat.\n";
+      bn = "flat";
+    } else if (bn != "flat") {
+      std::cout << "[carve] unknown AUTOCAM_CARVE_BACKEND='" << bn << "'; using flat.\n";
+    }
+    carveBackend = std::make_unique<FlatCarveBackend>(ops);
+    std::cout << "[carve] backend: " << carveBackend->name() << "\n";
+  }
 
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
@@ -701,7 +719,8 @@ void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1, int segmentIndex) {
     startOffset = glm::ivec3(glm::round(p0));
     endOffset = glm::ivec3(glm::round(p1));
   }
-  ops.subtractSwept(startOffset, endOffset - startOffset, segmentIndex);
+  // Routed through the selected carve backend (flat forwards to ops unchanged).
+  carveBackend->carveSwept(startOffset, endOffset - startOffset, segmentIndex);
 
   carvingCounter++;
   if (carvingCounter % 64 == 0) printCounter(carvingCounter);
