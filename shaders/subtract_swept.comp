@@ -30,6 +30,13 @@ uniform int numSubsteps;      // sub-positions sampled along the segment (>= 0)
 uniform int countRemoved;     // 1 = accumulate removed voxels into removedCount[segmentIndex], 0 = off (no cost)
 uniform int segmentIndex;     // slot in removedCount[] for this segment (valid only when countRemoved != 0)
 uniform int enableSkip;       // 1 = prune no-op columns (Step 1); 0 = baseline (rewrite every column)
+// Sparse tiled backend (AUTOCAM_CARVE_BACKEND=sparse): when tiled != 0 the workpiece
+// buffers are laid out per TILE (tileTS×tileTS columns per tile, tileNX tiles per row)
+// instead of row-major; the per-column stride is still `maxTransitions`. When tiled==0
+// the addressing is the original row-major flat buffer (default, unchanged).
+uniform int tiled;            // 0 = flat row-major (default), 1 = tiled layout
+uniform int tileTS;           // tile side in columns (tiled only)
+uniform int tileNX;           // tiles per row = ceil(w1/tileTS) (tiled only)
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -49,9 +56,19 @@ void main() {
     uint gy = uint(baseY) + gl_GlobalInvocationID.y;
     if (gx >= uint(w1) || gy >= uint(h1)) return;
 
-    uint idx1 = gx + gy * uint(w1);
-    uint start1 = idx1 * maxTransitions;
-    uint count1 = obj1_dataNum[idx1];
+    // Column addressing: row-major flat (tiled==0) or per-tile (tiled!=0). Both use
+    // a fixed per-column stride `maxTransitions`; only the column ordering differs.
+    uint countIdx;
+    if (tiled != 0) {
+        uint tx = gx / uint(tileTS), ty = gy / uint(tileTS);
+        uint tile = tx + ty * uint(tileNX);
+        uint lcol = (gx - tx * uint(tileTS)) + (gy - ty * uint(tileTS)) * uint(tileTS);
+        countIdx = tile * uint(tileTS) * uint(tileTS) + lcol;
+    } else {
+        countIdx = gx + gy * uint(w1);
+    }
+    uint start1 = countIdx * maxTransitions;
+    uint count1 = obj1_dataNum[countIdx];
 
     // Snapshot the column's solid before the subtract (the writeback below overwrites
     // obj1_flatData in place); the removed voxels are oldSolid - newSolid afterwards.
@@ -163,7 +180,7 @@ void main() {
         if (z >= 0 && z < z1) obj1_flatData[start1 + writeCount++] = uint(z);
     }
     for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
-    obj1_dataNum[idx1] = writeCount;
+    obj1_dataNum[countIdx] = writeCount;
 
     if (countRemoved != 0) {
         uint newSolid = columnSolid(start1, writeCount);

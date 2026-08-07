@@ -8,6 +8,7 @@
 #include "boolOps.hpp"
 #include "carveBackend.hpp"
 #include "coordinateSystem.hpp"
+#include "voxelFile.hpp"
 #include "gcode.hpp"
 #include "gcode_params.hpp"
 #include "shader.hpp"
@@ -64,20 +65,15 @@ class GcodeViewer {
   // Call after setWorkpiece()+setTool(), before carving.
   bool checkUnitsConsistency() const;
 
-  void copyBack() {
-    // Copy back the voxelized workpiece data after carving
-    ops.subtractGPU_copyback(ops.getObjects()[0]);  // Copy back from GPU to CPU
-  }
-  VoxelObject getWorkpiece() const {
-    if (ops.getObjects().empty()) {
-      throw std::runtime_error("No workpiece voxel object loaded.");
-    }
-    return ops.getObjects()[0];  // Return the first object (workpiece)
-  }
+  // Assemble the carved result from the active backend (flat: GPU readback; sparse:
+  // tiled assembly) into resultVO. Call once after finishGPU(), before getWorkpiece().
+  void copyBack() { carveBackend->readResult(resultVO); }
+  VoxelObject getWorkpiece() const { return resultVO; }
 
-  // Save the carved workpiece (object 0) to a .bin voxel file.
-  // Call after copyBack() so the CPU-side data is populated.
-  bool saveWorkpiece(const std::string& path) { return ops.save(path, 0); }
+  // Save the carved workpiece to a .bin voxel file. Call after copyBack().
+  bool saveWorkpiece(const std::string& path) {
+    return voxelfile::write(path, resultVO.params, resultVO.compressedData, resultVO.prefixSumData);
+  }
 
  private:
   void init();
@@ -177,6 +173,7 @@ class GcodeViewer {
   // Runtime-selected carve backend (env AUTOCAM_CARVE_BACKEND=flat|sparse); "flat"
   // forwards to `ops` unchanged. See DOCS/DEV_PLAN/sparse-tile-carve-plan.md.
   std::unique_ptr<ICarveBackend> carveBackend;
+  VoxelObject resultVO;  // carved result assembled by carveBackend->readResult() (copyBack)
 
   void initVO(const std::string& path, VOType type);
 

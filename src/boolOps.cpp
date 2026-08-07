@@ -861,6 +861,7 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
   if (removedBuf != 0) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, removedBuf);
 
   shader_swept->setInt("enableSkip", sweptSkip);
+  shader_swept->setInt("tiled", 0);  // flat row-major addressing (sparse backend uses tiled=1)
 
   GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);

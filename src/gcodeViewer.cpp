@@ -11,6 +11,7 @@
 #include "boolOps.hpp"
 #include "meshLoader.hpp"
 #include "shader.hpp"
+#include "sparseTileBackend.hpp"
 
 GcodeViewer::GcodeViewer(GLFWwindow* window, const std::vector<GcodePoint>& toolpath) : window(window), toolPosition(0.0f), path(toolpath) { init(); }
 
@@ -54,12 +55,11 @@ void GcodeViewer::init() {
     const char* be = std::getenv("AUTOCAM_CARVE_BACKEND");
     std::string bn = be ? be : "flat";
     if (bn == "sparse") {
-      std::cout << "[carve] AUTOCAM_CARVE_BACKEND=sparse requested but not implemented yet; using flat.\n";
-      bn = "flat";
-    } else if (bn != "flat") {
-      std::cout << "[carve] unknown AUTOCAM_CARVE_BACKEND='" << bn << "'; using flat.\n";
+      carveBackend = std::make_unique<SparseTileBackend>();
+    } else {
+      if (bn != "flat") std::cout << "[carve] unknown AUTOCAM_CARVE_BACKEND='" << bn << "'; using flat.\n";
+      carveBackend = std::make_unique<FlatCarveBackend>(ops);
     }
-    carveBackend = std::make_unique<FlatCarveBackend>(ops);
     std::cout << "[carve] backend: " << carveBackend->name() << "\n";
   }
 
@@ -529,7 +529,7 @@ void GcodeViewer::initVO(const std::string& path, VOType type) {
 
     std::cout << "Tool loaded: " << path << std::endl;
 
-    ops.subtractGPU_init(ops.getObjects()[0], ops.getObjects()[1]);  //@@@ MOVE TO A MORE SUITED POSITION TO ALLOW RESET, TOOL CHANGE, ETC.
+    carveBackend->prepare(ops.getObjects()[0], ops.getObjects()[1]);  // flat: subtractGPU_init; sparse: build tiles
 
     return;
   }
@@ -751,4 +751,4 @@ bool GcodeViewer::checkUnitsConsistency() const {
   return true;
 }
 
-void GcodeViewer::finishGPU() { glFinish(); }
+void GcodeViewer::finishGPU() { carveBackend->finish(); }
