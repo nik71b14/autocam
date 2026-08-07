@@ -29,6 +29,7 @@ uniform ivec3 translateDelta; // translate(end) - translate(start)
 uniform int numSubsteps;      // sub-positions sampled along the segment (>= 0)
 uniform int countRemoved;     // 1 = accumulate removed voxels into removedCount[segmentIndex], 0 = off (no cost)
 uniform int segmentIndex;     // slot in removedCount[] for this segment (valid only when countRemoved != 0)
+uniform int enableSkip;       // 1 = prune no-op columns (Step 1); 0 = baseline (rewrite every column)
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -112,6 +113,18 @@ void main() {
     }
 
     uint count2 = hasMat ? 2u : 0u;  // swept-tool column = single interval [zbMin, ztMax]
+
+    // Fast skip (swept "tube" pruning): if the swept tool never covers this column
+    // (hasMat == false), or its removed interval lies entirely outside the stock's
+    // Z-range [0, z1), the subtract below is a no-op that would still rewrite all
+    // MAX_TRANSITIONS slots. Return now, leaving the column untouched (correct: it is
+    // unchanged) and skipping that write traffic. This makes the columns the dispatch
+    // over-covers on DIAGONAL moves (AABB >> swept band) and IN-AIR (G0) moves cheap;
+    // axis-aligned dispatches are fully covered, so they are unaffected and bit-exact.
+    // Removed-voxel counter stays consistent: removed == 0 here, so the skipped
+    // atomicAdd(oldSolid - newSolid) would have added 0.
+    // Gated by enableSkip so the baseline (AABB rewrite) can be benchmarked A/B.
+    if (enableSkip != 0 && (!hasMat || zbMin >= z1 || ztMax <= 0)) return;
 
     // --- (2) Subtract [zbMin, ztMax] from the workpiece column ------------------
     uint i1 = 0u, i2 = 0u;

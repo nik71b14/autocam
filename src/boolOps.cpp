@@ -4,6 +4,7 @@
 #include <glad/glad.h>
 
 #include <chrono>
+#include <cstdlib>  // getenv (AUTOCAM_SWEPT_SKIP / _TUBE benchmark toggles)
 
 #include "voxelFile.hpp"
 #include "voxelViewer.hpp"
@@ -842,6 +843,14 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
   shader_swept->setInt("countRemoved", track ? 1 : 0);
   shader_swept->setInt("segmentIndex", track ? segmentIndex : 0);
   if (removedBuf != 0) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, removedBuf);
+
+  // Benchmark toggle: AUTOCAM_SWEPT_SKIP=0 disables the no-op-column early-out
+  // (baseline: rewrite every column in the AABB); default 1 (Step-1 tube pruning).
+  static const int sweptSkip = [] {
+    const char* e = std::getenv("AUTOCAM_SWEPT_SKIP");
+    return (e && e[0] == '0') ? 0 : 1;
+  }();
+  shader_swept->setInt("enableSkip", sweptSkip);
 
   GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
