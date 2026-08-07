@@ -2,8 +2,8 @@
 
 **Status:** working technical note (basis for a scientific article).
 **Scope:** the GPU material-removal ("carving") pipeline of `autocam`: representation, baseline
-algorithm, the optimizations applied, their correctness argument, and measured results — including a
-documented negative result.
+algorithm, the optimizations applied, their correctness argument, and measured results — including
+documented negative results and the memory-traffic optimization they localize.
 
 ---
 
@@ -74,7 +74,7 @@ The tool is positioned by an integer offset; the stock-frame placement uses
 transitions are shifted by `translate.z − D_tool/2`.
 
 **Coordinate note.** The current pipeline operates in **voxel units**, not millimetres; mapping to
-physical units is future work (Section 8).
+physical units is future work (Section 9).
 
 ---
 
@@ -247,7 +247,13 @@ i.e. it is **memory-bound**.
 
 ---
 
-## 8. A negative result: directional-envelope acceleration (RMQ)
+## 8. Negative results (and the one lever that worked)
+
+Three follow-up experiments probed the post-§7 bottleneck. Read together they localize it precisely:
+the two that attacked **compute** or **launch count** failed, and the one that attacked **memory-write
+traffic** succeeded — exactly what the "bandwidth-bound" diagnosis of §7 predicts.
+
+### 8.1 Directional-envelope acceleration (RMQ) — reverted
 
 We attempted to remove the per-column sub-step loop of §5.2 by precomputing, per tool, **directional
 Z-envelopes** as range-minimum/maximum sparse tables (RMQ): for an axis-aligned constant-Z move, the
@@ -260,13 +266,52 @@ sub-step loop. The implementation was exact (bit-identical residual volume on `s
 ~22→18 ms; `pocket` ~60→40 ms), at the cost of ~8 MB of per-tool tables, a build pass, and shader
 branching. The reason is informative: eliminating the envelope computation **exposed** that the
 dominant cost is not the envelope but the **memory-bound per-column merge over the 128 MB stock
-buffer** (Section 7), plus the diagonal/in-air rapid moves that use the slower fallback. The change
-was **reverted**.
+buffer** (Section 7). The change was **reverted**. Lesson: once per-step overheads and algorithmic
+redundancy are gone, *compute* micro-optimization yields diminishing returns — the ceiling is memory.
 
-The lesson for the article: once per-step overheads and algorithmic redundancy are removed,
-the simulator is **bandwidth-bound on the working-set buffer**; further *compute* micro-optimization
-yields diminishing returns. The remaining levers are architectural (data layout / working-set size)
-or shift the bottleneck out of the inner simulation entirely (Section 9).
+### 8.2 Tube pruning — a win, by attacking memory traffic instead
+
+The swept subtraction dispatches one thread per stock column over the **axis-aligned bounding box of
+the two tool-centre endpoints, dilated by the tool footprint**. For an axis-aligned move that AABB
+already equals the swept band, but for a **diagonal** move of length `L` and tool footprint `D` it is
+`≈ (0.7L + D)²` columns while the tool only sweeps `≈ L·D` — and every over-covered column still
+rewrote all `MAX_TRANSITIONS = 32` flat-buffer slots for a no-op (the shader had no early-out before
+its write-back). In-air rapid (G0) moves are the same: the tool is above the stock, so every column is
+a no-op that still rewrites 32 slots.
+
+A one-line early-out fixes this: before the merge/write-back, `return` when the tool never covers the
+column (`hasMat == false`) or its removed interval lies entirely outside the stock's Z-range
+(`zbMin ≥ z1 || ztMax ≤ 0`). This leaves the column untouched (correct — it is unchanged) and removes
+the **write** traffic, which is the bottleneck; it is **bit-exact** (byte-identical output; residual
+volume matches the references) and gated by an `enableSkip` uniform (env `AUTOCAM_SWEPT_SKIP`, default
+on) so the baseline is A/B-benchmarkable with the same binary.
+
+**Outcome (real GPU, same Lunar Lake class):** axis-aligned ~1× (the AABB already equals the tube),
+a 45° raster ~**2.6–2.9×**, long diagonal cuts ~**5×**, in-air rapids ~**7.6×**; all bit-exact. The
+win requires segment length `L ≫ D`: short-segment programmes (`square_600`, `star_pocket`, `pocket`
+with the 256-voxel `hemispheric_mill_10`) show ~nothing, so a demonstrator needs a small tool
+(`hemispheric_mill_3`, 32 voxels) and long non-axis-aligned segments (`gcode/bench_complex.gcode`,
+`tools/bench_swept.sh`). This is the complement of §8.1: the lever that pays is the one that removes
+**memory traffic** (fewer column rewrites), not the one that removes **compute** (RMQ).
+
+### 8.3 Tube dispatch (tiling) — a second negative result
+
+Encouraged by §8.2, we tried to also avoid *launching* the off-tube threads (each still does a
+per-column counter read plus the early-out) by **tiling the dispatch along the motion** so it follows
+the swept band instead of the full AABB. Each tile reuses the *same* full-segment envelope uniforms —
+so every column is computed identically to the single dispatch — and adjacent tiles overlap at the
+joins (idempotent) separated by a `GL_SHADER_STORAGE_BARRIER_BIT`, keeping the result **bit-exact**.
+
+**Outcome:** ~**2× slower** than §8.2 alone (tube/skip ≈ 0.5–0.88× across the diagonal benchmarks).
+The per-tile barriers **serialize** the tiles and the joins **double-process** columns, and that
+synchronization cost exceeds the thread-launch saving — because §8.2 already made the off-tube threads
+cheap (a counter read, no write). **Reverted.** This is the twin of §8.1: once the memory-write
+bottleneck is removed, cutting the *number of launched columns* yields negative returns on
+synchronization. The only variant that might beat §8.2 is a compacted band-column index (one thread
+per band column, no overlap, no barriers), but the per-segment index build likely does not pay either.
+
+The remaining levers are therefore architectural (working-set data layout / size) or shift the
+bottleneck out of the inner simulation entirely (Section 9).
 
 ---
 

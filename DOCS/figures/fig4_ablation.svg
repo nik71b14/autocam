@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 440" font-family="Arial, Helvetica, sans-serif">
+  <rect x="0" y="0" width="860" height="440" fill="#ffffff"/>
+  <text x="30" y="32" font-size="20" font-weight="bold" fill="#1a202c">From overhead to memory bandwidth — square_600</text>
+  <text x="30" y="54" font-size="13" fill="#4a5568">carving-loop wall time (ms) — integrated GPU, warm state</text>
+
+  <line x1="210" y1="80" x2="210" y2="300" stroke="#a0aec0" stroke-width="1.2"/>
+
+  <!-- 1) baseline 1232 -->
+  <text x="200" y="104" font-size="13" fill="#1a202c" text-anchor="end">baseline (stamping)</text>
+  <text x="200" y="120" font-size="11" fill="#718096" text-anchor="end">~2327 dispatches</text>
+  <rect x="210" y="90" width="590" height="26" fill="#c05621"/>
+  <text x="806" y="108" font-size="13" font-weight="bold" fill="#1a202c">1232 ms</text>
+
+  <!-- 2) -overhead 700 -->
+  <text x="200" y="146" font-size="13" fill="#1a202c" text-anchor="end">− per-step overhead</text>
+  <text x="200" y="162" font-size="11" fill="#718096" text-anchor="end">~2327 dispatches</text>
+  <rect x="210" y="132" width="335" height="26" fill="#dd6b20"/>
+  <text x="551" y="150" font-size="13" font-weight="bold" fill="#1a202c">~700 ms</text>
+
+  <!-- 3) swept 114 -->
+  <text x="200" y="188" font-size="13" fill="#1a202c" text-anchor="end">+ swept subtraction</text>
+  <text x="200" y="204" font-size="11" fill="#718096" text-anchor="end">9 dispatches</text>
+  <rect x="210" y="174" width="55" height="26" fill="#3182ce"/>
+  <text x="271" y="192" font-size="13" font-weight="bold" fill="#1a202c">~114 ms</text>
+
+  <!-- 4) +compaction 67 -->
+  <text x="200" y="230" font-size="13" fill="#1a202c" text-anchor="end">+ GPU compaction</text>
+  <text x="200" y="246" font-size="11" fill="#718096" text-anchor="end">read-back 72→8 ms</text>
+  <rect x="210" y="216" width="32" height="26" fill="#2b6cb0"/>
+  <text x="248" y="234" font-size="13" font-weight="bold" fill="#1a202c">~67 ms</text>
+
+  <!-- 5) +substep 40 -->
+  <text x="200" y="272" font-size="13" fill="#1a202c" text-anchor="end">+ sub-step bounding</text>
+  <text x="200" y="288" font-size="11" fill="#718096" text-anchor="end">net carving ~26 ms</text>
+  <rect x="210" y="258" width="19" height="26" fill="#2c5282"/>
+  <text x="235" y="276" font-size="13" font-weight="bold" fill="#1a202c">~40 ms  (total)</text>
+
+  <!-- 33x annotation -->
+  <defs>
+    <marker id="av" markerWidth="10" markerHeight="10" refX="4.5" refY="4.5" orient="auto-start-reverse" markerUnits="strokeWidth">
+      <path d="M1,1 L8,4.5 L1,8 Z" fill="#38a169"/>
+    </marker>
+  </defs>
+  <line x1="470" y1="103" x2="470" y2="271" stroke="#38a169" stroke-width="2" marker-start="url(#av)" marker-end="url(#av)"/>
+  <text x="482" y="182" font-size="16" font-weight="bold" fill="#276749">~33×</text>
+  <text x="482" y="200" font-size="11" fill="#276749">1232 → 40 ms</text>
+
+  <!-- memory-bound note -->
+  <rect x="30" y="322" width="800" height="98" rx="8" fill="#fffaf0" stroke="#dd6b20"/>
+  <text x="46" y="346" font-size="14" font-weight="bold" fill="#c05621">Why it stops here: the bottleneck is memory bandwidth, not compute</text>
+  <text x="46" y="368" font-size="12.5" fill="#1a202c">Net carving (~26 ms) is dominated by the strided traversal of the 128 MB unpacked working buffer (1000×1000×32×4 B).</text>
+  <text x="46" y="388" font-size="12.5" fill="#1a202c">Negative result (RMQ / sparse table): removing the envelope computation yields only −25÷30% ⇒ the cost was NOT the ALU.</text>
+  <text x="46" y="408" font-size="12.5" font-weight="bold" fill="#2c5282">Empirical proof of the memory-bound regime: remove the compute and the time barely changes.</text>
+</svg>

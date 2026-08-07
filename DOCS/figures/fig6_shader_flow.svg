@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 780" font-family="Arial, Helvetica, sans-serif">
+  <rect x="0" y="0" width="580" height="780" fill="#ffffff"/>
+  <text x="24" y="30" font-size="19" font-weight="bold" fill="#1a202c">subtract_swept.comp — per-thread flow (one column)</text>
+
+  <defs>
+    <marker id="af" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#4a5568"/></marker>
+  </defs>
+  <g stroke="#4a5568" stroke-width="1.4" fill="none">
+    <line x1="185" y1="76"  x2="185" y2="92"  marker-end="url(#af)"/>
+    <line x1="185" y1="140" x2="185" y2="156" marker-end="url(#af)"/>
+    <line x1="185" y1="200" x2="185" y2="216" marker-end="url(#af)"/>
+    <line x1="185" y1="264" x2="185" y2="280" marker-end="url(#af)"/>
+    <line x1="185" y1="352" x2="185" y2="368" marker-end="url(#af)"/>
+    <line x1="185" y1="446" x2="185" y2="462" marker-end="url(#af)"/>
+    <line x1="185" y1="514" x2="185" y2="530" marker-end="url(#af)"/>
+    <line x1="185" y1="586" x2="185" y2="602" marker-end="url(#af)"/>
+    <line x1="185" y1="660" x2="185" y2="676" marker-end="url(#af)"/>
+    <!-- decision YES branches to the right -->
+    <line x1="335" y1="118" x2="452" y2="118" marker-end="url(#af)"/>
+    <line x1="335" y1="410" x2="452" y2="410" marker-end="url(#af)"/>
+    <line x1="335" y1="628" x2="452" y2="628" marker-end="url(#af)"/>
+  </g>
+
+  <!-- start -->
+  <rect x="35" y="46" width="300" height="30" rx="15" fill="#edf2f7" stroke="#718096"/>
+  <text x="185" y="66" font-size="12.5" fill="#1a202c" text-anchor="middle">thread → column (gx,gy) = (baseX,baseY)+invocationID</text>
+
+  <!-- decision: bounds -->
+  <rect x="55" y="92" width="260" height="48" rx="8" fill="#fffaf0" stroke="#dd6b20"/>
+  <text x="185" y="114" font-size="12.5" fill="#1a202c" text-anchor="middle">gx ≥ W  or  gy ≥ H ?</text>
+  <text x="185" y="132" font-size="11" fill="#c05621" text-anchor="middle">no ↓            yes →</text>
+
+  <!-- read column -->
+  <rect x="35" y="156" width="300" height="44" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
+  <text x="185" y="174" font-size="12" fill="#1a202c" text-anchor="middle">read stock column: count1 transitions</text>
+  <text x="185" y="190" font-size="11" fill="#4a5568" text-anchor="middle">from obj1_flat[idx·MAX_TRANSITIONS …]</text>
+
+  <!-- substep range -->
+  <rect x="35" y="216" width="300" height="48" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
+  <text x="185" y="238" font-size="12" fill="#1a202c" text-anchor="middle">bound the sub-step range [k0,k1]</text>
+  <text x="185" y="255" font-size="11" fill="#4a5568" text-anchor="middle">= where the tool can cover this column</text>
+
+  <!-- envelope loop -->
+  <rect x="35" y="280" width="300" height="72" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
+  <text x="185" y="300" font-size="12" fill="#1a202c" text-anchor="middle">for k in [k0,k1]:  place tool at pos(k)</text>
+  <text x="185" y="318" font-size="12" fill="#1a202c" text-anchor="middle">accumulate Z-envelope</text>
+  <text x="185" y="336" font-size="11.5" font-weight="bold" fill="#2c5282" text-anchor="middle">[zbMin, ztMax] = (min bottom, max top)</text>
+
+  <!-- decision: skip (tube pruning) -->
+  <rect x="45" y="368" width="280" height="78" rx="8" fill="#fffaf0" stroke="#dd6b20"/>
+  <text x="185" y="388" font-size="12" fill="#1a202c" text-anchor="middle">enableSkip AND</text>
+  <text x="185" y="405" font-size="11.5" fill="#1a202c" text-anchor="middle">( tool misses column  OR</text>
+  <text x="185" y="421" font-size="11.5" fill="#1a202c" text-anchor="middle">interval outside [0, z1) ) ?</text>
+  <text x="185" y="439" font-size="11" fill="#c05621" text-anchor="middle">no ↓            yes → (TUBE PRUNING)</text>
+
+  <!-- merge -->
+  <rect x="35" y="462" width="300" height="52" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
+  <text x="185" y="483" font-size="12" fill="#1a202c" text-anchor="middle">two-pointer merge: subtract</text>
+  <text x="185" y="500" font-size="12" fill="#1a202c" text-anchor="middle">[zbMin,ztMax] from the stock column</text>
+
+  <!-- writeback -->
+  <rect x="35" y="530" width="300" height="56" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
+  <text x="185" y="551" font-size="12" fill="#1a202c" text-anchor="middle">write transitions back in place;</text>
+  <text x="185" y="568" font-size="12" fill="#1a202c" text-anchor="middle">zero unused slots; store new count</text>
+
+  <!-- decision: counter -->
+  <rect x="55" y="602" width="260" height="58" rx="8" fill="#fffaf0" stroke="#dd6b20"/>
+  <text x="185" y="623" font-size="12" fill="#1a202c" text-anchor="middle">countRemoved (fitness) ?</text>
+  <text x="185" y="641" font-size="11" fill="#c05621" text-anchor="middle">no ↓            yes →</text>
+
+  <!-- end -->
+  <rect x="35" y="676" width="300" height="30" rx="15" fill="#edf2f7" stroke="#718096"/>
+  <text x="185" y="696" font-size="12.5" fill="#1a202c" text-anchor="middle">done (column written)</text>
+
+  <!-- RIGHT: return boxes -->
+  <rect x="452" y="100" width="110" height="36" rx="8" fill="#f7fafc" stroke="#a0aec0"/>
+  <text x="507" y="122" font-size="12" fill="#4a5568" text-anchor="middle">return</text>
+
+  <rect x="452" y="388" width="118" height="44" rx="8" fill="#e6ffed" stroke="#38a169"/>
+  <text x="511" y="406" font-size="11.5" fill="#276749" text-anchor="middle">return —</text>
+  <text x="511" y="422" font-size="11.5" font-weight="bold" fill="#276749" text-anchor="middle">no write ✔</text>
+
+  <rect x="452" y="606" width="118" height="46" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
+  <text x="511" y="625" font-size="10.5" fill="#1a202c" text-anchor="middle">atomicAdd(removed[seg],</text>
+  <text x="511" y="640" font-size="10.5" fill="#1a202c" text-anchor="middle">oldSolid−newSolid)</text>
+
+  <text x="24" y="730" font-size="11" fill="#718096">Blue = compute step · Orange = branch · Green "no write" = the tube-pruning early-out (Step 1).</text>
+  <text x="24" y="748" font-size="11" fill="#718096">Every column of the swept bbox runs this independently, one GPU thread each.</text>
+</svg>

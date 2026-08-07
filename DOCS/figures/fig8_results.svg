@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 470" font-family="Arial, Helvetica, sans-serif">
+  <rect x="0" y="0" width="880" height="470" fill="#ffffff"/>
+  <text x="30" y="30" font-size="19" font-weight="bold" fill="#1a202c">Net carving time, normalized to baseline (lower = faster)</text>
+  <text x="30" y="50" font-size="12.5" fill="#4a5568">Intel Lunar Lake / iris, interleaved min-of-N, bit-exact. Small tool (32) on long non-axis-aligned segments.</text>
+
+  <!-- legend -->
+  <rect x="30" y="62" width="14" height="14" fill="#a0aec0"/><text x="50" y="74" font-size="12" fill="#1a202c">baseline</text>
+  <rect x="130" y="62" width="14" height="14" fill="#38a169"/><text x="150" y="74" font-size="12" fill="#1a202c">skip (Step 1)</text>
+  <rect x="260" y="62" width="14" height="14" fill="#dd6b20"/><text x="280" y="74" font-size="12" fill="#1a202c">tube (Step 2, reverted)</text>
+
+  <!-- axis + gridlines (0,50,100%) -->
+  <line x1="250" y1="92" x2="250" y2="420" stroke="#718096" stroke-width="1.4"/>
+  <line x1="487" y1="92" x2="487" y2="420" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="725" y1="92" x2="725" y2="420" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="250" y="434" font-size="11" fill="#718096" text-anchor="middle">0%</text>
+  <text x="487" y="434" font-size="11" fill="#718096" text-anchor="middle">50%</text>
+  <text x="725" y="434" font-size="11" fill="#718096" text-anchor="middle">100% (baseline)</text>
+
+  <!-- Group 1: square_600 (control) -->
+  <text x="244" y="140" font-size="12.5" font-weight="bold" fill="#1a202c" text-anchor="end">square_600</text>
+  <text x="244" y="156" font-size="10.5" fill="#718096" text-anchor="end">(control)</text>
+  <rect x="250" y="110" width="475" height="18" fill="#a0aec0"/>
+  <rect x="250" y="130" width="489" height="18" fill="#38a169"/><text x="745" y="144" font-size="11" fill="#276749">0.97×</text>
+  <rect x="250" y="150" width="560" height="18" fill="#dd6b20"/><text x="816" y="164" font-size="11" fill="#c05621">0.85×</text>
+
+  <!-- Group 2: bench_complex -->
+  <text x="244" y="196" font-size="12.5" font-weight="bold" fill="#1a202c" text-anchor="end">bench_complex</text>
+  <rect x="250" y="182" width="475" height="18" fill="#a0aec0"/>
+  <rect x="250" y="202" width="166" height="18" fill="#38a169"/><text x="422" y="216" font-size="11" font-weight="bold" fill="#276749">2.9×</text>
+  <rect x="250" y="222" width="261" height="18" fill="#dd6b20"/><text x="517" y="236" font-size="11" fill="#c05621">1.8×</text>
+
+  <!-- Group 3: diag_cut -->
+  <text x="244" y="268" font-size="12.5" font-weight="bold" fill="#1a202c" text-anchor="end">diag_cut</text>
+  <rect x="250" y="254" width="475" height="18" fill="#a0aec0"/>
+  <rect x="250" y="274" width="95" height="18" fill="#38a169"/><text x="351" y="288" font-size="11" font-weight="bold" fill="#276749">5.0×</text>
+  <rect x="250" y="294" width="185" height="18" fill="#dd6b20"/><text x="441" y="308" font-size="11" fill="#c05621">2.6×</text>
+
+  <!-- Group 4: air_moves -->
+  <text x="244" y="340" font-size="12.5" font-weight="bold" fill="#1a202c" text-anchor="end">air_moves</text>
+  <rect x="250" y="326" width="475" height="18" fill="#a0aec0"/>
+  <rect x="250" y="346" width="62" height="18" fill="#38a169"/><text x="318" y="360" font-size="11" font-weight="bold" fill="#276749">7.6×</text>
+  <rect x="250" y="366" width="119" height="18" fill="#dd6b20"/><text x="375" y="380" font-size="11" fill="#c05621">4.0×</text>
+
+  <text x="250" y="458" font-size="11.5" fill="#718096">skip (Step 1) wins big on diagonal/air work; tube (Step 2) is consistently slower than skip → reverted.</text>
+</svg>

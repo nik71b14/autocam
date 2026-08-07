@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 400" font-family="Arial, Helvetica, sans-serif">
+  <rect x="0" y="0" width="860" height="400" fill="#ffffff"/>
+  <text x="30" y="34" font-size="20" font-weight="bold" fill="#1a202c">Stamping (baseline)  vs  Swept subtraction</text>
+
+  <!-- ===================== LEFT PANEL: stamping ===================== -->
+  <rect x="30" y="60" width="390" height="310" rx="8" fill="#f7fafc" stroke="#cbd5e0"/>
+  <text x="225" y="86" font-size="15" font-weight="bold" fill="#c05621" text-anchor="middle">Stamping: ~150 dispatches / segment</text>
+
+  <rect x="60" y="150" width="330" height="150" fill="#c6f6d5" stroke="#38a169" stroke-width="2"/>
+  <!-- scalloped machined floor -->
+  <path d="M75,150 q11,22 22,0 q11,22 22,0 q11,22 22,0 q11,22 22,0 q11,22 22,0
+           q11,22 22,0 q11,22 22,0 q11,22 22,0 q11,22 22,0 q11,22 22,0
+           q11,22 22,0 q11,22 22,0 q11,22 22,0 q11,22 22,0"
+        fill="#ffffff" stroke="#c05621" stroke-width="1.4"/>
+  <!-- ball-end mills (hemisphere tip + shank), outline only -->
+  <g fill="none" stroke="#dd6b20" stroke-width="1.2">
+    <path d="M62,110 L62,150 Q62,164 86,164 Q110,164 110,150 L110,110"/>
+    <path d="M95,110 L95,150 Q95,164 119,164 Q143,164 143,150 L143,110"/>
+    <path d="M128,110 L128,150 Q128,164 152,164 Q176,164 176,150 L176,110"/>
+    <path d="M161,110 L161,150 Q161,164 185,164 Q209,164 209,150 L209,110"/>
+    <path d="M194,110 L194,150 Q194,164 218,164 Q242,164 242,150 L242,110"/>
+    <path d="M227,110 L227,150 Q227,164 251,164 Q275,164 275,150 L275,110"/>
+    <path d="M260,110 L260,150 Q260,164 284,164 Q308,164 308,150 L308,110"/>
+    <path d="M293,110 L293,150 Q293,164 317,164 Q341,164 341,150 L341,110"/>
+    <path d="M326,110 L326,150 Q326,164 350,164 Q374,164 374,150 L374,110"/>
+  </g>
+  <text x="404" y="132" font-size="11" fill="#4a5568" text-anchor="end">shank</text>
+  <line x1="86" y1="122" x2="130" y2="122" stroke="#4a5568" stroke-width="1" marker-end="url(#ar)"/>
+  <text x="108" y="116" font-size="11" fill="#4a5568" text-anchor="middle">step s</text>
+  <text x="225" y="332" font-size="13" fill="#c05621" text-anchor="middle">scallops between consecutive stamps</text>
+  <text x="225" y="352" font-size="12" fill="#718096" text-anchor="middle">lateral redundancy: columns re-processed</text>
+
+  <!-- ===================== RIGHT PANEL: swept ===================== -->
+  <rect x="440" y="60" width="390" height="310" rx="8" fill="#f7fafc" stroke="#cbd5e0"/>
+  <text x="635" y="86" font-size="15" font-weight="bold" fill="#2c5282" text-anchor="middle">Swept: 1 dispatch / segment</text>
+
+  <rect x="470" y="150" width="330" height="150" fill="#c6f6d5" stroke="#38a169" stroke-width="2"/>
+  <path d="M496,150 A20,20 0 0 0 496,190 L774,190 A20,20 0 0 0 774,150 Z"
+        fill="#e6f0fb" stroke="#2b6cb0" stroke-width="1.8"/>
+  <text x="635" y="176" font-size="12" fill="#2b6cb0" text-anchor="middle">swept volume (never materialized)</text>
+  <line x1="500" y1="122" x2="770" y2="122" stroke="#4a5568" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="635" y="116" font-size="11" fill="#4a5568" text-anchor="middle">one linear segment  p0 → p1</text>
+  <text x="635" y="332" font-size="13" fill="#2c5282" text-anchor="middle">no scallops  ·  a single subtraction</text>
+  <text x="635" y="352" font-size="12" fill="#718096" text-anchor="middle">square_600:  2327 → 9 dispatches</text>
+
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#4a5568"/>
+    </marker>
+  </defs>
+</svg>
