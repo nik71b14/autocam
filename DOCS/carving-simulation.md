@@ -245,6 +245,41 @@ tool and stock are uploaded once); GPU carving ~26 ms; read-back/compaction ~14 
 is dominated by the **per-column merge over the 128 MB unpacked stock buffer** (strided access),
 i.e. it is **memory-bound**.
 
+### 7.1 A cross-workload matrix: established methods vs. this work
+
+The single-benchmark figures above track one program; to separate what a *known* method already buys
+from this work's contribution, we ran a suite of machining workloads that stress different axes, at
+three refinement **levels**, all on the **same binary, representation and GPU** — an apples-to-apples
+comparison. We deliberately did **not** quote other authors' millisecond figures (meaningless across
+hardware, representation, tool and resolution); instead each level is *our* fair, optimized
+implementation of the corresponding algorithm class, anchored to the literature it represents:
+
+- **S0 — per-step stamping** — the classic z-map/dexel display method (van Hook 1986): the tool is
+  stamped at ~1-voxel jog steps (`--legacy`).
+- **S1 — swept-segment subtraction** — the per-move multi-/tri-dexel class (Müller & Surmann 2003;
+  Tukora & Szalay 2012; Inui, Kobayashi & Umezu 2019): one subtraction per linear segment (§5.2).
+- **S2 — + tube pruning + in-air segment skip** — this work (§8.2), on top of S1.
+
+Workloads (small `hemispheric_mill_3` tool, 32 voxels; `carving netto`, min of 5 interleaved runs,
+Intel iris; every level bit-exact within its class):
+
+| Workload (what it stresses) | S0 stamping | S1 swept | S2 +pruning (ours) | S0→S2 | S1→S2 |
+|---|--:|--:|--:|--:|--:|
+| `contour` — axis-aligned perimeter | 45.7 ms | 3.90 ms | 3.82 ms | 12.0× | 1.02× |
+| `pocket_axis` — axis-aligned raster | 111.3 ms | 7.80 ms | 7.87 ms | 14.1× | 0.99× |
+| `raster45` — 45° diagonal raster | 187.8 ms | 37.1 ms | 13.1 ms | 14.3× | **2.82×** |
+| `rapids` — scattered cuts, long air moves | 64.8 ms | 11.3 ms | 5.26 ms | 12.3× | **2.15×** |
+| `localized` — small corner feature | 34.7 ms | 5.36 ms | 3.71 ms | 9.3× | 1.44× |
+| `finishing` — fine-stepover raster | 96.0 ms | 6.52 ms | 7.75 ms | 12.4× | 0.84× |
+
+Reading: **S0→S1 (≈9–14×)** is the established gain of the per-move swept formulation over per-step
+stamping — what the known methods already deliver. **S1→S2** is this work's contribution and is
+**workload-dependent by construction**: it removes the over-dispatch of *non-axis-aligned* segments
+(45° raster **2.82×**) and *in-air* rapids (**2.15×**), is neutral on axis-aligned programs (the AABB
+already equals the swept band, ~1×), and costs a few percent on dense axis-aligned rasters
+(`finishing` 0.84×, the per-column branch). The mechanism — not an average — is the point: the win
+appears exactly where the dispatch over-covers. Reproducible via `tools/bench_matrix.sh`.
+
 ---
 
 ## 8. Negative results (and the one lever that worked)
@@ -294,6 +329,14 @@ with the 256-voxel `hemispheric_mill_10`) show ~nothing, so a demonstrator needs
 `tools/bench_swept.sh`). This is the complement of §8.1: the lever that pays is the one that removes
 **memory traffic** (fewer column rewrites), not the one that removes **compute** (RMQ).
 
+**Segment-level pruning (in-air skip).** The same reasoning applies one level up, on the host: if the
+tool's Z-extent over a whole segment cannot reach the stock's `[0, z1)` range — the common case for an
+in-air G0 rapid, which maps below the stock under the inverted-Z convention — the segment removes
+nothing and its **entire dispatch is skipped**, not merely pruned per column. Rapids become essentially
+free (a synthetic all-rapid program: ~2900×) and every program with repositioning moves speeds up (the
+`rapids` workload of §7.1, 2.15×); it is host-side, gated by the same `AUTOCAM_SWEPT_SKIP`, and
+bit-exact.
+
 ### 8.3 Tube dispatch (tiling) — a second negative result
 
 Encouraged by §8.2, we tried to also avoid *launching* the off-tube threads (each still does a
@@ -310,8 +353,43 @@ bottleneck is removed, cutting the *number of launched columns* yields negative 
 synchronization. The only variant that might beat §8.2 is a compacted band-column index (one thread
 per band column, no overlap, no barriers), but the per-segment index build likely does not pay either.
 
-The remaining levers are therefore architectural (working-set data layout / size) or shift the
-bottleneck out of the inner simulation entirely (Section 9).
+### 8.4 Working-set layout: a sparse tiled study
+
+The last lever §8.3 pointed to is the working set itself: the 128 MB buffer is ~16× padding
+(`MAX_TRANSITIONS = 32` vs. the 2–4 real transitions per column). We built a full alternative backend
+(`AUTOCAM_CARVE_BACKEND=sparse`, selectable at runtime for A/B) that stores the stock in `32×32`-column
+**tiles** and keeps untouched tiles UNIFORM (O(1)), materializing a tile only when a segment's bounding
+box first touches it — output byte-identical to the flat backend. It isolates two effects:
+
+- **Per-carve bandwidth is bounded by the swept bounding box, not the buffer size.** A single carve
+  already touches only its bbox columns in *both* backends, so tiling does **not** reduce the carve's
+  traffic *volume*; it only improves access *locality* (the strided-access problem of §7: in the flat
+  buffer a bbox's columns are scattered ~`W·32` apart, in a tile they are compact). Measured:
+  **~1.1×** (`square_600` 1.09×, `bench_complex` 1.11×, `pocket` 1.15×) — real but modest.
+- **Footprint is a conditional win, tied to locality.** The pool holds only materialized tiles, so a
+  *localized* program uses a fraction of the flat buffer while whole-stock machining touches most tiles:
+
+  | Workload | materialized / 1024 tiles | pool footprint (flat = 122 MB) |
+  |---|--:|--:|
+  | `rapids`, `localized` | 49–56 | **8 MB** (~15×) |
+  | `finishing`, `contour` | 149–181 | 32 MB |
+  | `pocket_axis` | 470 | 64 MB |
+  | `raster45` (covers the stock) | 736 | 128 MB (no win) |
+
+  This is a **memory/scale** lever — it enables finer resolutions and larger stocks for localized work
+  and shrinks init/read-back to the touched fraction — **not** a carve-speed lever; host-side
+  materialization even makes whole-stock programs slower. `SPARSE_DBG=1` reports the footprint.
+
+### 8.5 Synthesis — a map of the bottleneck
+
+Four levers, one conclusion. Attacking **compute** (§8.1, RMQ), **launched-thread count** (§8.3, tiled
+dispatch) or **working-set size** (§8.4, sparse tiling) yields diminishing, negative or footprint-only
+returns; attacking **memory-write traffic on the over-dispatched bounding box** (§8.2, tube pruning +
+in-air skip) is the only lever that breaks the memory-bandwidth ceiling. The simulator is
+**bbox-bandwidth-bound**, and the productive optimization is the one that removes bbox traffic. The
+cross-workload matrix (§7.1) shows this precisely: the established per-move method (S0→S1) gives the
+large, uniform ~12× gain; this work's traffic pruning (S1→S2) adds where the dispatch over-covers
+(diagonal, in-air). Remaining directions leave the inner loop entirely (Section 9).
 
 ---
 
