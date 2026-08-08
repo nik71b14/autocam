@@ -19,6 +19,9 @@ layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefix
 // [segmentIndex] accumulates the voxels removed by this dispatch; only touched when
 // countRemoved != 0 (fitness evaluator: per-segment material-removal / engagement metric).
 layout(std430, binding = 4) buffer RemovedBuf { uint removedCount[]; };
+// Sparse tiled backend only (tiled != 0): tile -> pool block index (>=0), or -1 if the
+// tile is UNIFORM (not materialized). Untouched by the flat path (binding may be unbound).
+layout(std430, binding = 5) readonly buffer TileDirBuf { int tileDir[]; };
 
 uniform int w1, h1, z1;       // workpiece grid
 uniform int w2, h2, z2;       // tool grid
@@ -61,9 +64,10 @@ void main() {
     uint countIdx;
     if (tiled != 0) {
         uint tx = gx / uint(tileTS), ty = gy / uint(tileTS);
-        uint tile = tx + ty * uint(tileNX);
+        int block = tileDir[tx + ty * uint(tileNX)];
+        if (block < 0) return;  // UNIFORM tile not materialized (dispatched tiles are always materialized)
         uint lcol = (gx - tx * uint(tileTS)) + (gy - ty * uint(tileTS)) * uint(tileTS);
-        countIdx = tile * uint(tileTS) * uint(tileTS) + lcol;
+        countIdx = uint(block) * uint(tileTS) * uint(tileTS) + lcol;
     } else {
         countIdx = gx + gy * uint(w1);
     }
