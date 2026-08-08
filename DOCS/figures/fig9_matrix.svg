@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 470" font-family="Arial, Helvetica, sans-serif">
+  <rect x="0" y="0" width="880" height="470" fill="#ffffff"/>
+  <text x="30" y="28" font-size="18" font-weight="bold" fill="#1a202c">Carving time per workload × refinement level (net carving, log scale)</text>
+  <text x="30" y="47" font-size="12" fill="#4a5568">S0→S1 = established swept method (~12× everywhere); S1→S2 = this work (tube-pruning + in-air skip). Intel iris, mill_3, min-of-5.</text>
+  <!-- legend -->
+  <rect x="30" y="58" width="13" height="13" fill="#a0aec0"/><text x="48" y="69" font-size="12" fill="#1a202c">S0 stamping [van Hook]</text>
+  <rect x="205" y="58" width="13" height="13" fill="#3182ce"/><text x="223" y="69" font-size="12" fill="#1a202c">S1 swept [Müller&amp;Surmann/tri-dexel]</text>
+  <rect x="470" y="58" width="13" height="13" fill="#38a169"/><text x="488" y="69" font-size="12" fill="#1a202c">S2 +pruning [this work]</text>
+
+  <!-- log gridlines at 1,3,10,30,100,200 ms (x0=130 @1ms, 822 @200ms) -->
+  <g stroke="#e2e8f0" stroke-width="1">
+    <line x1="130" y1="86" x2="130" y2="418"/><line x1="275" y1="86" x2="275" y2="418"/>
+    <line x1="434" y1="86" x2="434" y2="418"/><line x1="579" y1="86" x2="579" y2="418"/>
+    <line x1="738" y1="86" x2="738" y2="418"/><line x1="822" y1="86" x2="822" y2="418"/>
+  </g>
+  <g font-size="10.5" fill="#718096" text-anchor="middle">
+    <text x="130" y="432">1</text><text x="275" y="432">3</text><text x="434" y="432">10</text>
+    <text x="579" y="432">30</text><text x="738" y="432">100</text><text x="822" y="432">200</text>
+    <text x="500" y="450" font-size="11">carving netto (ms, log scale)</text>
+  </g>
+
+  <!-- groups: y base per workload; S0 grey, S1 blue, S2 green -->
+  <!-- contour: 45.7 / 3.90 / 3.82  (px 635/310/307) -->
+  <text x="124" y="112" font-size="11.5" font-weight="bold" fill="#1a202c" text-anchor="end">contour</text>
+  <text x="124" y="124" font-size="9.5" fill="#718096" text-anchor="end">axis perimeter</text>
+  <rect x="130" y="90"  width="505" height="12" fill="#a0aec0"/><text x="640" y="100" font-size="10" fill="#4a5568">45.7</text>
+  <rect x="130" y="104" width="180" height="12" fill="#3182ce"/><text x="315" y="114" font-size="10" fill="#2c5282">3.90</text>
+  <rect x="130" y="118" width="177" height="12" fill="#38a169"/><text x="312" y="128" font-size="10" fill="#276749">3.82 · 1.02×</text>
+
+  <!-- pocket_axis: 111.3 / 7.80 / 7.87 (752/401/402) -->
+  <text x="124" y="158" font-size="11.5" font-weight="bold" fill="#1a202c" text-anchor="end">pocket_axis</text>
+  <rect x="130" y="146" width="622" height="12" fill="#a0aec0"/><text x="757" y="156" font-size="10" fill="#4a5568">111.3</text>
+  <rect x="130" y="160" width="271" height="12" fill="#3182ce"/><text x="406" y="170" font-size="10" fill="#2c5282">7.80</text>
+  <rect x="130" y="174" width="272" height="12" fill="#38a169"/><text x="407" y="184" font-size="10" fill="#276749">7.87 · 0.99×</text>
+
+  <!-- raster45: 187.8 / 37.1 / 13.1 (822/607/470) -->
+  <text x="124" y="216" font-size="11.5" font-weight="bold" fill="#1a202c" text-anchor="end">raster45</text>
+  <text x="124" y="228" font-size="9.5" fill="#718096" text-anchor="end">45° diagonal</text>
+  <rect x="130" y="204" width="692" height="12" fill="#a0aec0"/><text x="827" y="214" font-size="10" fill="#4a5568">187.8</text>
+  <rect x="130" y="218" width="477" height="12" fill="#3182ce"/><text x="612" y="228" font-size="10" fill="#2c5282">37.1</text>
+  <rect x="130" y="232" width="340" height="12" fill="#38a169"/><text x="475" y="242" font-size="10.5" font-weight="bold" fill="#276749">13.1 · 2.82×</text>
+
+  <!-- rapids: 64.8 / 11.3 / 5.26 (681/450/349) -->
+  <text x="124" y="274" font-size="11.5" font-weight="bold" fill="#1a202c" text-anchor="end">rapids</text>
+  <text x="124" y="286" font-size="9.5" fill="#718096" text-anchor="end">air-heavy</text>
+  <rect x="130" y="262" width="551" height="12" fill="#a0aec0"/><text x="686" y="272" font-size="10" fill="#4a5568">64.8</text>
+  <rect x="130" y="276" width="320" height="12" fill="#3182ce"/><text x="455" y="286" font-size="10" fill="#2c5282">11.3</text>
+  <rect x="130" y="290" width="219" height="12" fill="#38a169"/><text x="354" y="300" font-size="10.5" font-weight="bold" fill="#276749">5.26 · 2.15×</text>
+
+  <!-- localized: 34.7 / 5.36 / 3.71 (598/352/303) -->
+  <text x="124" y="332" font-size="11.5" font-weight="bold" fill="#1a202c" text-anchor="end">localized</text>
+  <rect x="130" y="320" width="468" height="12" fill="#a0aec0"/><text x="603" y="330" font-size="10" fill="#4a5568">34.7</text>
+  <rect x="130" y="334" width="222" height="12" fill="#3182ce"/><text x="357" y="344" font-size="10" fill="#2c5282">5.36</text>
+  <rect x="130" y="348" width="173" height="12" fill="#38a169"/><text x="308" y="358" font-size="10" fill="#276749">3.71 · 1.44×</text>
+
+  <!-- finishing: 96.0 / 6.52 / 7.75 (733/378/400) -->
+  <text x="124" y="390" font-size="11.5" font-weight="bold" fill="#1a202c" text-anchor="end">finishing</text>
+  <text x="124" y="402" font-size="9.5" fill="#718096" text-anchor="end">fine raster</text>
+  <rect x="130" y="378" width="603" height="12" fill="#a0aec0"/><text x="738" y="388" font-size="10" fill="#4a5568">96.0</text>
+  <rect x="130" y="392" width="248" height="12" fill="#3182ce"/><text x="383" y="402" font-size="10" fill="#2c5282">6.52</text>
+  <rect x="130" y="406" width="270" height="12" fill="#38a169"/><text x="405" y="416" font-size="10" fill="#c05621">7.75 · 0.84×</text>
+</svg>

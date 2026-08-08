@@ -137,17 +137,27 @@ novelty".
   volume verificabile con uno script Python puro).
 - **Buon match tra dominio e struttura dati:** per il 3 assi, il singolo dexel lungo Z è la scelta
   "giusta"; è un punto di forza da rivendicare, non da nascondere.
+- **Confronto ancorato alla letteratura, apples-to-apples (AGGIUNTO):** la matrice cross-workload
+  (S0 stamping [van Hook] → S1 swept per-move [Müller&Surmann/tri-dexel] → S2 pruning [nostro])
+  implementa le *classi* note nel nostro stesso harness/rappresentazione/GPU e le confronta su 6
+  tipologie di lavorazione — separando il ~12× del metodo già noto dal nostro advancement (2.8×
+  diagonale, 2.15× aria). Risponde direttamente alle debolezze #2 e #3. Più lo **studio sparse-tiling**
+  come test del working-set (footprint condizionato, non velocità) e la **mappa del collo di
+  bottiglia** (solo il traffico sul bbox rompe il tetto).
 
 ### Punti di debolezza — ciò che i revisori attaccheranno (e come pararla)
 1. **"La rappresentazione non è nuova (è un dexel monodirezionale)."** → Non rivendicatela come
    novità; rivendicate la *sweep fusa* e l'analisi. (§2, §5)
-2. **"Il baseline è la vostra versione naive, non lo stato dell'arte."** Il 33× è contro uno
-   strawman. → **Serve un confronto con almeno un metodo GPU-dexel noto** (Inui/Tukora) o, se non
-   riproducibile, con un baseline *ben ottimizzato* (timbratura per-passo ma con tutti gli overhead
-   già rimossi), dichiarando chiaramente cosa si confronta. (§6)
-3. **"Un solo benchmark (square_600) e una sola iGPU."** → Servono **più pezzi** (tasche, superfici
-   3D, pocketing reale, un pezzo "complesso") e possibilmente **una GPU discreta**, per mostrare che
-   il regime memory-bound tiene e lo speedup non è un artefatto. (§6)
+2. **"Il baseline è la vostra versione naive, non lo stato dell'arte."** → **IN GRAN PARTE RISOLTO:**
+   la matrice cross-workload implementa **S0 stamping [van Hook]** e **S1 swept per-move
+   [Müller&Surmann/tri-dexel]** come nostre implementazioni *eque* delle classi note, misurate nello
+   stesso harness → il confronto è ancorato alla letteratura, non a uno strawman, e separa il ~12× del
+   metodo noto dal nostro pruning. (Resterebbe utile, se fattibile, riprodurre un tri-dexel GPU altrui
+   per un punto assoluto esterno — ma i numeri cross-paper non sono comparabili, e va detto.)
+3. **"Un solo benchmark (square_600) e una sola iGPU."** → **RISOLTO sul fronte workload:** 6 tipologie
+   (contour assi-allineato, pocket raster assi, raster 45°, rapidi, localizzato, finishing fine) via
+   `tools/bench_matrix.sh`, scelte per stressare assi diversi. Resta la singola iGPU: una **GPU
+   discreta** rafforzerebbe (da fare se accessibile).
 4. **"Accuratezza = auto-consistenza."** Il bit-exact è *contro il vostro stesso timbratore*, non
    contro una ground truth. → Aggiungete **un confronto contro una geometria di riferimento**
    (analitica per casi semplici, o voxelizzazione ad altissima risoluzione, o un CAM commerciale) con
@@ -205,14 +215,16 @@ oppure
    geometrico (es. distanza di Hausdorff o errore superficie) vs (a) soluzione analitica su casi
    canonici (piano fresato da ball-end, tasca), (b) voxelizzazione ad altissima risoluzione, o (c)
    output di un CAM/simulatore commerciale. Chiude la debolezza #4.
-2. **[Alto] Confronto con un competitor reale**, non solo col vostro naive. Almeno un metodo
-   GPU-dexel (riproducendo Inui/Tukora *o* citando i loro numeri e discutendo il regime). Chiude #2.
-3. **[Alto] Più benchmark e almeno una seconda GPU.** 4–6 toolpath eterogenei (contornatura, pocket,
-   raster su superficie 3D, plunge, rampa, un pezzo "reale"); tabella tempi/dispatch/volume per
-   ciascuno; idealmente iGPU + una GPU discreta per mostrare che il memory-bound scala. Chiude #3.
-4. **[Medio] Ablation study ordinato** (baseline → −overhead → swept → substep-bound → compaction),
-   che di fatto avete già: formalizzatelo in una tabella con Δ per stadio (l'avete in
-   `carving-simulation.md` §7).
+2. **[FATTO, parziale] Confronto ancorato alla letteratura.** La matrice cross-workload implementa
+   S0 stamping [van Hook] e S1 swept per-move [Müller&Surmann/tri-dexel] come nostre implementazioni
+   eque nello stesso harness (`bench_matrix.sh`, `carving-simulation.md` §7.1). Chiude #2 senza numeri
+   prestati. *Opzionale:* riprodurre un tri-dexel GPU altrui per un punto assoluto esterno.
+3. **[FATTO, workload] Più benchmark.** 6 tipologie eterogenee (contour, pocket assi, raster 45°,
+   rapidi, localizzato, finishing) con tabella tempi per stadio. Chiude #3 lato workload; **resta** una
+   seconda GPU (discreta) per mostrare che il regime memory-bound scala.
+4. **[FATTO] Ablation study ordinato** — la matrice §7.1 + la tabella storica (stamping → swept →
+   compaction → substep) formalizzano il Δ per stadio, e §8 (RMQ / tiled-dispatch / sparse-tiling)
+   aggiunge i test negativi e la mappa del collo di bottiglia.
 5. **[Medio] Quantificare i limiti:** over-removal misurato su un utensile non convesso in Z;
    comportamento al variare della risoluzione (voxel size) su tempo e accuratezza (curva
    accuratezza/velocità).

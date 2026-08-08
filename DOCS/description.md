@@ -263,6 +263,18 @@ Carving benchmark `square_600` (a 600-unit square perimeter, 9 linear segments),
 
 **Overall: ~1320 ms → ~40 ms total (~33×)**, net GPU carving ~26 ms, geometry bit-identical.
 
+**Beyond the swept baseline.** On top of that swept pipeline, two traffic-pruning optimizations — tube
+pruning of the off-band columns a diagonal move over-dispatches, and a host-side skip of whole in-air
+segments — speed the carve up where the bounding box over-covers the swept band. Measured across a
+machining-workload suite (`tools/bench_matrix.sh`): ~**2.8×** on a 45° diagonal raster, ~**2.1×** on
+air-heavy programs, ~1× on axis-aligned work (the AABB already equals the tube), with rapids becoming
+essentially free. A sparse *tiled* backend was also built as a working-set study
+(`AUTOCAM_CARVE_BACKEND=sparse`): it cuts the memory footprint ~**15×** for *localized* machining but
+leaves the per-carve bandwidth (bounded by the swept bounding box, not the buffer size) essentially
+unchanged (~1.1×, a locality effect). The full cross-workload matrix — separating the established
+per-move swept gain (~12×) from this work's pruning — the negative results (RMQ, tiled dispatch) and
+the bottleneck map are in `DOCS/carving-simulation.md`.
+
 **Post-optimization cost model.** Dispatch enqueue ~0.4 ms and, crucially, **flat in segment count**
 (9→202 segments stays ~0.4 ms — the per-segment push to the GPU is *not* a bottleneck; tool and stock
 upload once); GPU carving ~26 ms; read-back/compaction ~14 ms. The carving cost is dominated by the

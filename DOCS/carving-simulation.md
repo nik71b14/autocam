@@ -280,6 +280,10 @@ already equals the swept band, ~1×), and costs a few percent on dense axis-alig
 (`finishing` 0.84×, the per-column branch). The mechanism — not an average — is the point: the win
 appears exactly where the dispatch over-covers. Reproducible via `tools/bench_matrix.sh`.
 
+![Net carving time per machining workload × refinement level (log scale): S0→S1 is the established
+swept method's uniform ~12× gain; S1→S2 is this work's pruning, where the dispatch
+over-covers.](figures/fig9_matrix.svg)
+
 ---
 
 ## 8. Negative results (and the one lever that worked)
