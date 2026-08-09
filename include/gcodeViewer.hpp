@@ -43,6 +43,10 @@ class GcodeViewer {
   // Block until all queued GPU carving work has completed (for timing/sync).
   void finishGPU();
 
+  // Benchmark A/B: route swept carving through the two-pass external-buffer path
+  // (--legacy-external-buffer). Flat backend only; no effect on the sparse backend.
+  void setExternalBuffer(bool b) { ops.setExternalBuffer(b); }
+
   // --- Per-segment material-removal tracking (fitness evaluator) ------------------
   void beginRemovedTracking(int nSegments) { ops.beginRemovedTracking(nSegments); }
   void endRemovedTracking() { ops.endRemovedTracking(); }

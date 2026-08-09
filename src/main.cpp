@@ -36,6 +36,8 @@ void printUsage() {
       "      Carve the workpiece along the G-code toolpath with the tool.\n"
       "      --no-view runs headless (no window); --out saves the carved result.\n"
       "      --legacy uses per-step stamping instead of the swept subtraction.\n"
+      "      --legacy-external-buffer materializes the swept volume in a separate buffer\n"
+      "      and subtracts it in a second pass (A/B baseline for the fused in-place path).\n"
       "      --mesh shows the result as a marching-cubes mesh (instead of raymarching);\n"
       "      --out-mesh saves that mesh as a binary STL; --mesh-step N subsamples it;\n"
       "      --smooth N adds N CPU Taubin smoothing passes (default 0); --cpu forces the\n"
@@ -53,7 +55,7 @@ void printUsage() {
 int main(int argc, char** argv) {
   // Valueless flags: tokens the parser must NOT treat as "--key <value>".
   const std::unordered_set<std::string> valuelessFlags = {
-      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--mesh", "--cpu", "--help"};
+      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--legacy-external-buffer", "--mesh", "--cpu", "--help"};
 
   try {
     CliArgs args = parseCli(argc, argv, valuelessFlags);

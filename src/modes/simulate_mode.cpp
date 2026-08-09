@@ -45,6 +45,11 @@ int runSimulate(const CliArgs& args) {
   const bool useGpuMesh = !args.has("--cpu");
   const bool meshMode = args.has("--mesh") || !outMesh.empty();
   const bool legacy = args.has("--legacy");  // per-step stamping (Phase 1) instead of swept (Phase 2)
+  // Benchmark A/B: materialize the swept volume in a separate buffer and subtract it in a
+  // second pass, instead of the fused in-place kernel. Isolates the fusion / no-external-
+  // buffer win (extra resident memory + an extra pass). Bit-exact with the fused swept
+  // (AUTOCAM_SWEPT_SKIP=0). Ignored under --legacy (which never carves via the swept path).
+  const bool extBuf = args.has("--legacy-external-buffer");
   // The simulation defaults to an orthographic (top-down CNC) view; --perspective switches it.
   const ProjectionType projection =
       args.has("--perspective") ? ProjectionType::PERSPECTIVE : ProjectionType::ORTHOGRAPHIC;
@@ -108,6 +113,7 @@ int runSimulate(const CliArgs& args) {
     gCodeViewer.setProjectionType(projection);
     gCodeViewer.setWorkpiece(workpiecePath);
     gCodeViewer.setTool(toolPath);
+    gCodeViewer.setExternalBuffer(extBuf);  // benchmark: two-pass materialize+subtract (see --legacy-external-buffer)
     gCodeViewer.setGcodeUnits(gcodeUnits);
     gCodeViewer.setWorkOffsetMm(workOriginMm);
 
@@ -147,7 +153,8 @@ int runSimulate(const CliArgs& args) {
     const double carveMs = std::chrono::duration<double, std::milli>(tCarveDone - tStart).count();
     const double totalMs = std::chrono::duration<double, std::milli>(tDone - tStart).count();
     std::cout << "\n";  // terminate the in-place carving counter line
-    std::cout << "Carving [" << (legacy ? "legacy" : "swept") << "]: " << steps
+    const char* mode = legacy ? "legacy" : (extBuf ? "swept-extbuf" : "swept");
+    std::cout << "Carving [" << mode << "]: " << steps
               << (legacy ? " passi" : " segmenti") << " | carving netto " << carveMs
               << " ms | totale (incl. copyback) " << totalMs << " ms\n";
 

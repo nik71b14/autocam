@@ -1,0 +1,158 @@
+// External-buffer (two-pass) swept subtraction — the "materialize-then-subtract"
+// baseline for the A/B comparison against the FUSED in-place subtract_swept.comp.
+//
+// This deliberately does NOT fuse. The same per-column swept Z-envelope is first
+// written to a separate, full-size "swept" scratch buffer (pass 0, "materialize"),
+// and only then subtracted from the workpiece in a SECOND dispatch (pass 1). It
+// isolates exactly the cost the fused kernel avoids:
+//   * an extra full-size resident buffer (the material-to-remove, 128 MB twin), and
+//   * the round-trip write/read of the envelope + a second launch + a barrier,
+// while keeping the swept-envelope ALGORITHM identical to the fused path — so the
+// carved geometry is bit-exact with subtract_swept.comp at AUTOCAM_SWEPT_SKIP=0
+// (the S1 "swept, no pruning" level). Benchmark-only (--legacy-external-buffer).
+#version 460
+#extension GL_ARB_shader_storage_buffer_object : enable
+
+layout(std430, binding = 0) buffer Obj1FlatData { uint obj1_flatData[]; };
+layout(std430, binding = 1) buffer Obj1DataNum { uint obj1_dataNum[]; };
+layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
+layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
+// External swept-volume buffer (the "material to remove", materialized). Same flat
+// per-column layout/stride as obj1: sweptDataNum[col] is 0 or 2, and when 2 the two
+// transitions [zb, zt] of the swept column live at sweptFlatData[col*maxTransitions + {0,1}].
+layout(std430, binding = 6) buffer SweptFlatData { uint sweptFlatData[]; };
+layout(std430, binding = 7) buffer SweptDataNum { uint sweptDataNum[]; };
+
+uniform int w1, h1, z1;       // workpiece grid
+uniform int w2, h2, z2;       // tool grid
+uniform uint maxTransitions;  // per-column slot count of the flat buffers
+uniform int baseX, baseY;     // workpiece-space origin of this dispatch (swept bbox)
+uniform ivec3 translateStart; // tool-center (workpiece coords) at the segment start
+uniform ivec3 translateDelta; // translate(end) - translate(start)
+uniform int numSubsteps;      // sub-positions sampled along the segment (>= 0)
+uniform int pass;             // 0 = materialize swept envelope into the external buffer; 1 = subtract it
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main() {
+    uint gx = uint(baseX) + gl_GlobalInvocationID.x;
+    uint gy = uint(baseY) + gl_GlobalInvocationID.y;
+    if (gx >= uint(w1) || gy >= uint(h1)) return;
+
+    uint countIdx = gx + gy * uint(w1);   // row-major flat (external-buffer path is flat only)
+    uint start1 = countIdx * maxTransitions;
+
+    if (pass == 0) {
+        // ===== PASS 0 — compute the swept-tool column and STORE it (no subtract) =====
+        // Identical envelope math to subtract_swept.comp, but the result is written to
+        // the external buffer instead of being consumed in-register.
+        int zbMin = 2147483647;
+        int ztMax = -2147483648;
+        bool hasMat = false;
+        int steps = max(numSubsteps, 0);
+
+        // Bound the substep loop to [k0,k1], the range where the tool can cover this
+        // column (same derivation and +/-1 safety margins as the fused shader).
+        int k0 = 0, k1 = steps;
+        if (steps > 0) {
+            float Kf = float(steps);
+            if (translateDelta.x != 0) {
+                float ka = float(int(gx) - w2 / 2 - translateStart.x) * Kf / float(translateDelta.x);
+                float kb = float(int(gx) + w2 / 2 - translateStart.x) * Kf / float(translateDelta.x);
+                k0 = max(k0, int(floor(min(ka, kb))) - 1);
+                k1 = min(k1, int(ceil(max(ka, kb))) + 1);
+            } else if ((int(gx) - (translateStart.x - w2 / 2)) < 0 || (int(gx) - (translateStart.x - w2 / 2)) >= w2) {
+                k1 = -1;
+            }
+            if (translateDelta.y != 0) {
+                float ka = float(int(gy) - h2 / 2 - translateStart.y) * Kf / float(translateDelta.y);
+                float kb = float(int(gy) + h2 / 2 - translateStart.y) * Kf / float(translateDelta.y);
+                k0 = max(k0, int(floor(min(ka, kb))) - 1);
+                k1 = min(k1, int(ceil(max(ka, kb))) + 1);
+            } else if ((int(gy) - (translateStart.y - h2 / 2)) < 0 || (int(gy) - (translateStart.y - h2 / 2)) >= h2) {
+                k1 = -1;
+            }
+            k0 = max(k0, 0);
+            k1 = min(k1, steps);
+        }
+
+        for (int k = k0; k <= k1; ++k) {
+            float t = (steps > 0) ? float(k) / float(steps) : 0.0;
+            ivec3 tr = translateStart + ivec3(round(t * vec3(translateDelta)));
+            int x2 = int(gx) - (tr.x - w2 / 2);
+            int y2 = int(gy) - (tr.y - h2 / 2);
+            if (x2 < 0 || x2 >= w2 || y2 < 0 || y2 >= h2) continue;
+            uint idx2 = uint(x2) + uint(y2) * uint(w2);
+            uint s2 = obj2_prefixSumData[idx2];
+            uint e2 = (idx2 + 1u < obj2_prefixSumData.length()) ? obj2_prefixSumData[idx2 + 1u] : obj2_compressedData.length();
+            if (e2 <= s2) continue;
+            int zShift = tr.z - z2 / 2;
+            int toolBottom = int(obj2_compressedData[s2]) + zShift;
+            int toolTop    = int(obj2_compressedData[e2 - 1u]) + zShift;
+            zbMin = min(zbMin, toolBottom);
+            ztMax = max(ztMax, toolTop);
+            hasMat = true;
+        }
+
+        // Clamp the envelope to the stock Z-range and store it. Storing the clamped
+        // interval is equivalent to subtracting the raw interval (the stock lives in
+        // [0,z1)) and keeps the transitions non-negative for the uint buffer.
+        int zb = clamp(zbMin, 0, z1);
+        int zt = clamp(ztMax, 0, z1);
+        if (hasMat && zt > zb) {
+            sweptFlatData[start1 + 0u] = uint(zb);
+            sweptFlatData[start1 + 1u] = uint(zt);
+            sweptDataNum[countIdx] = 2u;
+        } else {
+            sweptDataNum[countIdx] = 0u;  // nothing to remove from this column
+        }
+        return;
+    }
+
+    // ===== PASS 1 — subtract the materialized swept column from the workpiece =====
+    // NOTE: we deliberately do NOT early-out on empty swept columns here. This baseline
+    // must match the UN-pruned fused kernel (S2, AUTOCAM_SWEPT_SKIP=0) column-for-column,
+    // so that S1(this path) vs S2 isolates ONLY the fusion / external-buffer cost and not
+    // any pruning. A count2==0 column flows through the merge unchanged (obj2 never toggles)
+    // and is rewritten in place, exactly like the un-pruned fused path. (Off-band pruning
+    // is Phase 2 / S3, measured separately.)
+    uint count2 = sweptDataNum[countIdx];
+    int zbMin = (count2 > 0u) ? int(sweptFlatData[start1 + 0u]) : 0;
+    int ztMax = (count2 > 0u) ? int(sweptFlatData[start1 + 1u]) : 0;
+
+    uint count1 = obj1_dataNum[countIdx];
+    uint i1 = 0u, i2 = 0u;
+    uint outCount = 0u;
+    uint localOut[64];
+    bool obj1On = false, obj2On = false;
+
+    // Same two-pointer A\B merge as subtract_swept.comp / subtract_flat.comp.
+    while ((i1 < count1 || i2 < count2) && outCount < maxTransitions) {
+        int za = (i1 < count1) ? int(obj1_flatData[start1 + i1]) : 2147483647;
+        int zb = (i2 < count2) ? ((i2 == 0u) ? zbMin : ztMax) : 2147483647;
+        int zVal = min(za, zb);
+        bool has1 = (za == zVal);
+        bool has2 = (zb == zVal);
+        if (has1) ++i1;
+        if (has2) ++i2;
+        bool prev1 = obj1On;
+        bool prev2 = obj2On;
+        if (has2) obj2On = !obj2On;
+        if (has1) obj1On = !obj1On;
+        if (has1 && has2) {
+            if (prev1 != obj1On && !obj2On) localOut[outCount++] = uint(zVal);
+        } else if (has1) {
+            if ((prev1 != obj1On) && !obj2On) localOut[outCount++] = uint(zVal);
+        } else if (has2) {
+            if ((prev2 != obj2On) && obj1On) localOut[outCount++] = uint(zVal);
+        }
+    }
+
+    uint writeCount = 0u;
+    for (uint i = 0u; i < outCount; ++i) {
+        int z = int(localOut[i]);
+        if (z >= 0 && z < z1) obj1_flatData[start1 + writeCount++] = uint(z);
+    }
+    for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
+    obj1_dataNum[countIdx] = writeCount;
+}

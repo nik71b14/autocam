@@ -32,6 +32,7 @@ BoolOps::BoolOps() {
   // shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
   shader_flat = new Shader("shaders/subtract_flat.comp");            // per-step subtraction
   shader_swept = new Shader("shaders/subtract_swept.comp");          // swept-segment subtraction
+  shader_swept_ext = new Shader("shaders/subtract_swept_ext.comp");  // two-pass external-buffer variant (benchmark)
   compressShader = new Shader("shaders/compress_transitions.comp");  // GPU compaction for copyback
 }
 
@@ -50,6 +51,8 @@ BoolOps::~BoolOps() {
   if (obj2_compressed) glDeleteBuffers(1, &obj2_compressed);
   if (obj2_prefix) glDeleteBuffers(1, &obj2_prefix);
   if (atomicCounter) glDeleteBuffers(1, &atomicCounter);
+  if (swept_flat) glDeleteBuffers(1, &swept_flat);
+  if (swept_dataNum) glDeleteBuffers(1, &swept_dataNum);
 
   // if (shader) {
   //   delete shader;
@@ -66,6 +69,10 @@ BoolOps::~BoolOps() {
   if (shader_swept) {
     delete shader_swept;
     shader_swept = nullptr;
+  }
+  if (shader_swept_ext) {
+    delete shader_swept_ext;
+    shader_swept_ext = nullptr;
   }
   if (compressShader) {
     delete compressShader;
@@ -741,6 +748,11 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   deleteBuffer(obj2_compressed);
   deleteBuffer(obj2_prefix);
 
+  // External-buffer benchmark twins are (re)allocated lazily on first use, so a normal
+  // run never pays the extra 128 MB. Drop any from a previous session/object.
+  if (swept_flat) { glDeleteBuffers(1, &swept_flat); swept_flat = 0; }
+  if (swept_dataNum) { glDeleteBuffers(1, &swept_dataNum); swept_dataNum = 0; }
+
   // Create buffers
   // IN/OUT
   obj1_flat = createBuffer(unpacked.size() * sizeof(GLuint), 0, GL_DYNAMIC_COPY);
@@ -796,6 +808,9 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
     std::cerr << "BoolOps::subtractSwept: Expected exactly 2 objects, got " << objects.size() << std::endl;
     return false;
   }
+  // Benchmark A/B: the "external buffer" baseline runs the two-pass materialize+subtract
+  // instead of this fused in-place kernel (see setExternalBuffer / --legacy-external-buffer).
+  if (useExternalBuffer_) return subtractSweptExternal(startOffset, displacement, segmentIndex);
   const VoxelObject& obj1 = objects[0];  // workpiece
   const VoxelObject& obj2 = objects[1];  // tool
 
@@ -865,6 +880,84 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
 
   GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  return true;
+}
+
+bool BoolOps::subtractSweptExternal(glm::ivec3 startOffset, glm::ivec3 displacement, int segmentIndex) {
+  (void)segmentIndex;  // removed-voxel tracking is not needed for this benchmark path
+  if (objects.size() != 2) {
+    std::cerr << "BoolOps::subtractSweptExternal: Expected exactly 2 objects, got " << objects.size() << std::endl;
+    return false;
+  }
+  const VoxelObject& obj1 = objects[0];  // workpiece
+  const VoxelObject& obj2 = objects[1];  // tool
+
+  long w1 = obj1.params.resolutionXYZ.x, h1 = obj1.params.resolutionXYZ.y, z1 = obj1.params.resolutionXYZ.z;
+  long w2 = obj2.params.resolutionXYZ.x, h2 = obj2.params.resolutionXYZ.y, z2 = obj2.params.resolutionXYZ.z;
+
+  // Tool-center positions and substep count — identical to subtractSwept.
+  glm::ivec3 endOffset = startOffset + displacement;
+  glm::ivec3 tStart(w1 / 2 + startOffset.x, h1 / 2 + startOffset.y, z1 / 2 - startOffset.z);
+  glm::ivec3 tEnd(w1 / 2 + endOffset.x, h1 / 2 + endOffset.y, z1 / 2 - endOffset.z);
+  glm::ivec3 tDelta = tEnd - tStart;
+  glm::ivec3 ad = glm::abs(tDelta);
+  int K = glm::max(glm::max(ad.x, ad.y), ad.z);
+
+  // Swept bounding box (same as the fused path). No whole-segment air-skip and no
+  // per-column pruning here: this is the pre-pruning S1-class baseline, only un-fused.
+  long minTx = glm::min(tStart.x, tEnd.x), maxTx = glm::max(tStart.x, tEnd.x);
+  long minTy = glm::min(tStart.y, tEnd.y), maxTy = glm::max(tStart.y, tEnd.y);
+  long baseX = glm::clamp(minTx - w2 / 2, 0L, w1);
+  long endX = glm::clamp(maxTx + w2 / 2, 0L, w1);
+  long baseY = glm::clamp(minTy - h2 / 2, 0L, h1);
+  long endY = glm::clamp(maxTy + h2 / 2, 0L, h1);
+  if (endX <= baseX || endY <= baseY) return true;  // swept tool entirely outside the workpiece
+
+  // Lazily allocate the external swept-volume buffer — a full-size twin of obj1_flat.
+  // This extra 128 MB (for the reference stock) is exactly the resident-memory cost the
+  // fused path avoids; allocating it once (reused across segments) is the fair, optimized
+  // version of "materialize the swept volume then subtract it".
+  if (swept_flat == 0) {
+    swept_flat = createBuffer((GLsizeiptr)unpacked.size() * sizeof(GLuint), 6, GL_DYNAMIC_COPY);
+    swept_dataNum = createBuffer((GLsizeiptr)dataNum.size() * sizeof(GLuint), 7, GL_DYNAMIC_COPY);
+    std::cout << "[carve] external-buffer swept twin allocated: "
+              << (unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB (extra resident memory)\n";
+  }
+
+  shader_swept_ext->use();
+  // Bind the workpiece, tool and swept-scratch buffers to their slots (defensive: the
+  // fused path binds removed-tracking at 4 and copyback rebinds 2/3).
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, obj1_flat);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, obj1_dataNum);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, obj2_compressed);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, obj2_prefix);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, swept_flat);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, swept_dataNum);
+
+  shader_swept_ext->setInt("w1", w1);
+  shader_swept_ext->setInt("h1", h1);
+  shader_swept_ext->setInt("z1", z1);
+  shader_swept_ext->setInt("w2", w2);
+  shader_swept_ext->setInt("h2", h2);
+  shader_swept_ext->setInt("z2", z2);
+  shader_swept_ext->setUInt("maxTransitions", MAX_TRANSITIONS);
+  shader_swept_ext->setInt("baseX", (int)baseX);
+  shader_swept_ext->setInt("baseY", (int)baseY);
+  shader_swept_ext->setIVec3("translateStart", tStart);
+  shader_swept_ext->setIVec3("translateDelta", tDelta);
+  shader_swept_ext->setInt("numSubsteps", K);
+
+  GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+
+  // Pass 0: materialize the swept envelope into the external buffer.
+  shader_swept_ext->setInt("pass", 0);
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  // Pass 1: subtract the materialized swept volume from the workpiece, in place.
+  shader_swept_ext->setInt("pass", 1);
   glDispatchCompute(gX, gY, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   return true;
