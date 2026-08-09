@@ -271,9 +271,20 @@ air-heavy programs, ~1× on axis-aligned work (the AABB already equals the tube)
 essentially free. A sparse *tiled* backend was also built as a working-set study
 (`AUTOCAM_CARVE_BACKEND=sparse`): it cuts the memory footprint ~**15×** for *localized* machining but
 leaves the per-carve bandwidth (bounded by the swept bounding box, not the buffer size) essentially
-unchanged (~1.1×, a locality effect). The full cross-workload matrix — separating the established
-per-move swept gain (~12×) from this work's pruning — the negative results (RMQ, tiled dispatch) and
-the bottleneck map are in `DOCS/carving-simulation.md`.
+unchanged (~1.1×, a locality effect). The full cross-workload matrix now uses **four** levels —
+stamping (S0) → swept via an external buffer (S1) → swept fused in-place (S2) → +pruning (S3) — so the
+swept gain is split into the established per-move formulation (S0→S1) and **this work's fusion**
+(S1→S2). The negative results (RMQ, tiled dispatch) and the bottleneck map are in
+`DOCS/carving-simulation.md`.
+
+**Both phases pay in memory, not only speed.** The fusion is measured directly, by A/B against a full
+external-buffer implementation (`--legacy-external-buffer`): computing the swept envelope on the fly and
+subtracting it in place — rather than materializing the swept volume in a separate 128 MB twin buffer
+and subtracting it in a second pass — is **≈1.9× faster and halves resident memory** (the twin is
+gone). Phase 1 also compacts the read-back from 128 MB to ~8 MB (~16×, §5.4); Phase 2 (this work) adds
+the conditional ~15× resident-footprint cut of the sparse backend for localized machining. So the
+in-place, no-external-buffer design is both a speed and a memory contribution of the earlier phase,
+distinct from the sparse footprint win of the later one.
 
 **Post-optimization cost model.** Dispatch enqueue ~0.4 ms and, crucially, **flat in segment count**
 (9→202 segments stays ~0.4 ms — the per-segment push to the GPU is *not* a bottleneck; tool and stock

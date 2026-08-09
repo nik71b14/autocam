@@ -68,8 +68,16 @@ Separiamo nettamente ciò che è **noto** da ciò che è **vostro**.
 4. **Negative result (RMQ / sparse table):** una micro-ottimizzazione del *calcolo* dell'inviluppo
    rende solo ~25–30%, perché il collo di bottiglia è la banda di memoria. Documentato e revertato.
    In un paper serio questo vale molto: mostra rigore e delimita onestamente il contributo.
-5. **Compattazione GPU per il read-back** (72→8 ms): buon dettaglio di pipeline, secondario ma
-   citabile.
+5. **Fusione vs buffer esterno — misurata (velocità *e* memoria).** La sottrazione *fusa in-place*,
+   *senza materializzare il volume spazzato in un buffer esterno* (inviluppo Z O(1) per colonna), è ora
+   **quantificata con un A/B diretto** contro un'implementazione a buffer esterno (`--legacy-external-buffer`,
+   `shaders/subtract_swept_ext.comp`): fondere è **≈1.25–2.4× più veloce (geomedia ≈1.9×) e dimezza la
+   memoria residente** (il buffer esterno richiede un "gemello" da 128 MB del working buffer, che la
+   versione fusa elimina). La matrice cross-workload ha ora **quattro livelli** — stamping (S0) → swept a
+   buffer esterno (S1) → swept fuso in-place (S2, *nostro*) → +pruning (S3, *nostro*) — così lo swept
+   noto (S0→S1) è separato dalla nostra fusione (S1→S2). Più la **compattazione GPU del read-back**
+   (128 MB → ~8 MB) e, in fase 2, il backend sparse tiled (~8 MB vs 122 MB, ~15×). Da presentare sia in
+   velocità **sia in memoria**.
 
 Il messaggio da vendere non è "abbiamo una nuova struttura dati", ma **"su una struttura dati nota e
 ben scelta per il 3 assi, mostriamo come far collassare il costo per-mossa di ~2 ordini di grandezza
@@ -137,22 +145,24 @@ novelty".
   volume verificabile con uno script Python puro).
 - **Buon match tra dominio e struttura dati:** per il 3 assi, il singolo dexel lungo Z è la scelta
   "giusta"; è un punto di forza da rivendicare, non da nascondere.
-- **Confronto ancorato alla letteratura, apples-to-apples (AGGIUNTO):** la matrice cross-workload
-  (S0 stamping [van Hook] → S1 swept per-move [Müller&Surmann/tri-dexel] → S2 pruning [nostro])
-  implementa le *classi* note nel nostro stesso harness/rappresentazione/GPU e le confronta su 6
-  tipologie di lavorazione — separando il ~12× del metodo già noto dal nostro advancement (2.8×
-  diagonale, 2.15× aria). Risponde direttamente alle debolezze #2 e #3. Più lo **studio sparse-tiling**
-  come test del working-set (footprint condizionato, non velocità) e la **mappa del collo di
-  bottiglia** (solo il traffico sul bbox rompe il tetto).
+- **Confronto ancorato alla letteratura, apples-to-apples (AGGIUNTO):** la matrice cross-workload a
+  **4 livelli** (S0 stamping [van Hook] → S1 swept a buffer esterno [Müller&Surmann/tri-dexel] → S2
+  swept fuso in-place [nostro] → S3 +pruning [nostro]) implementa le *classi* note nel nostro stesso
+  harness/rappresentazione/GPU su 6 tipologie di lavorazione — separando il swept già noto (S0→S1, ~3–8×)
+  dai nostri advancement misurati: la **fusione/no-buffer-esterno** (S1→S2, ~1.9× e memoria dimezzata) e
+  il **pruning** (S2→S3, 2.7× diagonale, 1.8× aria). Risponde a #2 e #3. Più lo **studio sparse-tiling**
+  come test del working-set (footprint condizionato, non velocità), la **mappa del collo di bottiglia**
+  (solo il traffico sul bbox rompe il tetto) e l'**argomento roofline** (§7) che rende la tesi
+  memory-bound indipendente dall'hardware.
 
 ### Punti di debolezza — ciò che i revisori attaccheranno (e come pararla)
 1. **"La rappresentazione non è nuova (è un dexel monodirezionale)."** → Non rivendicatela come
    novità; rivendicate la *sweep fusa* e l'analisi. (§2, §5)
 2. **"Il baseline è la vostra versione naive, non lo stato dell'arte."** → **IN GRAN PARTE RISOLTO:**
-   la matrice cross-workload implementa **S0 stamping [van Hook]** e **S1 swept per-move
+   la matrice a 4 livelli implementa **S0 stamping [van Hook]** e **S1 swept a buffer esterno
    [Müller&Surmann/tri-dexel]** come nostre implementazioni *eque* delle classi note, misurate nello
-   stesso harness → il confronto è ancorato alla letteratura, non a uno strawman, e separa il ~12× del
-   metodo noto dal nostro pruning. (Resterebbe utile, se fattibile, riprodurre un tri-dexel GPU altrui
+   stesso harness → il confronto è ancorato alla letteratura, non a uno strawman, e separa il metodo
+   noto (S0→S1) dai nostri due advancement (fusione S1→S2, pruning S2→S3). (Resterebbe utile, se fattibile, riprodurre un tri-dexel GPU altrui
    per un punto assoluto esterno — ma i numeri cross-paper non sono comparabili, e va detto.)
 3. **"Un solo benchmark (square_600) e una sola iGPU."** → **RISOLTO sul fronte workload:** 6 tipologie
    (contour assi-allineato, pocket raster assi, raster 45°, rapidi, localizzato, finishing fine) via
@@ -220,16 +230,22 @@ oppure
    eque nello stesso harness (`bench_matrix.sh`, `carving-simulation.md` §7.1). Chiude #2 senza numeri
    prestati. *Opzionale:* riprodurre un tri-dexel GPU altrui per un punto assoluto esterno.
 3. **[FATTO, workload] Più benchmark.** 6 tipologie eterogenee (contour, pocket assi, raster 45°,
-   rapidi, localizzato, finishing) con tabella tempi per stadio. Chiude #3 lato workload; **resta** una
-   seconda GPU (discreta) per mostrare che il regime memory-bound scala.
+   rapidi, localizzato, finishing) con tabella tempi per stadio. Chiude #3 lato workload; l'argomento
+   **roofline** (§7 "Portability", punto 6) mostra *strutturalmente* che il regime memory-bound scala a
+   qualsiasi GPU, riducendo la necessità di una seconda GPU a una **conferma opzionale** (una run su
+   discreta rafforzerebbe il grafico, ma non è più load-bearing).
 4. **[FATTO] Ablation study ordinato** — la matrice §7.1 + la tabella storica (stamping → swept →
    compaction → substep) formalizzano il Δ per stadio, e §8 (RMQ / tiled-dispatch / sparse-tiling)
    aggiunge i test negativi e la mappa del collo di bottiglia.
 5. **[Medio] Quantificare i limiti:** over-removal misurato su un utensile non convesso in Z;
    comportamento al variare della risoluzione (voxel size) su tempo e accuratezza (curva
    accuratezza/velocità).
-6. **[Medio] Roofline / conferma memory-bound:** un semplice modello roofline o una misura di banda
-   raggiunta vs picco della GPU rende il claim "bandwidth-bound" inattaccabile.
+6. **[FATTO] Roofline / conferma memory-bound.** §7 "Portability and the roofline argument" rende il
+   claim *strutturale*: il merge per colonna ha intensità aritmetica ≪ 1 op/byte, 1–3 ordini di
+   grandezza sotto il ridge point di qualunque GPU ⇒ memory-bound su ogni hardware (e *più* su NVIDIA
+   discreta, rapporto compute:banda più alto). Separa inoltre ciò che è invariante (algoritmo, tesi,
+   geometria del pruning) da ciò che è API-specifico (il negative result del tiled-dispatch dipende dal
+   modello di barrier OpenGL). *Opzionale:* aggiungere una misura di banda raggiunta vs picco.
 7. **[Basso] Riproducibilità:** rilascio del codice/commit e degli STL/gcode di test — molto ben
    visto, e voi siete già pronti (repo, script di validazione).
 

@@ -248,41 +248,57 @@ i.e. it is **memory-bound**.
 ### 7.1 A cross-workload matrix: established methods vs. this work
 
 The single-benchmark figures above track one program; to separate what a *known* method already buys
-from this work's contribution, we ran a suite of machining workloads that stress different axes, at
-three refinement **levels**, all on the **same binary, representation and GPU** — an apples-to-apples
+from this work's contributions, we ran a suite of machining workloads that stress different axes, at
+**four** refinement **levels**, all on the **same binary, representation and GPU** — an apples-to-apples
 comparison. We deliberately did **not** quote other authors' millisecond figures (meaningless across
 hardware, representation, tool and resolution); instead each level is *our* fair, optimized
 implementation of the corresponding algorithm class, anchored to the literature it represents:
 
 - **S0 — per-step stamping** — the classic z-map/dexel display method (van Hook 1986): the tool is
   stamped at ~1-voxel jog steps (`--legacy`).
-- **S1 — swept-segment subtraction** — the per-move multi-/tri-dexel class (Müller & Surmann 2003;
-  Tukora & Szalay 2012; Inui, Kobayashi & Umezu 2019): one subtraction per linear segment (§5.2).
-- **S2 — + tube pruning + in-air segment skip** — this work (§8.2), on top of S1.
+- **S1 — swept, external buffer** — the straightforward per-move swept implementation (multi-/tri-dexel
+  class; Müller & Surmann 2003; Tukora & Szalay 2012; Inui et al. 2019): the swept volume is
+  materialized in a separate full-size buffer, then subtracted (`--legacy-external-buffer`).
+- **S2 — swept, fused in-place** — *this work's fusion*: the swept envelope is computed on the fly and
+  subtracted in place, with no intermediate buffer (§5.2; `AUTOCAM_SWEPT_SKIP=0`).
+- **S3 — + tube pruning + in-air skip** — this work, on top of S2 (§8.2).
+
+The design decision — fuse rather than materialize — is isolated as the single step **S1→S2**.
 
 Workloads (small `hemispheric_mill_3` tool, 32 voxels; `carving netto`, min of 5 interleaved runs,
-Intel iris; every level bit-exact within its class):
+Intel iris; all levels bit-exact):
 
-| Workload (what it stresses) | S0 stamping | S1 swept | S2 +pruning (ours) | S0→S2 | S1→S2 |
-|---|--:|--:|--:|--:|--:|
-| `contour` — axis-aligned perimeter | 45.7 ms | 3.90 ms | 3.82 ms | 12.0× | 1.02× |
-| `pocket_axis` — axis-aligned raster | 111.3 ms | 7.80 ms | 7.87 ms | 14.1× | 0.99× |
-| `raster45` — 45° diagonal raster | 187.8 ms | 37.1 ms | 13.1 ms | 14.3× | **2.82×** |
-| `rapids` — scattered cuts, long air moves | 64.8 ms | 11.3 ms | 5.26 ms | 12.3× | **2.15×** |
-| `localized` — small corner feature | 34.7 ms | 5.36 ms | 3.71 ms | 9.3× | 1.44× |
-| `finishing` — fine-stepover raster | 96.0 ms | 6.52 ms | 7.75 ms | 12.4× | 0.84× |
+| Workload (what it stresses) | S0 | S1 | S2 | S3 | S1→S2 | S2→S3 | S0→S3 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| *what the level is* | *stamping* | *swept, ext. buffer* | *swept, fused* | *+ prune + air-skip* | *(fusion)* | *(prune)* | |
+| *attribution* | *van Hook* | *straightforward swept* | *this work* | *this work* | | | |
+| `contour` — axis-aligned perimeter | 46.5 | 9.47 | 3.89 | 4.25 | **2.43×** | 0.92× | 10.9× |
+| `pocket_axis` — axis-aligned raster | 117.1 | 16.4 | 7.71 | 8.68 | **2.13×** | 0.89× | 13.5× |
+| `raster45` — 45° diagonal raster | 191.9 | 46.6 | 37.2 | 13.6 | 1.25× | **2.74×** | 14.1× |
+| `rapids` — scattered cuts, long air moves | 72.2 | 17.9 | 12.1 | 6.68 | 1.48× | **1.81×** | 10.8× |
+| `localized` — small corner feature | 37.7 | 11.7 | 5.22 | 4.05 | **2.24×** | 1.29× | 9.3× |
+| `finishing` — fine-stepover raster | 192.8 | 24.1 | 12.5 | 13.6 | **1.93×** | 0.92× | 14.2× |
 
-Reading: **S0→S1 (≈9–14×)** is the established gain of the per-move swept formulation over per-step
-stamping — what the known methods already deliver. **S1→S2** is this work's contribution and is
-**workload-dependent by construction**: it removes the over-dispatch of *non-axis-aligned* segments
-(45° raster **2.82×**) and *in-air* rapids (**2.15×**), is neutral on axis-aligned programs (the AABB
-already equals the swept band, ~1×), and costs a few percent on dense axis-aligned rasters
-(`finishing` 0.84×, the per-column branch). The mechanism — not an average — is the point: the win
-appears exactly where the dispatch over-covers. Reproducible via `tools/bench_matrix.sh`.
+Reading: **S0→S1 (≈3–8×)** is the per-move swept formulation over per-step stamping — the established
+gain. **S1→S2 (≈1.25–2.4×, geomean ≈1.9×)** is *this work's fusion*: computing the envelope on the fly
+and subtracting it in place, instead of materializing the swept volume in a buffer and subtracting it in
+a second pass, is a consistent speed win *and* removes a full-size resident buffer (below). **S2→S3** is
+this work's pruning, **workload-dependent by construction**: it removes the over-dispatch of
+*non-axis-aligned* segments (45° raster **2.74×**) and *in-air* rapids (**1.81×**), is roughly neutral on
+axis-aligned programs, and costs a few percent on dense axis-aligned rasters (the per-column branch).
+Reproducible via `tools/bench_matrix.sh`.
 
-![Net carving time per machining workload × refinement level (log scale): S0→S1 is the established
-swept method's uniform ~12× gain; S1→S2 is this work's pruning, where the dispatch
-over-covers.](figures/fig9_matrix.svg)
+The matrix reports *speed*, but each step also shrinks memory. The fusion (S1→S2) is the clearest case:
+the external-buffer swept (S1) needs a full-size **128 MB twin** of the working buffer to hold the
+materialized swept volume (2× resident) and round-trips the envelope through it, whereas the fused kernel
+(S2) keeps only an O(1) per-column envelope — so fusing **halves resident memory** on top of the ≈1.9×.
+The swept pipeline also compacts the read-back to ~8 MB instead of 128 MB (§5.4); the pruning step (S3)
+removes off-band/off-Z write traffic (§8.2); and the optional sparse backend cuts the resident footprint
+to ~8 MB (~15×) for localized work (§8.4). So every step pays in both time *and* memory.
+
+![Net carving time per machining workload × refinement level (log scale): S0→S1 established per-move
+swept; S1→S2 is this work's fusion (no external buffer; also halves memory); S2→S3 is this work's tube
+pruning, where the dispatch over-covers.](figures/fig9_matrix.svg)
 
 ---
 
@@ -386,14 +402,29 @@ box first touches it — output byte-identical to the flat backend. It isolates 
 
 ### 8.5 Synthesis — a map of the bottleneck
 
-Four levers, one conclusion. Attacking **compute** (§8.1, RMQ), **launched-thread count** (§8.3, tiled
-dispatch) or **working-set size** (§8.4, sparse tiling) yields diminishing, negative or footprint-only
-returns; attacking **memory-write traffic on the over-dispatched bounding box** (§8.2, tube pruning +
-in-air skip) is the only lever that breaks the memory-bandwidth ceiling. The simulator is
-**bbox-bandwidth-bound**, and the productive optimization is the one that removes bbox traffic. The
-cross-workload matrix (§7.1) shows this precisely: the established per-move method (S0→S1) gives the
-large, uniform ~12× gain; this work's traffic pruning (S1→S2) adds where the dispatch over-covers
-(diagonal, in-air). Remaining directions leave the inner loop entirely (Section 9).
+Five levers, one conclusion. The two that **remove memory traffic on the over-dispatched bounding box**
+both pay: **fusing away the swept-volume round-trip** (§7.1, S1→S2 — always ~1.9× and halves resident
+memory) and **tube pruning + in-air skip** of the off-band/off-Z write-back (§8.2, S2→S3 — where the
+dispatch over-covers). The three that attack something else — **compute** (§8.1, RMQ), **launched-thread
+count** (§8.3, tiled dispatch) or **working-set size** (§8.4, sparse tiling) — yield diminishing,
+negative or footprint-only returns. The simulator is **bbox-bandwidth-bound**, and the productive
+optimization is the one that removes bbox traffic. The cross-workload matrix (§7.1) shows this: the
+established per-move swept (S0→S1) gives the gain the literature already delivers, and this work's fusion
+(S1→S2) and pruning (S2→S3) each strip traffic on top. Remaining directions leave the inner loop
+entirely (Section 9).
+
+**Portability (why this is not machine-specific).** The diagnosis is structural, not an artefact of the
+test iGPU. The per-column merge rewrites all `MAX_TRANSITIONS = 32` slots and does only a few integer
+comparisons per 4-byte transition — an **arithmetic intensity ≪ 1 op/byte**, one to three orders of
+magnitude below the ridge point of any GPU roofline — so the kernel is memory-bound on *every* GPU, and
+**more** so on discrete NVIDIA parts (higher compute-to-bandwidth ratio). The representation, the
+bit-exactness argument, and the *geometric* workload dependence of pruning transfer unchanged; only
+magnitudes shift. Two items are API/occupancy-specific and merit re-measurement: the tiled-dispatch
+negative result (§8.3) leans on OpenGL's coarse `glMemoryBarrier`/dispatch model, which CUDA/Vulkan
+finer synchronization might rescue; and the read-back compaction (§5.4) matters *more* on a discrete
+card, where the 128 MB unpacked buffer would cross PCIe. The pipeline uses only portable primitives
+(SSBOs, dispatch, a storage barrier) — no subgroup/tensor/RT-core features — so a Vulkan or CUDA port is
+a direct transliteration.
 
 ---
 
