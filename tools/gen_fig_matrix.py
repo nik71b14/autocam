@@ -9,12 +9,12 @@ import math, os
 
 # (name, sublabel, S0, S1_extbuf, S2_fused, S3_prune)
 DATA = [
-    ("contour",     "axis perimeter", 46.5,   9.47, 3.89,  4.25),
-    ("pocket_axis", "axis raster",   117.1,  16.4,  7.71,  8.68),
-    ("raster45",    "45° diagonal", 191.9,  46.6, 37.2, 13.6),
-    ("rapids",      "air-heavy",      72.2,  17.9, 12.1,   6.68),
-    ("localized",   "corner feature", 37.7,  11.7,  5.22,  4.05),
-    ("finishing",   "fine raster",   192.8,  24.1, 12.5,  13.6),
+    ("contour",     "axis perimeter", 47.9,   9.26, 3.69,  4.11),
+    ("pocket_axis", "axis raster",   120.5,  16.0,  8.23,  8.88),
+    ("raster45",    "45° diagonal", 182.7,  44.4, 36.4, 11.9),
+    ("rapids",      "air-heavy",      72.2,  16.5, 11.1,   5.98),
+    ("localized",   "corner feature", 33.1,  11.9,  4.72,  4.29),
+    ("finishing",   "fine raster",    93.7,  13.8,  6.93,  6.93),
 ]
 
 # Log-scale x mapping: px(v) = X0 + log10(v)*DEC  (1 ms -> X0, one decade -> DEC px)
@@ -67,7 +67,7 @@ out.append('</svg>')
 svg = "\n".join(out) + "\n"
 
 here = os.path.dirname(os.path.abspath(__file__))
-dst = os.path.join(here, "..", "DOCS", "figures", "fig9_matrix.svg")
+dst = os.path.join(here, "..", "DOCS", "FIGURES", "fig9_matrix.svg")
 with open(dst, "w") as f:
     f.write(svg)
 print("wrote", os.path.normpath(dst))

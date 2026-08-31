@@ -128,9 +128,11 @@ segment, `tool ⊕ p₀p₁`).
 
 **Correctness (order-independence).** Set difference distributes over unions and is
 order-independent: `A \ (B₁ ∪ … ∪ Bₙ) = (((A \ B₁) \ B₂) … \ Bₙ)`. Hence subtracting the swept volume
-once is **equivalent** to subtracting the tool at every sampled position along the segment. It is in
-fact *more* faithful than discrete stamping, which leaves a spurious **scallop** between samples in
-the feed direction; the swept formulation removes that artefact.
+once is **equivalent** to subtracting the tool at every sampled position *on the same (Chebyshev)
+grid*. Relative to a *coarse* stamper the swept envelope also removes the inter-sample stepping that
+stamper leaves; relative to the continuum it slightly **under-removes** the deepest sub-voxel
+excursions (a column's deepest coverage can fall at a fractional tool centre between integer samples).
+See §6 for the measured direction and magnitude.
 
 **On-the-fly swept column (no intermediate buffer).** We never materialize the swept tool. A single
 fused compute shader (`subtract_swept.comp`), dispatched over the swept bounding box, computes for
@@ -149,8 +151,10 @@ for k = k0 .. k1:                         # sub-positions sampled at ~1 voxel sp
 ```
 
 `K = max(|Δx|, |Δy|, |Δz|)` (Chebyshev length) guarantees ≤1 voxel motion per sub-step, so the
-sampled centres hit **every integer position** the discrete stamper would, making the swept result
-**bit-identical** to per-step stamping (modulo the intended scallop removal). The envelope uses the
+sampled centres hit **every integer position on that grid**. The swept result is **byte-identical
+across the swept variants** (S1/S2/S3, §6); against the practical stamper it is *not* byte-identical —
+the stamper samples a different grid, and the swept slightly under-removes vs the continuum (§6). The
+envelope uses the
 column's lowest/highest transition, i.e. its bounding solid interval; this is exact for tools that
 are **convex in Z** (ball, flat, conical, bull-nose), and degrades gracefully (slight over-removal)
 for non-convex tools — identical behaviour to the discrete stamper.
@@ -212,9 +216,14 @@ Every optimization is validated against a strong invariant: the **residual solid
 the carved stock, computed offline from the saved `.bin` as the per-column alternating sum of
 transitions, `Σ_columns Σ_intervals (topᵢ − bottomᵢ)`.
 
-- **Swept vs. legacy stamping.** On `square_600` the removed-volume ratio swept/legacy is **0.9993**
-  (0.07 % difference) — the expected scallop-removal/discretization residue, confirming geometric
-  equivalence.
+- **Swept vs. legacy stamping (not a scallop).** On `square_600` the swept/legacy removed-volume ratio
+  is **0.99949** at the default step — the swept removes ≈0.05 % *less*, and a finer stamper removes
+  progressively *more*, converging toward the continuum. The sign rules out a scallop (which would
+  leave the stamper removing less): the effect is a bounded sub-voxel **under-removal** by the swept
+  envelope, isolated on a single segment (≈0.05 % axis-aligned, ≈0.15 % at 45°, vs a quarter-voxel
+  stamper). A separate off-by-one in the legacy reference — it skipped each segment's start sample —
+  was found and **fixed**; on `square_600` its start is in-air, so that fix leaves this ratio
+  unchanged. The stamper is a coarse timing/behavioural reference, not a geometric ground truth.
 - **Bit-exactness across §5.3–5.4.** After sub-step bounding and after GPU compaction, the residual
   solid is **identical to the byte**: `square_600` = 281 165 072 voxels; `star_pocket` (diagonal,
   exercises the substep fallback) = 462 722 118 voxels.
@@ -237,7 +246,7 @@ steady state:
 | §5.4 GPU compaction | 9 | total ~67 ms | read-back 72→8 ms |
 | §5.3 substep bounding | 9 | net carving ~26 ms, total ~40 ms | |
 
-Overall: **~1320 ms → ~40 ms total (~33×)**, net GPU carving ~26 ms, geometry bit-identical.
+Overall: **~1232 ms → ~40 ms total (~31×)**, net GPU carving ~26 ms, geometry bit-identical.
 
 **Where the time now goes** (post-optimization): dispatch enqueue ~0.4 ms (flat in segment count:
 9→202 segments stays ~0.4 ms — confirming the per-segment "push" to the GPU is *not* a bottleneck;
