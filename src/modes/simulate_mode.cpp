@@ -125,6 +125,16 @@ int runSimulate(const CliArgs& args) {
     long steps = 0;
     if (legacy) {
       // Phase 1: stamp the full tool at every fixed jog step.
+      // The jog loop stamps AFTER advancing, so on its own it skips the program's very
+      // first toolpath point (the start of segment 0). Stamp that point once up front so
+      // the stamper covers the same endpoints the swept path does (which subtracts both
+      // segment endpoints). Junctions are already stamped as the end of the preceding
+      // segment, so only point 0 needs this; without it the stamper under-removes the
+      // starting tool cap (an off-by-one against the swept reference).
+      if (!toolpath.empty()) {
+        gCodeViewer.carve(toolpath[0].position);
+        ++steps;
+      }
       interpreter.beginJog();
       while (!interpreter.jogComplete()) {
         interpreter.jog(step);  // advance by `step` voxel units (TODO: real mm units)
