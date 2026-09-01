@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# bench_swept.sh — misura l'ottimizzazione "tube pruning" del carving swept.
+# bench_swept.sh — Table 1: Phase-2 tube-pruning on adversarial stress benchmarks.
 #
 # Confronta, con lo STESSO binario, il carving:
-#   - baseline   : AUTOCAM_SWEPT_SKIP=0  (riscrive ogni colonna dell'AABB)
-#   - tube-prune : AUTOCAM_SWEPT_SKIP=1  (salta le colonne che l'utensile non tocca)
-# (Step 2, quando presente: AUTOCAM_SWEPT_TUBE=1 dispaccia solo il tubo.)
+#   - baseline (S2)   : AUTOCAM_SWEPT_SKIP=0  (riscrive ogni colonna dell'AABB)
+#   - tube-prune (S3) : AUTOCAM_SWEPT_SKIP=1  (salta le colonne che l'utensile non tocca)
+#
+# Tre righe: un controllo assi-allineato (dove AABB == tubo, atteso ~1x) e due
+# micro-benchmark diagonali generati da tools/gen_bench_diag.py (base ruotata):
+# diag_cut (tagli diagonali lunghi) e air_moves (rapid G0 diagonali in aria).
 #
 #   cd ~/Documents/development/autocam
 #   bash tools/bench_swept.sh
@@ -22,8 +25,9 @@ N=6                                    # run per config (la prima si scarta, war
 
 # benchmark:  "nome | gcode | tool"
 BENCHES=(
-  "square_600  (assi-allineato, controllo) | gcode/square_600.gcode   | test/hemispheric_mill_10.bin"
-  "bench_complex (raster 45°, diag.+aria)   | gcode/bench_complex.gcode | test/hemispheric_mill_3.bin"
+  "square_600 (axis-aligned control)         | gcode/square_600.gcode     | test/hemispheric_mill_10.bin"
+  "diag_cut (repeated long diagonal cuts)    | gcode/bench/diag_cut.gcode  | test/hemispheric_mill_3.bin"
+  "air_moves (repeated diagonal G0 rapids)   | gcode/bench/air_moves.gcode | test/hemispheric_mill_3.bin"
 )
 
 if [ ! -x "$BIN" ]; then echo "Manca $BIN (compila prima)."; exit 1; fi
@@ -70,4 +74,6 @@ for e in "${BENCHES[@]}"; do
 done
 echo
 echo "square_600 = controllo assi-allineato (atteso ~1x: AABB già = tubo)."
-echo "bench_complex = diagonali lunghe + ripos. in aria (atteso >1x)."
+echo "diag_cut   = tagli diagonali lunghi (AABB >> tubo, atteso >1x)."
+echo "air_moves  = rapid G0 diagonali in aria (dispatch intero saltato, atteso >>1x)."
+echo "raster45 (Table 3) e' il raster misto degli stessi diagonali: vedi bench_matrix.sh."
