@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="860"
+   height="420"
+   viewBox="0 0 860 420"
+   font-family="Helvetica, Arial, DejaVu Sans, sans-serif"
+   version="1.1"
+   id="svg29"
+   sodipodi:docname="fig1_dexel.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview29"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="2.0218321"
+     inkscape:cx="430.0555"
+     inkscape:cy="209.95809"
+     inkscape:window-width="2560"
+     inkscape:window-height="1465"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg29" />
+  <title
+     id="title1">Figure 1 - Z-transition column representation (single-axis dexel)</title>
+  <desc
+     id="desc1">Left: X-Z cross-section of the stock with one column and its two Z-transitions. Right: the two flat arrays (compressedData, prefixSumData), the parity-walk occupancy rule and the key properties.</desc>
+  <!-- ============================================================
+       EDIT HERE: colours, fonts and stroke widths are centralised
+       in the style block below. Change once, applies everywhere.
+       ============================================================ -->
+  <style
+     id="style1">
+    :root {}
+    .fig            { font-family: Helvetica, Arial, &quot;DejaVu Sans&quot;, sans-serif; }
+    text            { fill: #1f2937; }
+    .title          { font-size: 17px; font-weight: 700; fill: #1f2937; }
+    .panel          { fill: #f2f7fc; stroke: #dbe6f0; stroke-width: 1; }
+    .caption        { font-size: 12.5px; fill: #374151; }
+    .label          { font-size: 12px; fill: #1f2937; }
+    .label-blue     { font-size: 12px; fill: #2f7ed8; }
+    .note           { font-size: 10.5px; fill: #5b7fa6; }
+    .axis           { stroke: #7a8ca0; stroke-width: 1.4; fill: none; }
+    .axis-label     { font-size: 12px; fill: #374151; }
+    .solid-fill     { fill: #b7e3bd; fill-opacity: 0.85; stroke: #3a9d4a; stroke-width: 1.6; }
+    .column         { stroke: #4a90e2; stroke-width: 5; stroke-opacity: 0.75; }
+    .node           { fill: #1a73c8; }
+    .head           { font-size: 13.5px; font-weight: 700; fill: #1f2937; }
+    .cell           { fill: #f3f4f6; stroke: #d1d5db; stroke-width: 1; }
+    .cell-hi        { fill: #cfe3f7; stroke: #6aa6dd; stroke-width: 1.2; }
+    .cell-hi-orange { fill: #fde3c4; stroke: #e8933a; stroke-width: 1.2; }
+    .cell-text      { font-size: 12.5px; fill: #374151; text-anchor: middle; }
+    .box-orange     { fill: #fffaf2; stroke: #e8710a; stroke-width: 1.6; }
+    .box-blue       { fill: #eef5fd; stroke: #1a73c8; stroke-width: 1.6; }
+    .txt-orange     { font-size: 12px; fill: #e8710a; font-weight: 700; }
+    .txt-blue       { font-size: 12px; fill: #1a4fb0; font-weight: 700; }
+  </style>
+  <defs
+     id="defs1">
+    <marker
+       id="arrow"
+       viewBox="0 0 10 10"
+       refX="8"
+       refY="5"
+       markerWidth="6"
+       markerHeight="6"
+       orient="auto-start-reverse">
+      <path
+         d="M 0 0 L 10 5 L 0 10 z"
+         fill="#7a8ca0"
+         id="path1" />
+    </marker>
+  </defs>
+  <!-- ===================== TITLE ===================== -->
+  <text
+     class="title"
+     x="28"
+     y="34"
+     id="text1">Z-transition column representation (single-axis dexel)</text>
+  <!-- ===================== LEFT PANEL: X-Z CROSS-SECTION ===================== -->
+  <rect
+     class="panel"
+     x="36"
+     y="70"
+     width="384"
+     height="322"
+     rx="4"
+     id="rect1" />
+  <text
+     class="caption"
+     x="228"
+     y="91"
+     text-anchor="middle"
+     id="text2">X–Z cross-section of the stock</text>
+  <g
+     id="axes">
+    <path
+       class="axis"
+       d="M 88,358 V 102"
+       marker-end="url(#arrow)"
+       id="path2" />
+    <path
+       class="axis"
+       d="M 88,358 H 392"
+       marker-end="url(#arrow)"
+       id="path3" />
+    <text
+       class="axis-label"
+       x="72"
+       y="107"
+       id="text3">Z</text>
+    <text
+       class="axis-label"
+       x="386"
+       y="372"
+       id="text4">X</text>
+    <text
+       class="axis-label"
+       x="70"
+       y="362"
+       text-anchor="end"
+       id="text5">0</text>
+  </g>
+  <path
+     id="stock"
+     class="solid-fill"
+     d="m 96,358 v -22 c 16,-36 34,-131 64,-158 25,-22 45,-2 62,7 16,9 22,25 36,23 26,-4 34,-36 60,-40 18,-3 30,2 42,6 v 184 z" />
+  <line
+     class="column"
+     x1="222"
+     y1="104"
+     x2="222"
+     y2="358"
+     id="line5" />
+  <text
+     class="label-blue"
+     x="181.44061"
+     y="123.52699"
+     text-anchor="middle"
+     id="text6">column (x,y)</text>
+  <circle
+     class="node"
+     cx="222"
+     cy="185"
+     r="5"
+     id="circle6" />
+  <circle
+     class="node"
+     cx="222"
+     cy="358"
+     r="5"
+     id="circle7" />
+  <text
+     class="label"
+     x="229.63498"
+     y="160.47301"
+     id="text7"><tspan
+       sodipodi:role="line"
+       id="tspan31"
+       x="229.63498"
+       y="160.47301">transition: z = 415</tspan><tspan
+       sodipodi:role="line"
+       id="tspan32"
+       x="229.63498"
+       y="175.47301">(exit solid)</tspan></text>
+  <text
+     class="label"
+     x="230.0432"
+     y="333.20517"
+     id="text8"><tspan
+       sodipodi:role="line"
+       id="tspan29"
+       x="230.0432"
+       y="333.20517">transition: z = 0</tspan><tspan
+       sodipodi:role="line"
+       id="tspan30"
+       x="230.0432"
+       y="348.20517">(enter solid)</tspan></text>
+  <text
+     class="label"
+     x="254.49672"
+     y="274.5831"
+     id="text9">solid</text>
+  <text
+     class="note"
+     x="128"
+     y="382"
+     id="text10">voxels 0..414 are solid; empty above</text>
+  <!-- ===================== RIGHT PANEL: ENCODING ===================== -->
+  <text
+     class="head"
+     x="440"
+     y="95"
+     id="text11">Encoding: two flat arrays</text>
+  <text
+     class="caption"
+     x="440"
+     y="124"
+     id="text12">compressedData (all transitions concatenated)</text>
+  <g
+     id="cd-cells">
+    <rect
+       class="cell"
+       x="440"
+       y="133"
+       width="48"
+       height="30"
+       rx="3"
+       id="rect12" />
+    <rect
+       class="cell-hi"
+       x="488"
+       y="133"
+       width="48"
+       height="30"
+       rx="3"
+       id="rect13" />
+    <rect
+       class="cell-hi"
+       x="536"
+       y="133"
+       width="48"
+       height="30"
+       rx="3"
+       id="rect14" />
+    <rect
+       class="cell"
+       x="584"
+       y="133"
+       width="48"
+       height="30"
+       rx="3"
+       id="rect15" />
+    <text
+       class="cell-text"
+       x="464"
+       y="153"
+       id="text15">…</text>
+    <text
+       class="cell-text"
+       x="512"
+       y="153"
+       id="text16">0</text>
+    <text
+       class="cell-text"
+       x="560"
+       y="153"
+       id="text17">415</text>
+    <text
+       class="cell-text"
+       x="608"
+       y="153"
+       id="text18">…</text>
+  </g>
+  <text
+     class="note"
+     x="461.76245"
+     y="177.03239"
+     id="text19">the highlighted column: [0, 415]</text>
+  <g
+     id="prefix-sum-data">
+    <text
+       class="caption"
+       x="440"
+       y="214"
+       id="text20">prefixSumData[i] (start offset of column i = x + y·W)</text>
+    <g
+       id="ps-cells">
+      <rect
+         class="cell"
+         x="440"
+         y="223"
+         width="48"
+         height="30"
+         rx="3"
+         id="rect20" />
+      <rect
+         class="cell-hi-orange"
+         x="488"
+         y="223"
+         width="48"
+         height="30"
+         rx="3"
+         id="rect21" />
+      <rect
+         class="cell"
+         x="536"
+         y="223"
+         width="48"
+         height="30"
+         rx="3"
+         id="rect22" />
+      <text
+         class="cell-text"
+         x="464"
+         y="243"
+         id="text22">…</text>
+      <text
+         class="cell-text"
+         x="512"
+         y="243"
+         id="text23">k</text>
+      <text
+         class="cell-text"
+         x="560"
+         y="243"
+         id="text24">…</text>
+    </g>
+  </g>
+  <g
+     id="occupancy-box">
+    <rect
+       class="box-orange"
+       x="440"
+       y="276"
+       width="382"
+       height="48"
+       rx="5"
+       id="rect24" />
+    <text
+       class="label"
+       x="454"
+       y="296"
+       id="text25">Occupancy (parity walk):</text>
+    <text
+       class="txt-orange"
+       x="454"
+       y="314"
+       id="text26">voxel z is solid <tspan
+   font-family="'DejaVu Sans', Helvetica, sans-serif"
+   id="tspan25">⇔</tspan> (#transitions ≤ z) is odd</text>
+  </g>
+  <g
+     id="properties-box">
+    <rect
+       class="box-blue"
+       x="440"
+       y="334"
+       width="382"
+       height="60"
+       rx="5"
+       id="rect26" />
+    <text
+       class="label"
+       x="454"
+       y="354"
+       id="text27">Key properties:</text>
+    <text
+       class="txt-blue"
+       x="454"
+       y="372"
+       id="text28">memory <tspan
+   font-family="'DejaVu Sans', Helvetica, sans-serif"
+   id="tspan27">∝</tspan> surface, not volume</text>
+    <text
+       class="txt-blue"
+       x="454"
+       y="388"
+       id="text29">Boolean = merge of sorted lists, per column</text>
+  </g>
+</svg>
