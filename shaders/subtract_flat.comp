@@ -55,12 +55,14 @@ void main() {
     bool obj2On = false;
 
     while ((i1 < count1 || i2 < count2) && outCount < maxTransitions) {
-        int z1 = (i1 < count1) ? int(obj1_flatData[start1 + i1]) : 2147483647;
-        int z2 = (i2 < count2) ? int(obj2_compressedData[start2 + i2]) + (translate.z - z2 / 2) : 2147483647;
+        // za/zb: next transition from the stock (obj1) / tool (obj2) columns. Named to
+        // avoid shadowing the uniforms z1, z2 — the z2/2 below is the tool's Z-extent.
+        int za = (i1 < count1) ? int(obj1_flatData[start1 + i1]) : 2147483647;
+        int zb = (i2 < count2) ? int(obj2_compressedData[start2 + i2]) + (translate.z - z2 / 2) : 2147483647;
 
-        int zVal = min(z1, z2);
-        bool has1 = (z1 == zVal);
-        bool has2 = (z2 == zVal);
+        int zVal = min(za, zb);
+        bool has1 = (za == zVal);
+        bool has2 = (zb == zVal);
 
         if (has1) ++i1;
         if (has2) ++i2;
