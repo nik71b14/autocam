@@ -2,19 +2,19 @@
 # Generate DOCS/figures/fig9_matrix.svg — the cross-workload carving-speed matrix,
 # now FOUR refinement levels (log scale): S0 stamping, S1 swept/external-buffer,
 # S2 swept/fused-in-place (this work's fusion), S3 +tube-pruning+air-skip (this work).
-# Data = tools/bench_matrix.sh, carving netto (ms), min-of-5 interleaved, Intel iris.
+# Data = tools/bench_matrix.sh, carving netto (ms), mean of 10 interleaved, Intel iris.
 # Zero-dependency (stdlib only). Re-run after re-benchmarking, then convert to EMF:
 #   inkscape <abs>/fig9_matrix.svg --export-type=emf --export-filename=<abs>/fig9_matrix.emf
 import math, os
 
 # (name, sublabel, S0, S1_extbuf, S2_fused, S3_prune)
 DATA = [
-    ("contour",     "axis perimeter", 47.9,   9.26, 3.69,  4.11),
-    ("pocket_axis", "axis raster",   120.5,  16.0,  8.23,  8.88),
-    ("raster45",    "45° diagonal", 182.7,  44.4, 36.4, 11.9),
-    ("rapids",      "air-heavy",      72.2,  16.5, 11.1,   5.98),
-    ("localized",   "corner feature", 33.1,  11.9,  4.72,  4.29),
-    ("finishing",   "fine raster",    93.7,  13.8,  6.93,  6.93),
+    ("contour",     "axis perimeter",  52.89,  9.97,  4.43,  5.08),
+    ("pocket_axis", "axis raster",     126.36, 17.26, 9.11,  9.97),
+    ("raster45",    "45° diagonal",    192.50, 47.13, 38.59, 15.06),
+    ("rapids",      "air-heavy",        82.57, 18.45, 13.60, 8.87),
+    ("localized",   "corner feature",   36.63, 14.03, 6.34,  5.03),
+    ("finishing",   "fine raster",      99.98, 16.04, 8.16,  10.26),
 ]
 
 # Log-scale x mapping: px(v) = X0 + log10(v)*DEC  (1 ms -> X0, one decade -> DEC px)
