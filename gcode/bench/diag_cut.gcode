@@ -1,6 +1,7 @@
 %
 (diagonal stress benchmark: diag_cut; rotated basis u=(1,1)/2^.5 v=(1,-1)/2^.5)
-(gen_bench_diag.py --mode diag_cut --n 13 --U 420 --vmax 200; voxel units, Z500=cut Z1200=safe)
+(regenerate: python3 tools/gen_bench_diag.py --mode diag_cut --n 13 --U 420 --vmax 200 --cut-z 500 --safe-z 1200 --out <this file>)
+(voxel units; Z500=cut Z1200=safe/air)
 G0 Z1200.000
 G0 X-438.406 Y-155.563
 G0 Z500.000

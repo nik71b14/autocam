@@ -26,7 +26,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 BIN=./release/autocam
 TOOL=test/hemispheric_mill_3.bin      # small tool (32 vox): exercises the L>>D regime
-N=5
+N=10                                  # run per config (prima scartata, warm-up); media delle restanti
 WL="contour pocket_axis raster45 rapids localized finishing"
 
 net() {  # $1 gcode  $2 level(S0|S1|S2|S3) -> one carving-netto reading (ms)
@@ -42,13 +42,14 @@ net() {  # $1 gcode  $2 level(S0|S1|S2|S3) -> one carving-netto reading (ms)
 printf "%-13s %9s %9s %9s %9s   %s\n" "workload" "S0 stamp" "S1 extbuf" "S2 fused" "S3 +prune" "S1/S2  S2/S3  S0/S3"
 printf -- '%.0s-' {1..80}; echo
 for w in $WL; do
-  declare -A m; m[S0]=""; m[S1]=""; m[S2]=""; m[S3]=""
+  declare -A sum cnt m; for L in S0 S1 S2 S3; do sum[$L]=0; cnt[$L]=0; done
   for i in $(seq 0 "$N"); do
     for L in S0 S1 S2 S3; do
       t=$(net "$w" "$L"); [ "$i" -eq 0 ] && continue; [ -z "$t" ] && continue
-      [ -z "${m[$L]}" ] || awk "BEGIN{exit !($t<${m[$L]})}" && m[$L]=$t
+      sum[$L]=$(awk "BEGIN{print ${sum[$L]}+$t}"); cnt[$L]=$(( cnt[$L] + 1 ))
     done
   done
+  for L in S0 S1 S2 S3; do m[$L]=$(awk "BEGIN{printf \"%.2f\", ${sum[$L]}/${cnt[$L]}}"); done
   fuse=$(awk "BEGIN{printf \"%.2f\", ${m[S1]}/${m[S2]}}")   # fusion (external buffer -> fused in-place)
   prune=$(awk "BEGIN{printf \"%.2f\", ${m[S2]}/${m[S3]}}")  # tube-pruning + air-skip
   ovr=$(awk "BEGIN{printf \"%.1f\", ${m[S0]}/${m[S3]}}")    # overall
@@ -58,4 +59,4 @@ done
 echo
 echo "S0=stamping[van Hook], S1=swept external-buffer, S2=swept fused in-place[this work],"
 echo "S3=+tube-pruning+air-skip[this work]. S1->S2 = fusion/no-external-buffer gain (also halves"
-echo "resident memory). carving netto (ms), min of $N interleaved runs, tool=$TOOL, Intel iris."
+echo "resident memory). carving netto (ms), media di $N run interleaved, tool=$TOOL, Intel iris."

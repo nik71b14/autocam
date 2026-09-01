@@ -21,7 +21,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1     # repo root
 
 BIN=./release/autocam
-N=6                                    # run per config (la prima si scarta, warm-up)
+N=10                                   # run per config (la prima si scarta, warm-up); media delle restanti
 
 # benchmark:  "nome | gcode | tool"
 BENCHES=(
@@ -44,22 +44,22 @@ case "$DRV" in
 esac
 echo
 
-# --- min 'carving netto' baseline vs skip, INTERLEAVATO per annullare il ---
-# --- drift di clock/thermal (una run per modo a ogni giro; primo giro = warm-up).
+# --- 'carving netto' baseline vs skip: MEDIA su N run, INTERLEAVATA per annullare il ---
+# --- drift di clock/thermal (una run per modo a ogni giro; primo giro = warm-up scartato).
 one_net () {  # $1 gcode  $2 tool  $3 skip -> "carving netto" di UNA run
   AUTOCAM_SWEPT_SKIP="$3" "$BIN" simulate --gcode "$1" --tool "$2" --no-view 2>/dev/null \
     | sed -n 's/.*carving netto \([0-9.]*\) ms.*/\1/p'
 }
-bench_one () {  # $1 gcode  $2 tool -> "minBaseline minSkip"
-  local bB="" bA="" t0 t1
+bench_one () {  # $1 gcode  $2 tool -> "meanBaseline meanSkip" (media aritmetica su N run)
+  local sB=0 sA=0 nB=0 nA=0 t0 t1
   for i in $(seq 0 "$N"); do                       # giro 0 = warm-up (scartato)
     t0=$(one_net "$1" "$2" 0)
     t1=$(one_net "$1" "$2" 1)
     [ "$i" -eq 0 ] && continue
-    [ -n "$t0" ] && { [ -z "$bB" ] || awk "BEGIN{exit !($t0<$bB)}"; } && bB=$t0
-    [ -n "$t1" ] && { [ -z "$bA" ] || awk "BEGIN{exit !($t1<$bA)}"; } && bA=$t1
+    [ -n "$t0" ] && { sB=$(awk "BEGIN{print $sB+$t0}"); nB=$((nB+1)); }
+    [ -n "$t1" ] && { sA=$(awk "BEGIN{print $sA+$t1}"); nA=$((nA+1)); }
   done
-  echo "${bB:-NA} ${bA:-NA}"
+  awk "BEGIN{printf \"%s %s\", ($nB?$sB/$nB:\"NA\"), ($nA?$sA/$nA:\"NA\")}"
 }
 
 printf "%-40s %11s %11s %9s\n" "benchmark" "baseline" "tube-prune" "speedup"
@@ -69,10 +69,12 @@ for e in "${BENCHES[@]}"; do
   IFS='|' read -r name gc tool <<<"$e"
   name=$(echo "$name" | sed 's/[[:space:]]*$//'); gc=$(echo "$gc" | xargs); tool=$(echo "$tool" | xargs)
   read -r b a < <(bench_one "$gc" "$tool")
-  if [ "$b" = NA ] || [ "$a" = NA ]; then sp="?"; else sp=$(awk "BEGIN{printf \"%.2fx\", $b/$a}"); fi
-  printf "%-40s %8s ms %8s ms %9s\n" "$name" "$b" "$a" "$sp"
+  if [ "$b" = NA ] || [ "$a" = NA ]; then sp="?"; b2="$b"; a2="$a"; else
+    sp=$(awk "BEGIN{printf \"%.2fx\", $b/$a}")
+    b2=$(awk "BEGIN{printf \"%.2f\", $b}"); a2=$(awk "BEGIN{printf \"%.2f\", $a}"); fi
+  printf "%-40s %8s ms %8s ms %9s\n" "$name" "$b2" "$a2" "$sp"
 done
-echo
+echo "media aritmetica di $N run (prima scartata, warm-up); netto = carving escl. read-back."
 echo "square_600 = controllo assi-allineato (atteso ~1x: AABB già = tubo)."
 echo "diag_cut   = tagli diagonali lunghi (AABB >> tubo, atteso >1x)."
 echo "air_moves  = rapid G0 diagonali in aria (dispatch intero saltato, atteso >>1x)."
