@@ -31,5 +31,5 @@
   <rect x="250" y="224" width="475" height="18" fill="#a0aec0"/>
   <rect x="250" y="244" width="57" height="18" fill="#38a169"/><text x="313" y="258" font-size="11" font-weight="bold" fill="#276749">8.38×</text>
 
-  <text x="30" y="316" font-size="11.5" fill="#718096">Tube pruning wins big on diagonal/air work; even the axis control gains (256-voxel tool: the endpoint AABB overhangs the band).</text>
+  <text x="30" y="316" font-size="11.5" fill="#718096">Tube pruning wins big on diagonal/air work; even the axis control gains (256-voxel tool: its approach/retract rapids are air-skipped).</text>
 </svg>
