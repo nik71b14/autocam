@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 320" font-family="Arial, Helvetica, sans-serif">
   <rect x="0" y="0" width="880" height="320" fill="#ffffff"/>
   <text x="30" y="30" font-size="19" font-weight="bold" fill="#1a202c">Net carving time, normalized to the fused S2 baseline (lower = faster)</text>
-  <text x="30" y="50" font-size="12.5" fill="#4a5568">Intel Lunar Lake / iris, interleaved mean of N, byte-identical. Small tool (32) on long non-axis-aligned segments.</text>
+  <text x="30" y="50" font-size="12.5" fill="#4a5568">Intel Lunar Lake / iris, interleaved mean of N, byte-identical. Control: 256-voxel tool; diagonal micro-benchmarks: 32-voxel tool.</text>
 
   <!-- legend -->
   <rect x="30" y="62" width="14" height="14" fill="#a0aec0"/><text x="50" y="74" font-size="12" fill="#1a202c">S2 baseline (fused, no pruning)</text>
@@ -31,5 +31,5 @@
   <rect x="250" y="224" width="475" height="18" fill="#a0aec0"/>
   <rect x="250" y="244" width="57" height="18" fill="#38a169"/><text x="313" y="258" font-size="11" font-weight="bold" fill="#276749">8.38×</text>
 
-  <text x="250" y="316" font-size="11.5" fill="#718096">Tube pruning wins big on diagonal cutting and in-air work; near-neutral on the axis-aligned control.</text>
+  <text x="30" y="316" font-size="11.5" fill="#718096">Tube pruning wins big on diagonal/air work; even the axis control gains (256-voxel tool: the endpoint AABB overhangs the band).</text>
 </svg>
