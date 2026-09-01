@@ -152,6 +152,7 @@ class SparseTileBackend : public ICarveBackend {
     shader_->setInt("countRemoved", 0);  shader_->setInt("segmentIndex", 0);
     shader_->setInt("enableSkip", sweptSkip());
     shader_->setInt("tiled", 1);  shader_->setInt("tileTS", TS_);  shader_->setInt("tileNX", nX_);
+    shader_->setInt("zeroFill", 1);  // sparse backend always zero-fills (behaviour unchanged)
 
     GLuint gX = (GLuint)((endX - baseX + 7) / 8), gY = (GLuint)((endY - baseY + 7) / 8);
     glDispatchCompute(gX, gY, 1);

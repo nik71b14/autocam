@@ -834,6 +834,13 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
     return (e && e[0] == '0') ? 0 : 1;
   }();
 
+  // Benchmark toggle: AUTOCAM_SWEPT_ZEROFILL=0 drops the trailing zero-fill of unused
+  // column slots (byte-identical output, less write traffic on active columns); default 1.
+  static const int zeroFill = [] {
+    const char* e = std::getenv("AUTOCAM_SWEPT_ZEROFILL");
+    return (e && e[0] == '0') ? 0 : 1;
+  }();
+
   // Whole-segment skip: if the tool's Z-extent over the segment cannot reach the
   // stock's [0,z1) range (e.g. an in-air G0 rapid), the segment removes nothing —
   // skip the entire dispatch, not just per column. Conservative (uses the full tool
@@ -877,6 +884,7 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int
 
   shader_swept->setInt("enableSkip", sweptSkip);
   shader_swept->setInt("tiled", 0);  // flat row-major addressing (sparse backend uses tiled=1)
+  shader_swept->setInt("zeroFill", zeroFill);
 
   GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);

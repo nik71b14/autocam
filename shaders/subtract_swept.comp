@@ -40,6 +40,11 @@ uniform int enableSkip;       // 1 = prune no-op columns (Step 1); 0 = baseline 
 uniform int tiled;            // 0 = flat row-major (default), 1 = tiled layout
 uniform int tileTS;           // tile side in columns (tiled only)
 uniform int tileNX;           // tiles per row = ceil(w1/tileTS) (tiled only)
+// Trailing zero-fill of unused column slots. 1 = zero slots [writeCount, maxTransitions)
+// (default). 0 = leave them as-is: byte-identical output (occupancy reads only the first
+// obj1_dataNum[col] slots) but far less write traffic on active columns. Benchmark lever
+// (AUTOCAM_SWEPT_ZEROFILL) — see the paper's cache-line discussion.
+uniform int zeroFill;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -183,7 +188,9 @@ void main() {
         int z = int(localOut[i]);
         if (z >= 0 && z < z1) obj1_flatData[start1 + writeCount++] = uint(z);
     }
-    for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
+    if (zeroFill != 0) {
+        for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
+    }
     obj1_dataNum[countIdx] = writeCount;
 
     if (countRemoved != 0) {
