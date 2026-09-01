@@ -34,7 +34,7 @@ if [ ! -x "$BIN" ]; then echo "Manca $BIN (compila prima)."; exit 1; fi
 
 # --- GPU realmente usata da autocam (NON glxinfo) --------------------------
 echo "=== GPU realmente usata da autocam ==="
-DRV=$(EGL_LOG_LEVEL=debug "$BIN" simulate --gcode gcode/pocket_small.gcode --no-view 2>&1 \
+DRV=$(EGL_LOG_LEVEL=debug "$BIN" simulate --gcode gcode/square_600.gcode --no-view 2>&1 \
       | sed -n 's/.*pci id for fd [0-9]*: \([0-9a-fx:]*\), driver \([a-z_]*\).*/\2 (\1)/p' | head -1)
 echo "driver: ${DRV:-non rilevato}"
 case "$DRV" in
