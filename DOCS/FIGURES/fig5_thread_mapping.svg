@@ -1,0 +1,551 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="815"
+   height="345"
+   viewBox="0 0 815 345"
+   font-family="Helvetica, Arial, 'DejaVu Sans', sans-serif"
+   version="1.1"
+   id="svg38"
+   sodipodi:docname="fig5_thread_mapping.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <sodipodi:namedview
+     id="namedview38"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.3806818"
+     inkscape:cx="402.33745"
+     inkscape:cy="144.49383"
+     inkscape:window-width="2560"
+     inkscape:window-height="1465"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg38" />
+  <title
+     id="title1">Figure 5 - Mapping compute threads onto the workpiece column grid</title>
+  <desc
+     id="desc1">(a) Top view of the W by H column grid: the host restricts the dispatch to the swept bounding box, the AABB of the two segment endpoints dilated by half the tool footprint. (b) The bounding box is tiled into 8 by 8 workgroups; rounding up leaves an overhang, part of which lies outside the workpiece and returns immediately. (c) One workgroup is 8 by 8 threads, and each thread handles one column recovered from its global invocation ID.</desc>
+  <!-- ============================================================
+       EDIT HERE: colours and fonts in the style block below.
+       Panel (a): grid cell 18 px, 13 x 10 cells from (46,130).
+         swept band endpoints (113,179)-(213,243), F = 26,
+         so the bbox is exactly [100,226] x [166,256].
+       Panel (b): cell 9 px, 24 x 16 dispatched columns from (348,150);
+         bbox = 20 x 13 columns, workpiece edge at column 22 / row 14,
+         workgroup borders every 8 cells = 72 px.
+       ============================================================ -->
+  <style
+     id="style1">
+    text            { fill: #1f2937; }
+    .title          { font-size: 17px; font-weight: 700; }
+    .subtitle       { font-size: 12px; fill: #5b7fa6; }
+    .panel          { fill: #f2f7fc; stroke: #dbe6f0; stroke-width: 1; }
+    .ptitle         { font-size: 12.5px; font-weight: 700; fill: #1f2937; }
+    .ptitle-sym     { font-size: 12.5px; font-weight: 700; fill: #1f2937; font-family: &quot;DejaVu Sans&quot;, Helvetica, sans-serif; }
+    .grid           { stroke: #cfd8e3; stroke-width: 0.7; fill: none; }
+    .gridframe      { stroke: #7a8ca0; stroke-width: 1.2; fill: none; }
+    .bbox           { fill: #cfe3f7; fill-opacity: 0.75; stroke: #1a73c8; stroke-width: 1.6; }
+    .band           { stroke: #f0a35e; stroke-opacity: 0.85; stroke-width: 26; stroke-linecap: round; fill: none; }
+    .seg            { stroke: #b45309; stroke-width: 1.2; stroke-dasharray: 4 3; fill: none; }
+    .node           { fill: #b45309; }
+    .over           { fill: #e5e7eb; fill-opacity: 0.9; }
+    .outside        { fill: url(#hatch); }
+    .wpedge         { stroke: #b91c1c; stroke-width: 1.4; stroke-dasharray: 5 3; fill: none; }
+    .wg             { stroke: #1a4fb0; stroke-width: 1.6; fill: none; }
+    .thread         { fill: #b7e3bd; stroke: #3a9d4a; stroke-width: 1.6; }
+    .dim            { stroke: #4b5563; stroke-width: 1; fill: none; }
+    .axis           { stroke: #7a8ca0; stroke-width: 1.1; fill: none; }
+    .lbl            { font-size: 11.5px; fill: #374151; }
+    .lbl-b          { font-size: 11.5px; font-weight: 700; fill: #1a4fb0; }
+    .note           { font-size: 10.5px; fill: #6b7280; }
+    .mono           { font-size: 10.5px; font-family: &quot;DejaVu Sans Mono&quot;, Consolas, monospace; fill: #374151; }
+  </style>
+  <defs
+     id="defs2">
+    <marker
+       id="ar"
+       viewBox="0 0 10 10"
+       refX="9"
+       refY="5"
+       markerWidth="5"
+       markerHeight="5"
+       orient="auto-start-reverse">
+      <path
+         d="M 0,0 10,5 0,10 Z"
+         fill="#4b5563"
+         id="path1" />
+    </marker>
+    <marker
+       id="ax"
+       viewBox="0 0 10 10"
+       refX="8"
+       refY="5"
+       markerWidth="5"
+       markerHeight="5"
+       orient="auto-start-reverse">
+      <path
+         d="M 0,0 10,5 0,10 Z"
+         fill="#7a8ca0"
+         id="path2" />
+    </marker>
+    <pattern
+       id="hatch"
+       width="6"
+       height="6"
+       patternUnits="userSpaceOnUse"
+       patternTransform="rotate(45)">
+      <rect
+         width="6"
+         height="6"
+         fill="#fbe9e9"
+         id="rect2" />
+      <line
+         x1="0"
+         y1="0"
+         x2="0"
+         y2="6"
+         stroke="#e7a3a3"
+         stroke-width="1.4"
+         id="line2" />
+    </pattern>
+  </defs>
+  <!-- ===================== TITLE ===================== -->
+  <!-- ============ PANEL A: the workpiece and the swept bbox ============ -->
+  <g
+     id="panel-workpiece"
+     transform="translate(-21.5,-69.5)">
+    <rect
+       class="panel"
+       x="28"
+       y="76"
+       width="290"
+       height="334"
+       rx="4"
+       id="rect3" />
+    <text
+       class="ptitle"
+       x="173"
+       y="100"
+       text-anchor="middle"
+       id="text4">The swept bbox on the grid</text>
+    <!-- axes -->
+    <line
+       class="axis"
+       x1="46"
+       y1="120"
+       x2="120"
+       y2="120"
+       marker-end="url(#ax)"
+       id="line4" />
+    <text
+       class="lbl"
+       x="126"
+       y="124"
+       id="text5">X</text>
+    <line
+       class="axis"
+       x1="36"
+       y1="130"
+       x2="36"
+       y2="200"
+       marker-end="url(#ax)"
+       id="line5" />
+    <text
+       class="lbl"
+       x="36"
+       y="212"
+       text-anchor="middle"
+       id="text6">Y</text>
+    <!-- column grid, 13 x 10 cells of 18 px -->
+    <g
+       id="grid-a"
+       class="grid">
+      <path
+         d="M 46,130 H 280 M 46,148 H 280 M 46,166 H 280 M 46,184 H 280 M 46,202 H 280 M 46,220 H 280 M 46,238 H 280 M 46,256 H 280 M 46,274 H 280 M 46,292 H 280 M 46,310 h 234"
+         id="path6" />
+      <path
+         d="M 46,130 V 310 M 64,130 V 310 M 82,130 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180 m 18,-180 v 180"
+         id="path7" />
+    </g>
+    <rect
+       class="gridframe"
+       x="46"
+       y="130"
+       width="234"
+       height="180"
+       id="rect7" />
+    <!-- swept bbox and the band it encloses -->
+    <rect
+       class="bbox"
+       x="100"
+       y="166"
+       width="126"
+       height="90"
+       id="rect8" />
+    <line
+       class="band"
+       x1="113"
+       y1="179"
+       x2="213"
+       y2="243"
+       id="line8" />
+    <line
+       class="seg"
+       x1="113"
+       y1="179"
+       x2="213"
+       y2="243"
+       id="line9" />
+    <circle
+       class="node"
+       cx="113"
+       cy="179"
+       r="3"
+       id="circle9" />
+    <circle
+       class="node"
+       cx="213"
+       cy="243"
+       r="3"
+       id="circle10" />
+    <!-- origin and size -->
+    <circle
+       class="node"
+       cx="100"
+       cy="166"
+       r="3"
+       fill="#1a4fb0"
+       id="circle11" />
+    <text
+       class="lbl-b"
+       x="104"
+       y="160"
+       id="text11">(baseX, baseY)</text>
+    <g
+       id="dim-a">
+      <line
+         class="dim"
+         x1="100"
+         y1="278"
+         x2="226"
+         y2="278"
+         marker-start="url(#ar)"
+         marker-end="url(#ar)"
+         id="line11" />
+      <text
+         class="lbl"
+         x="163"
+         y="292"
+         text-anchor="middle"
+         id="text12">bboxW</text>
+      <line
+         class="dim"
+         x1="88"
+         y1="166"
+         x2="88"
+         y2="256"
+         marker-start="url(#ar)"
+         marker-end="url(#ar)"
+         id="line12" />
+      <text
+         class="lbl"
+         x="82"
+         y="214"
+         text-anchor="end"
+         id="text13">bboxH</text>
+    </g>
+    <text
+       class="note"
+       x="173"
+       y="336"
+       text-anchor="middle"
+       id="text14">W × H columns in all; the bbox is the AABB of the</text>
+    <text
+       class="note"
+       x="173"
+       y="350"
+       text-anchor="middle"
+       id="text15">two endpoints, dilated by F/2 and clamped to the grid</text>
+    <text
+       class="note"
+       x="173"
+       y="372"
+       text-anchor="middle"
+       id="text16">one dispatch per segment covers the whole bbox</text>
+  </g>
+  <!-- ============ PANEL B: tiling into workgroups, and the overhang ============ -->
+  <g
+     id="panel-tiling"
+     transform="translate(-21.5,-69.5)">
+    <rect
+       class="panel"
+       x="330"
+       y="76"
+       width="245"
+       height="334"
+       rx="4"
+       id="rect16" />
+    <text
+       class="ptitle"
+       x="452"
+       y="100"
+       text-anchor="middle"
+       id="text17">Tiled into 8 × 8 workgroups</text>
+    <text
+       class="note"
+       x="452"
+       y="118"
+       text-anchor="middle"
+       font-family="'DejaVu Sans', sans-serif"
+       id="text18">⌈bboxW/8⌉ × ⌈bboxH/8⌉ of them</text>
+    <!-- dispatched area: 24 x 16 columns of 9 px -->
+    <rect
+       class="over"
+       x="348"
+       y="150"
+       width="216"
+       height="144"
+       id="rect18" />
+    <rect
+       class="outside"
+       x="546"
+       y="150"
+       width="18"
+       height="144"
+       id="rect19" />
+    <rect
+       class="outside"
+       x="348"
+       y="276"
+       width="198"
+       height="18"
+       id="rect20" />
+    <rect
+       class="bbox"
+       x="348"
+       y="150"
+       width="162"
+       height="99"
+       id="rect21" />
+    <g
+       id="grid-b"
+       class="grid">
+      <path
+         d="m 348,159 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216 m -216,18 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216 m -216,9 h 216"
+         id="path21" />
+      <path
+         d="m 357,150 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 18,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 18,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144 m 9,-144 v 144"
+         id="path22" />
+    </g>
+    <!-- workgroup borders every 8 cells -->
+    <g
+       id="workgroups"
+       class="wg">
+      <rect
+         x="348"
+         y="150"
+         width="72"
+         height="72"
+         id="rect22" />
+      <rect
+         x="420"
+         y="150"
+         width="72"
+         height="72"
+         id="rect23" />
+      <rect
+         x="492"
+         y="150"
+         width="72"
+         height="72"
+         id="rect24" />
+      <rect
+         x="348"
+         y="222"
+         width="72"
+         height="72"
+         id="rect25" />
+      <rect
+         x="420"
+         y="222"
+         width="72"
+         height="72"
+         id="rect26" />
+      <rect
+         x="492"
+         y="222"
+         width="72"
+         height="72"
+         id="rect27" />
+    </g>
+    <!-- the edge of the workpiece -->
+    <path
+       class="wpedge"
+       d="M 546,150 V 276 H 348"
+       id="path27" />
+    <text
+       class="note"
+       x="568"
+       y="146"
+       text-anchor="end"
+       id="text27">gx = W, gy = H</text>
+    <!-- legend -->
+    <g
+       id="legend-b">
+      <rect
+         class="bbox"
+         x="348"
+         y="312"
+         width="12"
+         height="12"
+         id="rect28" />
+      <text
+         class="note"
+         x="366"
+         y="322"
+         id="text28">swept bbox: the columns dispatched for</text>
+      <rect
+         class="over"
+         x="348"
+         y="332"
+         width="12"
+         height="12"
+         stroke="#cfd8e3"
+         id="rect29" />
+      <text
+         class="note"
+         x="366"
+         y="342"
+         id="text29">overhang: real columns, no-op here</text>
+      <rect
+         class="outside"
+         x="348"
+         y="352"
+         width="12"
+         height="12"
+         id="rect30" />
+      <text
+         class="note"
+         x="366"
+         y="362"
+         id="text30">past the workpiece edge: returns at once</text>
+    </g>
+    <text
+       class="note"
+       x="452"
+       y="386"
+       text-anchor="middle"
+       id="text31">rounding up to whole workgroups overshoots</text>
+  </g>
+  <!-- ============ PANEL C: inside one workgroup ============ -->
+  <g
+     id="panel-workgroup"
+     transform="translate(-21.5,-69.5)">
+    <rect
+       class="panel"
+       x="587"
+       y="76"
+       width="245"
+       height="334"
+       rx="4"
+       id="rect31" />
+    <text
+       class="ptitle"
+       x="709"
+       y="100"
+       text-anchor="middle"
+       id="text32">One workgroup = 8 × 8 threads</text>
+    <g
+       id="grid-c"
+       class="grid">
+      <path
+         d="M 637,150 H 781 M 637,168 H 781 M 637,186 H 781 M 637,204 H 781 M 637,222 H 781 M 637,240 H 781 M 637,258 H 781 M 637,276 H 781 M 637,294 H 781"
+         id="path32" />
+      <path
+         d="M 637,150 V 294 M 655,150 V 294 M 673,150 V 294 M 691,150 V 294 M 709,150 V 294 M 727,150 V 294 M 745,150 V 294 M 763,150 V 294 M 781,150 V 294"
+         id="path33" />
+    </g>
+    <rect
+       class="gridframe"
+       x="637"
+       y="150"
+       width="144"
+       height="144"
+       id="rect33" />
+    <rect
+       class="thread"
+       x="691"
+       y="186"
+       width="18"
+       height="18"
+       id="rect34" />
+    <text
+       class="lbl-b"
+       x="709"
+       y="320"
+       text-anchor="middle"
+       id="text34">one thread = one column (gx, gy)</text>
+    <text
+       class="mono"
+       x="602"
+       y="346"
+       id="text35">gx = baseX + gl_GlobalInvocationID.x</text>
+    <text
+       class="mono"
+       x="602"
+       y="362"
+       id="text36">gy = baseY + gl_GlobalInvocationID.y</text>
+    <text
+       class="note"
+       x="602"
+       y="384"
+       id="text37">local_size = (8, 8, 1); the column is bounds-</text>
+    <text
+       class="note"
+       x="602"
+       y="398"
+       id="text38">checked against W and H before anything else</text>
+  </g>
+  <text
+     class="lbl"
+     x="17.5625"
+     y="21.640625"
+     text-anchor="middle"
+     id="text6-9"
+     style="font-size:16px;fill:#374151">a)</text>
+  <text
+     class="lbl"
+     x="321.5625"
+     y="21.640625"
+     text-anchor="middle"
+     id="text6-9-1"
+     style="font-size:16px;fill:#374151">b)</text>
+  <text
+     class="lbl"
+     x="577.5625"
+     y="21.640625"
+     text-anchor="middle"
+     id="text6-9-1-7"
+     style="font-size:16px;fill:#374151">c)</text>
+  <metadata
+     id="metadata38">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>Figure 5 - Mapping compute threads onto the workpiece column grid</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>

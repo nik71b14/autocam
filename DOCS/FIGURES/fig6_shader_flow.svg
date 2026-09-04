@@ -1,89 +1,575 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 780" font-family="Arial, Helvetica, sans-serif">
-  <rect x="0" y="0" width="580" height="780" fill="#ffffff"/>
-  <text x="24" y="30" font-size="19" font-weight="bold" fill="#1a202c">subtract_swept.comp — per-thread flow (one column)</text>
-
-  <defs>
-    <marker id="af" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#4a5568"/></marker>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="643"
+   height="716"
+   viewBox="0 0 643 716"
+   font-family="Helvetica, Arial, 'DejaVu Sans', sans-serif"
+   version="1.1"
+   id="svg53"
+   sodipodi:docname="fig6_shader_flow.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <sodipodi:namedview
+     id="namedview53"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.0606602"
+     inkscape:cx="312.5412"
+     inkscape:cy="315.36962"
+     inkscape:window-width="2560"
+     inkscape:window-height="1465"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg53" />
+  <title
+     id="title1">Figure 6 - Per-thread control flow of subtract_swept.comp</title>
+  <desc
+     id="desc1">The eight numbered steps of section 4.4, run independently by one GPU thread per column: identify and bounds-check the column, read it, bound the sub-step range, accumulate the Z-envelope, the tube-pruning early-out, the two-pointer merge, the write-back, and the optional removal counter. Two exits leave the flow without writing.</desc>
+  <!-- ============================================================
+       EDIT HERE: colours and fonts in the style block below.
+       Main column: x = 40, width 360, centre 220.
+       Side exits:  x = 442, width 218, centre 551.
+       Step badges sit on the left border of each main box.
+       The numbering follows the steps of §4.4 one to one.
+       ============================================================ -->
+  <style
+     id="style1">
+    text          { fill: #1f2937; }
+    .title        { font-size: 16px; font-weight: 700; }
+    .subtitle     { font-size: 11.5px; fill: #5b7fa6; }
+    .compute      { fill: #eef5fd; stroke: #1a73c8; stroke-width: 1.5; }
+    .compute-opt  { fill: #eef5fd; stroke: #1a73c8; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .branch       { fill: #fffaf2; stroke: #e8710a; stroke-width: 1.6; }
+    .exit         { fill: #f3f4f6; stroke: #9ca3af; stroke-width: 1.4; }
+    .exit-green   { fill: #eaf7ee; stroke: #3a9d4a; stroke-width: 1.6; }
+    .done         { fill: #eceff3; stroke: #7a8ca0; stroke-width: 1.4; }
+    .badge        { fill: #ffffff; stroke: #4b5563; stroke-width: 1.2; }
+    .badge-t      { font-size: 11px; font-weight: 700; fill: #374151; }
+    .flow         { stroke: #4b5563; stroke-width: 1.4; fill: none; }
+    .head         { font-size: 12.5px; font-weight: 700; }
+    .sub          { font-size: 11px; fill: #4b5563; }
+    .mono         { font-size: 10.5px; font-family: &quot;DejaVu Sans Mono&quot;, Consolas, monospace; fill: #374151; }
+    .sym          { font-size: 12.5px; font-weight: 700; font-family: &quot;DejaVu Sans&quot;, Helvetica, sans-serif; }
+    .sym-sub      { font-size: 11px; fill: #4b5563; font-family: &quot;DejaVu Sans&quot;, Helvetica, sans-serif; }
+    .yes          { font-size: 10.5px; font-weight: 700; fill: #b45309; }
+    .no           { font-size: 10.5px; font-weight: 700; fill: #4b5563; }
+    .note         { font-size: 10.5px; fill: #6b7280; }
+  </style>
+  <defs
+     id="defs1">
+    <marker
+       id="a"
+       viewBox="0 0 10 10"
+       refX="9"
+       refY="5"
+       markerWidth="6"
+       markerHeight="6"
+       orient="auto-start-reverse">
+      <path
+         d="M 0,0 10,5 0,10 Z"
+         fill="#4b5563"
+         id="path1" />
+    </marker>
   </defs>
-  <g stroke="#4a5568" stroke-width="1.4" fill="none">
-    <line x1="185" y1="76"  x2="185" y2="92"  marker-end="url(#af)"/>
-    <line x1="185" y1="140" x2="185" y2="156" marker-end="url(#af)"/>
-    <line x1="185" y1="200" x2="185" y2="216" marker-end="url(#af)"/>
-    <line x1="185" y1="264" x2="185" y2="280" marker-end="url(#af)"/>
-    <line x1="185" y1="352" x2="185" y2="368" marker-end="url(#af)"/>
-    <line x1="185" y1="446" x2="185" y2="462" marker-end="url(#af)"/>
-    <line x1="185" y1="514" x2="185" y2="530" marker-end="url(#af)"/>
-    <line x1="185" y1="586" x2="185" y2="602" marker-end="url(#af)"/>
-    <line x1="185" y1="660" x2="185" y2="676" marker-end="url(#af)"/>
-    <!-- decision YES branches to the right -->
-    <line x1="335" y1="118" x2="452" y2="118" marker-end="url(#af)"/>
-    <line x1="335" y1="410" x2="452" y2="410" marker-end="url(#af)"/>
-    <line x1="335" y1="628" x2="452" y2="628" marker-end="url(#af)"/>
+  <!-- ===================== TITLE ===================== -->
+  <!-- ===================== FLOW ARROWS ===================== -->
+  <g
+     id="arrows"
+     class="flow"
+     transform="translate(-22.4,-83.25)">
+    <path
+       d="m 220,138 v 18"
+       marker-end="url(#a)"
+       id="path2" />
+    <path
+       d="m 220,196 v 18"
+       marker-end="url(#a)"
+       id="path3" />
+    <path
+       d="m 220,262 v 18"
+       marker-end="url(#a)"
+       id="path4" />
+    <path
+       d="m 220,328 v 18"
+       marker-end="url(#a)"
+       id="path5" />
+    <path
+       d="m 220,406 v 18"
+       marker-end="url(#a)"
+       id="path6" />
+    <path
+       d="m 220,488 v 18"
+       marker-end="url(#a)"
+       id="path7" />
+    <path
+       d="m 220,554 v 18"
+       marker-end="url(#a)"
+       id="path8" />
+    <path
+       d="m 220,620 v 18"
+       marker-end="url(#a)"
+       id="path9" />
+    <path
+       d="m 220,686 v 18"
+       marker-end="url(#a)"
+       id="path10" />
+    <path
+       d="m 400,176 h 42"
+       marker-end="url(#a)"
+       id="path11" />
+    <path
+       d="m 400,456 h 42"
+       marker-end="url(#a)"
+       id="path12" />
   </g>
-
-  <!-- start -->
-  <rect x="35" y="46" width="300" height="30" rx="15" fill="#edf2f7" stroke="#718096"/>
-  <text x="185" y="66" font-size="12.5" fill="#1a202c" text-anchor="middle">thread → column (gx,gy) = (baseX,baseY)+invocationID</text>
-
-  <!-- decision: bounds -->
-  <rect x="55" y="92" width="260" height="48" rx="8" fill="#fffaf0" stroke="#dd6b20"/>
-  <text x="185" y="114" font-size="12.5" fill="#1a202c" text-anchor="middle">gx ≥ W  or  gy ≥ H ?</text>
-  <text x="185" y="132" font-size="11" fill="#c05621" text-anchor="middle">no ↓            yes →</text>
-
-  <!-- read column -->
-  <rect x="35" y="156" width="300" height="44" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
-  <text x="185" y="174" font-size="12" fill="#1a202c" text-anchor="middle">read stock column: count1 transitions</text>
-  <text x="185" y="190" font-size="11" fill="#4a5568" text-anchor="middle">from obj1_flat[idx·MAX_TRANSITIONS …]</text>
-
-  <!-- substep range -->
-  <rect x="35" y="216" width="300" height="48" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
-  <text x="185" y="238" font-size="12" fill="#1a202c" text-anchor="middle">bound the sub-step range [k0,k1]</text>
-  <text x="185" y="255" font-size="11" fill="#4a5568" text-anchor="middle">= where the tool can cover this column</text>
-
-  <!-- envelope loop -->
-  <rect x="35" y="280" width="300" height="72" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
-  <text x="185" y="300" font-size="12" fill="#1a202c" text-anchor="middle">for k in [k0,k1]:  place tool at pos(k)</text>
-  <text x="185" y="318" font-size="12" fill="#1a202c" text-anchor="middle">accumulate Z-envelope</text>
-  <text x="185" y="336" font-size="11.5" font-weight="bold" fill="#2c5282" text-anchor="middle">[zbMin, ztMax] = (min bottom, max top)</text>
-
-  <!-- decision: skip (tube pruning) -->
-  <rect x="45" y="368" width="280" height="78" rx="8" fill="#fffaf0" stroke="#dd6b20"/>
-  <text x="185" y="388" font-size="12" fill="#1a202c" text-anchor="middle">enableSkip AND</text>
-  <text x="185" y="405" font-size="11.5" fill="#1a202c" text-anchor="middle">( tool misses column  OR</text>
-  <text x="185" y="421" font-size="11.5" fill="#1a202c" text-anchor="middle">interval outside [0, z1) ) ?</text>
-  <text x="185" y="439" font-size="11" fill="#c05621" text-anchor="middle">no ↓            yes → (TUBE PRUNING)</text>
-
-  <!-- merge -->
-  <rect x="35" y="462" width="300" height="52" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
-  <text x="185" y="483" font-size="12" fill="#1a202c" text-anchor="middle">two-pointer merge: subtract</text>
-  <text x="185" y="500" font-size="12" fill="#1a202c" text-anchor="middle">[zbMin,ztMax] from the stock column</text>
-
-  <!-- writeback -->
-  <rect x="35" y="530" width="300" height="56" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
-  <text x="185" y="551" font-size="12" fill="#1a202c" text-anchor="middle">write transitions back in place;</text>
-  <text x="185" y="568" font-size="12" fill="#1a202c" text-anchor="middle">zero unused slots; store new count</text>
-
-  <!-- decision: counter -->
-  <rect x="55" y="602" width="260" height="58" rx="8" fill="#fffaf0" stroke="#dd6b20"/>
-  <text x="185" y="623" font-size="12" fill="#1a202c" text-anchor="middle">countRemoved (fitness) ?</text>
-  <text x="185" y="641" font-size="11" fill="#c05621" text-anchor="middle">no ↓            yes →</text>
-
-  <!-- end -->
-  <rect x="35" y="676" width="300" height="30" rx="15" fill="#edf2f7" stroke="#718096"/>
-  <text x="185" y="696" font-size="12.5" fill="#1a202c" text-anchor="middle">done (column written)</text>
-
-  <!-- RIGHT: return boxes -->
-  <rect x="452" y="100" width="110" height="36" rx="8" fill="#f7fafc" stroke="#a0aec0"/>
-  <text x="507" y="122" font-size="12" fill="#4a5568" text-anchor="middle">return</text>
-
-  <rect x="452" y="388" width="118" height="44" rx="8" fill="#e6ffed" stroke="#38a169"/>
-  <text x="511" y="406" font-size="11.5" fill="#276749" text-anchor="middle">return —</text>
-  <text x="511" y="422" font-size="11.5" font-weight="bold" fill="#276749" text-anchor="middle">no write ✔</text>
-
-  <rect x="452" y="606" width="118" height="46" rx="8" fill="#ebf8ff" stroke="#2b6cb0"/>
-  <text x="511" y="625" font-size="10.5" fill="#1a202c" text-anchor="middle">atomicAdd(removed[seg],</text>
-  <text x="511" y="640" font-size="10.5" fill="#1a202c" text-anchor="middle">oldSolid−newSolid)</text>
-
-  <text x="24" y="730" font-size="11" fill="#718096">Blue = compute step · Orange = branch · Green "no write" = the tube-pruning early-out (Step 1).</text>
-  <text x="24" y="748" font-size="11" fill="#718096">Every column of the swept bbox runs this independently, one GPU thread each.</text>
+  <!-- ===================== STEP 1 ===================== -->
+  <rect
+     class="compute"
+     x="17.6"
+     y="6.75"
+     width="360"
+     height="48"
+     rx="5"
+     id="rect12" />
+  <text
+     class="head"
+     x="197.60001"
+     y="26.75"
+     text-anchor="middle"
+     id="text12">identify the column</text>
+  <text
+     class="mono"
+     x="197.60001"
+     y="44.75"
+     text-anchor="middle"
+     id="text13">gx = baseX + id.x, gy = baseY + id.y</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="30.75"
+     r="11"
+     id="circle13" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="34.75"
+     text-anchor="middle"
+     id="text14">1</text>
+  <!-- bounds check -->
+  <rect
+     class="branch"
+     x="17.6"
+     y="72.75"
+     width="360"
+     height="40"
+     rx="5"
+     id="rect14" />
+  <text
+     class="sym"
+     x="197.60001"
+     y="97.75"
+     text-anchor="middle"
+     id="text15">gx ≥ W or gy ≥ H ?</text>
+  <text
+     class="no"
+     x="205.60001"
+     y="125.75"
+     id="text16">no</text>
+  <text
+     class="yes"
+     x="395.60001"
+     y="87.75"
+     text-anchor="middle"
+     id="text17">yes</text>
+  <rect
+     class="exit"
+     x="419.60001"
+     y="72.75"
+     width="218"
+     height="40"
+     rx="5"
+     id="rect17" />
+  <text
+     class="head"
+     x="528.59998"
+     y="97.75"
+     text-anchor="middle"
+     id="text18">return</text>
+  <text
+     class="note"
+     x="528.59998"
+     y="130.75"
+     text-anchor="middle"
+     id="text19">the workgroup rounding overhang,</text>
+  <text
+     class="note"
+     x="528.59998"
+     y="144.75"
+     text-anchor="middle"
+     id="text20">past the edge of the workpiece (§4.3)</text>
+  <!-- ===================== STEP 2 ===================== -->
+  <rect
+     class="compute"
+     x="17.6"
+     y="130.75"
+     width="360"
+     height="48"
+     rx="5"
+     id="rect20" />
+  <text
+     class="head"
+     x="197.60001"
+     y="150.75"
+     text-anchor="middle"
+     id="text21">read the stock column</text>
+  <text
+     class="sub"
+     x="197.60001"
+     y="168.75"
+     text-anchor="middle"
+     id="text22">count from obj1_dataNum, transitions from obj1_flat</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="154.75"
+     r="11"
+     id="circle22" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="158.75"
+     text-anchor="middle"
+     id="text23">2</text>
+  <!-- ===================== STEP 3 ===================== -->
+  <rect
+     class="compute"
+     x="17.6"
+     y="196.75"
+     width="360"
+     height="48"
+     rx="5"
+     id="rect23" />
+  <text
+     class="head"
+     x="197.60001"
+     y="216.75"
+     text-anchor="middle"
+     id="text24">bound the sub-step range [k0, k1]</text>
+  <text
+     class="sub"
+     x="197.60001"
+     y="234.75"
+     text-anchor="middle"
+     id="text25">the sub-positions that can cover this column (§3.4)</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="220.75"
+     r="11"
+     id="circle25" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="224.75"
+     text-anchor="middle"
+     id="text26">3</text>
+  <!-- ===================== STEP 4 ===================== -->
+  <rect
+     class="compute"
+     x="17.6"
+     y="262.75"
+     width="360"
+     height="60"
+     rx="5"
+     id="rect26" />
+  <text
+     class="head"
+     x="197.60001"
+     y="282.75"
+     text-anchor="middle"
+     id="text27">accumulate the Z-envelope (§3.3)</text>
+  <text
+     class="sub"
+     x="197.60001"
+     y="300.75"
+     text-anchor="middle"
+     id="text28">for k in [k0, k1]: zbMin = min of bottoms,</text>
+  <text
+     class="sub"
+     x="197.60001"
+     y="314.75"
+     text-anchor="middle"
+     id="text29">ztMax = max of tops, kept in registers</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="292.75"
+     r="11"
+     id="circle29" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="296.75"
+     text-anchor="middle"
+     id="text30">4</text>
+  <!-- ===================== STEP 5: the early-out ===================== -->
+  <rect
+     class="branch"
+     x="17.6"
+     y="340.75"
+     width="360"
+     height="64"
+     rx="5"
+     id="rect30" />
+  <text
+     class="head"
+     x="197.60001"
+     y="360.75"
+     text-anchor="middle"
+     id="text31">tube-pruning early-out (§3.6)</text>
+  <text
+     class="sub"
+     x="197.60001"
+     y="378.75"
+     text-anchor="middle"
+     id="text32">the tool never covered the column, or</text>
+  <text
+     class="sym-sub"
+     x="197.60001"
+     y="394.75"
+     text-anchor="middle"
+     id="text33">[zbMin, ztMax] lies outside [0, z1) ?</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="372.75"
+     r="11"
+     id="circle33" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="376.75"
+     text-anchor="middle"
+     id="text34">5</text>
+  <text
+     class="no"
+     x="205.60001"
+     y="417.75"
+     id="text35">no</text>
+  <text
+     class="yes"
+     x="395.60001"
+     y="367.75"
+     text-anchor="middle"
+     id="text36">yes</text>
+  <rect
+     class="exit-green"
+     x="419.60001"
+     y="352.75"
+     width="218"
+     height="40"
+     rx="5"
+     id="rect36" />
+  <text
+     class="head"
+     x="528.59998"
+     y="377.75"
+     text-anchor="middle"
+     id="text37">return, nothing written</text>
+  <text
+     class="note"
+     x="528.59998"
+     y="410.75"
+     text-anchor="middle"
+     id="text38">the column is already correct,</text>
+  <text
+     class="note"
+     x="528.59998"
+     y="424.75"
+     text-anchor="middle"
+     id="text39">so its write traffic vanishes</text>
+  <!-- ===================== STEP 6 ===================== -->
+  <rect
+     class="compute"
+     x="17.6"
+     y="422.75"
+     width="360"
+     height="48"
+     rx="5"
+     id="rect39" />
+  <text
+     class="head"
+     x="197.60001"
+     y="442.75"
+     text-anchor="middle"
+     id="text40">subtract</text>
+  <text
+     class="sub"
+     x="197.60001"
+     y="460.75"
+     text-anchor="middle"
+     id="text41">two-pointer merge of the column with [zbMin, ztMax]</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="446.75"
+     r="11"
+     id="circle41" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="450.75"
+     text-anchor="middle"
+     id="text42">6</text>
+  <!-- ===================== STEP 7 ===================== -->
+  <rect
+     class="compute"
+     x="17.6"
+     y="488.75"
+     width="360"
+     height="48"
+     rx="5"
+     id="rect42" />
+  <text
+     class="head"
+     x="197.60001"
+     y="508.75"
+     text-anchor="middle"
+     id="text43">write back in place, store the new count</text>
+  <text
+     class="sub"
+     x="197.60001"
+     y="526.75"
+     text-anchor="middle"
+     id="text44">the trailing zero-fill of unused slots is optional (§6.4)</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="512.75"
+     r="11"
+     id="circle44" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="516.75"
+     text-anchor="middle"
+     id="text45">7</text>
+  <!-- ===================== STEP 8 ===================== -->
+  <rect
+     class="compute-opt"
+     x="17.6"
+     y="554.75"
+     width="360"
+     height="48"
+     rx="5"
+     id="rect45" />
+  <text
+     class="head"
+     x="197.60001"
+     y="574.75"
+     text-anchor="middle"
+     id="text46">optional removal counter</text>
+  <text
+     class="mono"
+     x="197.60001"
+     y="592.75"
+     text-anchor="middle"
+     id="text47">atomicAdd(removed[seg], oldSolid - newSolid)</text>
+  <circle
+     class="badge"
+     cx="17.6"
+     cy="578.75"
+     r="11"
+     id="circle47" />
+  <text
+     class="badge-t"
+     x="17.6"
+     y="582.75"
+     text-anchor="middle"
+     id="text48">8</text>
+  <!-- ===================== DONE ===================== -->
+  <rect
+     class="done"
+     x="97.599998"
+     y="620.75"
+     width="200"
+     height="32"
+     rx="16"
+     id="rect48" />
+  <text
+     class="head"
+     x="197.60001"
+     y="641.75"
+     text-anchor="middle"
+     id="text49">column done</text>
+  <!-- ===================== LEGEND ===================== -->
+  <g
+     id="legend"
+     transform="translate(-22.4,-83.25)">
+    <rect
+       class="compute"
+       x="40"
+       y="758"
+       width="14"
+       height="14"
+       rx="3"
+       id="rect49" />
+    <text
+       class="note"
+       x="60"
+       y="769"
+       id="text50">compute step</text>
+    <rect
+       class="branch"
+       x="170"
+       y="758"
+       width="14"
+       height="14"
+       rx="3"
+       id="rect50" />
+    <text
+       class="note"
+       x="190"
+       y="769"
+       id="text51">branch</text>
+    <rect
+       class="exit-green"
+       x="262"
+       y="758"
+       width="14"
+       height="14"
+       rx="3"
+       id="rect51" />
+    <text
+       class="note"
+       x="282"
+       y="769"
+       id="text52">the early-out added by §3.6, which removes the write of step 7</text>
+  </g>
+  <text
+     class="note"
+     x="17.6"
+     y="708.75"
+     id="text53">Steps 5 and 7 are where this work differs from the straightforward swept kernel; the rest is the standard per-column merge.</text>
+  <metadata
+     id="metadata53">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>Figure 6 - Per-thread control flow of subtract_swept.comp</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
 </svg>

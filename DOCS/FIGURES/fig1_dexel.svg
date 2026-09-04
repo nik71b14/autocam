@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   width="860"
-   height="420"
-   viewBox="0 0 860 420"
-   font-family="Helvetica, Arial, DejaVu Sans, sans-serif"
+   width="797"
+   height="335"
+   viewBox="0 0 797 335"
+   font-family="Helvetica, Arial, 'DejaVu Sans', sans-serif"
    version="1.1"
    id="svg29"
    sodipodi:docname="fig1_dexel.svg"
@@ -11,7 +11,10 @@
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg">
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
   <sodipodi:namedview
      id="namedview29"
      pagecolor="#ffffff"
@@ -21,9 +24,9 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="2.0218321"
-     inkscape:cx="430.0555"
-     inkscape:cy="209.95809"
+     inkscape:zoom="1.0109161"
+     inkscape:cx="394.19693"
+     inkscape:cy="140.96126"
      inkscape:window-width="2560"
      inkscape:window-height="1465"
      inkscape:window-x="0"
@@ -75,34 +78,30 @@
        markerHeight="6"
        orient="auto-start-reverse">
       <path
-         d="M 0 0 L 10 5 L 0 10 z"
+         d="M 0,0 10,5 0,10 Z"
          fill="#7a8ca0"
          id="path1" />
     </marker>
   </defs>
   <!-- ===================== TITLE ===================== -->
-  <text
-     class="title"
-     x="28"
-     y="34"
-     id="text1">Z-transition column representation (single-axis dexel)</text>
   <!-- ===================== LEFT PANEL: X-Z CROSS-SECTION ===================== -->
   <rect
      class="panel"
-     x="36"
-     y="70"
+     x="4.5"
+     y="6.5"
      width="384"
      height="322"
      rx="4"
      id="rect1" />
   <text
      class="caption"
-     x="228"
-     y="91"
+     x="196.5"
+     y="27.5"
      text-anchor="middle"
      id="text2">X–Z cross-section of the stock</text>
   <g
-     id="axes">
+     id="axes"
+     transform="translate(-31.5,-63.5)">
     <path
        class="axis"
        d="M 88,358 V 102"
@@ -133,81 +132,82 @@
   <path
      id="stock"
      class="solid-fill"
-     d="m 96,358 v -22 c 16,-36 34,-131 64,-158 25,-22 45,-2 62,7 16,9 22,25 36,23 26,-4 34,-36 60,-40 18,-3 30,2 42,6 v 184 z" />
+     d="m 64.5,294.5 v -22 c 16,-36 34,-131 64,-158 25,-22 45,-2 62,7 16,9 22,25 36,23 26,-4 34,-36 60,-40 18,-3 30,2 42,6 v 184 z" />
   <line
      class="column"
-     x1="222"
-     y1="104"
-     x2="222"
-     y2="358"
+     x1="190.5"
+     y1="40.5"
+     x2="190.5"
+     y2="294.5"
      id="line5" />
   <text
      class="label-blue"
-     x="181.44061"
-     y="123.52699"
+     x="149.94061"
+     y="60.026993"
      text-anchor="middle"
      id="text6">column (x,y)</text>
   <circle
      class="node"
-     cx="222"
-     cy="185"
+     cx="190.5"
+     cy="121.5"
      r="5"
      id="circle6" />
   <circle
      class="node"
-     cx="222"
-     cy="358"
+     cx="190.5"
+     cy="294.5"
      r="5"
      id="circle7" />
   <text
      class="label"
-     x="229.63498"
-     y="160.47301"
+     x="198.13498"
+     y="96.973007"
      id="text7"><tspan
        sodipodi:role="line"
        id="tspan31"
-       x="229.63498"
-       y="160.47301">transition: z = 415</tspan><tspan
+       x="198.13498"
+       y="96.973007">transition: z = 415</tspan><tspan
        sodipodi:role="line"
        id="tspan32"
-       x="229.63498"
-       y="175.47301">(exit solid)</tspan></text>
+       x="198.13498"
+       y="111.97301">(exit solid)</tspan></text>
   <text
      class="label"
-     x="230.0432"
-     y="333.20517"
+     x="198.5432"
+     y="269.70517"
      id="text8"><tspan
        sodipodi:role="line"
        id="tspan29"
-       x="230.0432"
-       y="333.20517">transition: z = 0</tspan><tspan
+       x="198.5432"
+       y="269.70517">transition: z = 0</tspan><tspan
        sodipodi:role="line"
        id="tspan30"
-       x="230.0432"
-       y="348.20517">(enter solid)</tspan></text>
+       x="198.5432"
+       y="284.70517">(enter solid)</tspan></text>
   <text
      class="label"
-     x="254.49672"
-     y="274.5831"
+     x="222.99672"
+     y="211.0831"
      id="text9">solid</text>
   <text
      class="note"
-     x="128"
-     y="382"
+     x="96.5"
+     y="318.5"
      id="text10">voxels 0..414 are solid; empty above</text>
   <!-- ===================== RIGHT PANEL: ENCODING ===================== -->
   <text
      class="head"
-     x="440"
-     y="95"
+     x="408.5"
+     y="31.5"
      id="text11">Encoding: two flat arrays</text>
   <text
      class="caption"
-     x="440"
-     y="124"
+     x="408.5"
+     y="60.5"
      id="text12">compressedData (all transitions concatenated)</text>
   <g
-     id="cd-cells">
+     id="cd-cells"
+     transform="translate(-31.5,-63.5)">
     <rect
        class="cell"
        x="440"
@@ -263,11 +263,12 @@
   </g>
   <text
      class="note"
-     x="461.76245"
-     y="177.03239"
+     x="430.26245"
+     y="113.53239"
      id="text19">the highlighted column: [0, 415]</text>
   <g
-     id="prefix-sum-data">
+     id="prefix-sum-data"
+     transform="translate(-31.5,-63.5)">
     <text
        class="caption"
        x="440"
@@ -317,7 +318,8 @@
     </g>
   </g>
   <g
-     id="occupancy-box">
+     id="occupancy-box"
+     transform="translate(-31.5,-63.5)">
     <rect
        class="box-orange"
        x="440"
@@ -340,7 +342,8 @@
    id="tspan25">⇔</tspan> (#transitions ≤ z) is odd</text>
   </g>
   <g
-     id="properties-box">
+     id="properties-box"
+     transform="translate(-31.5,-63.5)">
     <rect
        class="box-blue"
        x="440"
@@ -367,4 +370,13 @@
        y="388"
        id="text29">Boolean = merge of sorted lists, per column</text>
   </g>
+  <metadata
+     id="metadata1">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>Figure 1 - Z-transition column representation (single-axis dexel)</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
 </svg>
