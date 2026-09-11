@@ -106,6 +106,8 @@
 \newunicodechar{ₙ}{\textsubscript{n}}
 \fi
 \setcounter{secnumdepth}{0} %% headings carry their own manual numbers
+\setlength{\emergencystretch}{3em} %% relax line breaking (avoid overfull boxes)
+\setlength{\tabcolsep}{3pt}
 %% -----------------------------------------------------
 \begin{document}
 \begin{center}
@@ -320,7 +322,9 @@ stock\textquotesingle s top face: solid from the base up to that face,
 empty above. For a stock that fills the lattice, z\_top coincides with
 the grid depth z1 used as the clamping bound in §3.6 and §4.4.
 
-\includegraphics[width=6.26806in,height=2.63889in]{figures/image1.png}\textbf{Fig.
+\begin{center}\includegraphics[width=6.26806in,height=2.63889in]{figures/image1.png}\end{center}
+
+\textbf{Fig.
 1} The single-axis dexel (Z-transition column) representation. A column
 stores the sorted heights at which occupancy flips; two flat arrays
 encode the whole object, and occupancy at any voxel is recovered by a
@@ -436,7 +440,9 @@ monotonically as s shrinks, approaching the continuous cut from below in
 removed volume. §4.6 discusses how the single-pass swept subtraction
 relates to that limit and to the stamper.
 
-\includegraphics[width=6.26806in,height=2.60069in]{figures/image3.png}\textbf{Fig.
+\begin{center}\includegraphics[width=6.26806in,height=2.60069in]{figures/image3.png}\end{center}
+
+\textbf{Fig.
 2} Stamping versus swept subtraction. Left: many overlapping stamps
 along the path: a coarse step leaves a stepped floor and re-processes
 each column many times (the tool is a ball-end mill: hemisphere tip plus
@@ -486,7 +492,9 @@ the path; for a flat-end cutter the bottom is the same at every covering
 sub-position. The maximum top is the shank top, which lies above the
 stock at every instant.
 
-\includegraphics[width=5.83333in,height=2.44375in]{figures/image5.png}
+\begin{center}\includegraphics[width=5.83333in,height=2.44375in]{figures/image5.png}\end{center}
+
+
 
 \textbf{Fig. 3} The per-column Z-envelope. The three panels share one
 vertical Z scale. (a) Vertical section through the tool axis: the
@@ -566,7 +574,9 @@ early-out before its write-back (Fig. 4b). In-air rapid (G0) moves are
 the same: the tool is above the stock, so every column is a no-op that
 still rewrites its slots (Fig. 4c).
 
-\includegraphics[width=5.83333in,height=2.44375in]{figures/image7.png}
+\begin{center}\includegraphics[width=5.83333in,height=2.44375in]{figures/image7.png}\end{center}
+
+
 
 \textbf{Fig. 4} Tube pruning. (a) A long diagonal segment seen from
 above: the dispatch AABB (dashed) is far larger than the swept band it
@@ -612,7 +622,7 @@ the graphics pipeline. A program is launched by a dispatch that creates
 a grid of workgroups; each workgroup contains a fixed block of threads
 that execute the shader in parallel (in our case, local\_size = 8×8×1,
 so 64 threads per workgroup). Each thread reads its
-gl\_GlobalInvocationID, a three-dimensional index identifying it within
+gl\_\allowbreak GlobalInvocationID, a three-dimensional index identifying it within
 the whole grid. Data is stored in Shader Storage Buffer Objects (SSBOs):
 large GPU-resident arrays that the shader reads and writes. Ordering
 between dependent dispatches is enforced by a memory barrier. In our
@@ -674,7 +684,7 @@ only (Fig. 5a). The implementation reads the two tool extents (w2/2,
 h2/2) separately only because the same structure also holds the
 non-square stock. It then dispatches ⌈bboxW/8⌉ × ⌈bboxH/8⌉ workgroups
 (Fig. 5b), and inside the shader each thread recovers its column as gx =
-baseX+gl\_GlobalInvocationID.x, gy = baseY+gl\_GlobalInvocationID.y
+baseX+gl\_\allowbreak GlobalInvocationID.x, gy = baseY+gl\_\allowbreak GlobalInvocationID.y
 (Fig. 5c).
 
 Rounding up to whole workgroups overshoots the bounding box by up to
@@ -688,7 +698,9 @@ stops before the write-back. Because both corners are clamped, that test
 can never fire on a column inside the bounding box; it is purely a guard
 against the workgroup rounding.
 
-\includegraphics[width=5.83333in,height=2.47292in]{figures/image9.png}
+\begin{center}\includegraphics[width=5.83333in,height=2.47292in]{figures/image9.png}\end{center}
+
+
 
 \textbf{Fig. 5} Mapping compute threads onto the workpiece column grid.
 (a) The host restricts the dispatch to the swept bounding box, the AABB
@@ -710,8 +722,8 @@ the large obj1\_flat buffer is read once and written once per column.
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
 \item
-  Identify the column: recover gx = baseX+gl\_GlobalInvocationID.x and
-  gy = baseY+gl\_GlobalInvocationID.y from the thread\textquotesingle s
+  Identify the column: recover gx = baseX+gl\_\allowbreak GlobalInvocationID.x and
+  gy = baseY+gl\_\allowbreak GlobalInvocationID.y from the thread\textquotesingle s
   position in the dispatch (§4.3), and return immediately if gx ≥ W or
   gy ≥ H.
 \end{enumerate}
@@ -756,7 +768,9 @@ the large obj1\_flat buffer is read once and written once per column.
   optimization loop of §1.1 uses to score candidate toolpaths.
 \end{enumerate}
 
-\includegraphics[width=5.83333in,height=6.49375in]{figures/image10.png}
+\begin{center}\includegraphics[width=5.83333in,height=6.49375in]{figures/image10.png}\end{center}
+
+
 
 \textbf{Fig. 6} Per-thread control flow of subtract\_swept.comp, with
 the step numbers of §4.4. One GPU thread handles one column, and every
@@ -1070,7 +1084,9 @@ diag\_cut (mill\_3, diagonal cuts) & 32.8 ± 1.5 & 10.1 ± 0.3 & 3.23× \\
 air\_moves (mill\_3, air-heavy) & 39.0 ± 1.9 & 5.3 ± 0.4 & 7.45× \\
 \end{longtable}
 
-\includegraphics[width=6.26806in,height=2.19792in]{figures/image12.png}
+\begin{center}\includegraphics[width=6.26806in,height=2.19792in]{figures/image12.png}\end{center}
+
+
 
 \textbf{Fig. 7} Tube pruning on the stress benchmarks, normalized to the
 fused S2 baseline; shorter is faster. Net carving time, Intel Lunar Lake
@@ -1244,7 +1260,9 @@ pruning (S2→S3) are complementary - the first always pays, the second
 pays where the dispatch over-covers. Reproducible via
 \texttt{tools/bench\_matrix.sh}.
 
-\includegraphics[width=6.26806in,height=4.53333in]{figures/image14.png}\textbf{Fig.
+\begin{center}\includegraphics[width=6.26806in,height=4.53333in]{figures/image14.png}\end{center}
+
+\textbf{Fig.
 8} Net carving time per machining workload and refinement level (log
 scale). S0→S1 is the established per-move swept method; S1→S2 is this
 work's fusion - the swept volume computed on the fly and subtracted in
@@ -1679,7 +1697,7 @@ stock Z-range. \\
 Thread & One GPU work-item; here it processes one column. \\
 Workgroup & A block of threads executed together (\texttt{8×8} here). \\
 Dispatch & A launch of a compute shader over a grid of workgroups. \\
-\texttt{gl\_GlobalInvocationID} & A thread's global index within the
+\texttt{gl\_\allowbreak GlobalInvocationID} & A thread's global index within the
 dispatch grid. \\
 SSBO & Shader Storage Buffer Object: a large GPU-resident array. \\
 Memory barrier & A synchronization that orders dependent GPU memory
@@ -1712,21 +1730,21 @@ renders}\label{appendix-b.-machining-operation-renders}}
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-\includegraphics[width=2.3in,height=2.3in]{figures/image16.png} &
-\includegraphics[width=2.3in,height=2.3in]{figures/image17.png} &
-\includegraphics[width=2.3in,height=2.3in]{figures/image18.png} \\
+\includegraphics[width=\linewidth]{figures/image16.png} &
+\includegraphics[width=\linewidth]{figures/image17.png} &
+\includegraphics[width=\linewidth]{figures/image18.png} \\
 square\_600.gcode & diagonal\_cut.gcode & air\_moves.gcode \\
-\includegraphics[width=2.31319in,height=2.31319in]{figures/image19.png}
+\includegraphics[width=\linewidth]{figures/image19.png}
 &
-\includegraphics[width=2.31319in,height=2.31319in]{figures/image20.png}
+\includegraphics[width=\linewidth]{figures/image20.png}
 &
-\includegraphics[width=2.31319in,height=2.31319in]{figures/image21.png} \\
+\includegraphics[width=\linewidth]{figures/image21.png} \\
 contour.gcode & pocket\_axis.gcode & raster\_45.gcode \\
-\includegraphics[width=2.31319in,height=2.31319in]{figures/image22.png}
+\includegraphics[width=\linewidth]{figures/image22.png}
 &
-\includegraphics[width=2.31319in,height=2.31319in]{figures/image23.png}
+\includegraphics[width=\linewidth]{figures/image23.png}
 &
-\includegraphics[width=2.31319in,height=2.31319in]{figures/image24.png} \\
+\includegraphics[width=\linewidth]{figures/image24.png} \\
 Rapids.gcode & localized.gcode & finishing.gcode \\
 \end{longtable}
 
@@ -1775,34 +1793,34 @@ marching cubes using HistoPyramids.} Computer Graphics Forum,
 three-orthogonal dexelfield methods for cutter-workpiece engagement
 calculations in three- and five-axis virtual milling.} The International
 Journal of Advanced Manufacturing Technology, 81(5-8):811-823, 2015.
-https://doi.org/10.1007/s00170-015-7251-7}
+\url{https://doi.org/10.1007/s00170-015-7251-7}}
 
 \textcolor{red}{11. Y. Altintas, P. Kersting, D. Biermann, E. Budak, B. Denkena, I.
 Lazoglu. \emph{Virtual process systems for part machining operations.}
 CIRP Annals, 63(2):585-605, 2014.
-https://doi.org/10.1016/j.cirp.2014.05.007}
+\url{https://doi.org/10.1016/j.cirp.2014.05.007}}
 
 \textcolor{red}{12. X. Cao, G. Zhao, W. Xiao. \emph{Digital Twin-oriented real-time
 cutting simulation for intelligent computer numerical control
 machining.} Proceedings of the Institution of Mechanical Engineers, Part
 B: Journal of Engineering Manufacture, 236(1-2):5-15, 2022.
-https://doi.org/10.1177/0954405420937869}
+\url{https://doi.org/10.1177/0954405420937869}}
 
 \textcolor{red}{13. H. Erdim, I. Lazoglu, B. Ozturk. \emph{Feedrate scheduling
 strategies for free-form surfaces.} International Journal of Machine
 Tools and Manufacture, 46(7-8):747-757, 2006.
-https://doi.org/10.1016/j.ijmachtools.2005.07.036}
+\url{https://doi.org/10.1016/j.ijmachtools.2005.07.036}}
 
 \textcolor{red}{14. W. Li, B. Li, S. He, X. Mao, C. Qiu, Y. Qiu, X. Tan. \emph{A novel
 milling parameter optimization method based on improved deep
 reinforcement learning considering machining cost.} Journal of
 Manufacturing Processes, 84:1362-1375, 2022.
-https://doi.org/10.1016/j.jmapro.2022.11.015}
+\url{https://doi.org/10.1016/j.jmapro.2022.11.015}}
 
 \textcolor{red}{15. Y. Zhang, X. Xu, Y. Liu. \emph{Numerical control machining
 simulation: a comprehensive survey.} International Journal of Computer
 Integrated Manufacturing, 24(7):593-609, 2011.
-https://doi.org/10.1080/0951192X.2011.566283}
+\url{https://doi.org/10.1080/0951192X.2011.566283}}
 
 \textbf{Declarations}
 
