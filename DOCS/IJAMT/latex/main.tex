@@ -114,7 +114,7 @@
 \bigskip
 
 
-Nicola Scuor¹*, Paolo Gallina¹, Philip Long², Stefano Seriani¹
+Nicola Scuor¹*, Philip Long², Stefano Seriani¹, Paolo Gallina¹
 
 ¹ Department of Engineering and Architecture, University of Trieste, Via
 Alfonso Valerio 6/1, 34127 Trieste, Italy
@@ -129,17 +129,17 @@ ORCID
 
 Nicola Scuor: 0000-0002-5073-637X
 
-Paolo Gallina: {[}to be inserted{]}
-
 Philip Long: 0000-0002-0784-8720
 
 Stefano Seriani: 0000-0002-5563-9595
 
+Paolo Gallina: {[}to be inserted{]}
+
 \hypertarget{abstract}{%
 \subsection{Abstract}\label{abstract}}
 
-Material-removal (carving) simulation - computing the workpiece geometry
-that a milling program actually produces - is a core primitive of
+Material-removal (carving) simulation, i.e. computing the workpiece geometry
+that a milling program actually produces, is a core primitive of
 computer-aided manufacturing: toolpath verification, cutting-force and
 cutter-workpiece engagement estimation, machining digital twins, and
 process- or toolpath-optimization and learning loops all rely on it, and
@@ -148,7 +148,7 @@ inside a search, so its throughput sets the scale of study that is
 feasible at all \textcolor{red}{[10-15]}. We present a GPU algorithm for this
 simulation that is, to the best of our knowledge, the fastest reported
 for dexel-based milling material removal. It is built on a single-axis
-dexel field - a grid of columns storing sorted height transitions - in
+dexel field, a grid of columns storing sorted height transitions, in
 which Boolean subtraction becomes an independent per-column merge that
 maps one workpiece column to one GPU thread. Against two established
 baselines, per-step stamping and swept-volume subtraction through a
@@ -161,7 +161,7 @@ for dispatched columns the tool never touches, giving 3.2 to 7.4 times
 on diagonal and air-heavy programs, at up to 8\% cost on dense
 axis-aligned rasters. Two negative results and one positive one support
 a single diagnosis: the levers that pay remove memory-write traffic, not
-arithmetic or launched threads - the simulation is bound by write
+arithmetic or launched threads: the simulation is bound by write
 bandwidth to the working-set buffer. Every optimization level is
 byte-identical, and exact against an analytic reference on axis-aligned
 moves. The method is a drop-in accelerator for the many CAM workflows
@@ -182,13 +182,13 @@ tool\textquotesingle s swept volume from a stock model. It is a
 workhorse of computer-aided manufacturing: it underlies toolpath
 verification and gouge or collision checking \textcolor{red}{[15]}, cutting-force and
 cutter-workpiece engagement estimation \textcolor{red}{[10, 11]}, machining digital
-twins \textcolor{red}{[12]}, and - increasingly - optimization \textcolor{red}{[13]} and learning
+twins \textcolor{red}{[12]}, and -increasingly- optimization \textcolor{red}{[13]} and learning
 \textcolor{red}{[14]} loops that search over candidate toolpaths and score each
 against a target. In all of these the simulator is called repeatedly,
 from many times in an interactive verifier to millions inside a search
 or a training run, so its raw throughput at a fixed, adequate accuracy
 sets the scale of study that is feasible at all. A fast and accurate
-forward model - one that, given a toolpath, tool and stock, computes the
+forward model, i.e. one that, given a toolpath, tool and stock, computes the
 resulting workpiece - is therefore the enabling primitive, and it is the
 object of this paper.
 
@@ -198,8 +198,8 @@ method\textquotesingle s geometric error against the continuously-swept
 cut is zero on axis-aligned moves and 0.08 \% on diagonals, measured
 against an analytic reference in §4.6, so accuracy here is a constraint
 to hold, not the quantity we optimize. We restrict the scope to milling
-in which the tool translates with its axis fixed to Z - three-axis
-machining - and to programs of linear moves, G00 and G01; circular
+in which the tool translates with its axis fixed to Z (three-axis
+machining) and to programs of linear moves, G00 and G01; circular
 interpolation is handled upstream by rendering arcs as polylines, and
 each resulting segment is the input the method takes.
 
