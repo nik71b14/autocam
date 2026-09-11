@@ -83,12 +83,9 @@
 \usepackage[margin=1in]{geometry}
 \ifPDFTeX
 \usepackage{newunicodechar}
-\newunicodechar{§}{\S }
-\newunicodechar{×}{\ensuremath{\times}}
-\newunicodechar{±}{\ensuremath{\pm}}
-\newunicodechar{→}{\ensuremath{\rightarrow}}
+% Only symbols NOT already defined by the LaTeX kernel's utf8 support
+% (recent TeX Live); the predefined ones are left to the kernel to avoid warnings.
 \newunicodechar{≈}{\ensuremath{\approx}}
-\newunicodechar{°}{\ensuremath{{}^\circ}}
 \newunicodechar{Δ}{\ensuremath{\Delta}}
 \newunicodechar{≤}{\ensuremath{\leq}}
 \newunicodechar{≥}{\ensuremath{\geq}}
@@ -104,12 +101,9 @@
 \newunicodechar{⇒}{\ensuremath{\Rightarrow}}
 \newunicodechar{⊕}{\ensuremath{\oplus}}
 \newunicodechar{Σ}{\ensuremath{\Sigma}}
-\newunicodechar{¹}{\textsuperscript{1}}
-\newunicodechar{²}{\textsuperscript{2}}
 \newunicodechar{₁}{\textsubscript{1}}
 \newunicodechar{₂}{\textsubscript{2}}
 \newunicodechar{ₙ}{\textsubscript{n}}
-\newunicodechar{ü}{\"u}
 \fi
 \setcounter{secnumdepth}{0} %% headings carry their own manual numbers
 %% -----------------------------------------------------
