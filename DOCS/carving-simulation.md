@@ -2,8 +2,8 @@
 
 **Status:** working technical note (basis for a scientific article).
 **Scope:** the GPU material-removal ("carving") pipeline of `autocam`: representation, baseline
-algorithm, the optimizations applied, their correctness argument, and measured results — including a
-documented negative result.
+algorithm, the optimizations applied, their correctness argument, and measured results — including
+documented negative results and the memory-traffic optimization they localize.
 
 ---
 
@@ -74,7 +74,7 @@ The tool is positioned by an integer offset; the stock-frame placement uses
 transitions are shifted by `translate.z − D_tool/2`.
 
 **Coordinate note.** The current pipeline operates in **voxel units**, not millimetres; mapping to
-physical units is future work (Section 8).
+physical units is future work (Section 9).
 
 ---
 
@@ -128,9 +128,11 @@ segment, `tool ⊕ p₀p₁`).
 
 **Correctness (order-independence).** Set difference distributes over unions and is
 order-independent: `A \ (B₁ ∪ … ∪ Bₙ) = (((A \ B₁) \ B₂) … \ Bₙ)`. Hence subtracting the swept volume
-once is **equivalent** to subtracting the tool at every sampled position along the segment. It is in
-fact *more* faithful than discrete stamping, which leaves a spurious **scallop** between samples in
-the feed direction; the swept formulation removes that artefact.
+once is **equivalent** to subtracting the tool at every sampled position *on the same (Chebyshev)
+grid*. Relative to a *coarse* stamper the swept envelope also removes the inter-sample stepping that
+stamper leaves; relative to the continuum it slightly **under-removes** the deepest sub-voxel
+excursions (a column's deepest coverage can fall at a fractional tool centre between integer samples).
+See §6 for the measured direction and magnitude.
 
 **On-the-fly swept column (no intermediate buffer).** We never materialize the swept tool. A single
 fused compute shader (`subtract_swept.comp`), dispatched over the swept bounding box, computes for
@@ -149,8 +151,10 @@ for k = k0 .. k1:                         # sub-positions sampled at ~1 voxel sp
 ```
 
 `K = max(|Δx|, |Δy|, |Δz|)` (Chebyshev length) guarantees ≤1 voxel motion per sub-step, so the
-sampled centres hit **every integer position** the discrete stamper would, making the swept result
-**bit-identical** to per-step stamping (modulo the intended scallop removal). The envelope uses the
+sampled centres hit **every integer position on that grid**. The swept result is **byte-identical
+across the swept variants** (S1/S2/S3, §6); against the practical stamper it is *not* byte-identical —
+the stamper samples a different grid, and the swept slightly under-removes vs the continuum (§6). The
+envelope uses the
 column's lowest/highest transition, i.e. its bounding solid interval; this is exact for tools that
 are **convex in Z** (ball, flat, conical, bull-nose), and degrades gracefully (slight over-removal)
 for non-convex tools — identical behaviour to the discrete stamper.
@@ -212,9 +216,14 @@ Every optimization is validated against a strong invariant: the **residual solid
 the carved stock, computed offline from the saved `.bin` as the per-column alternating sum of
 transitions, `Σ_columns Σ_intervals (topᵢ − bottomᵢ)`.
 
-- **Swept vs. legacy stamping.** On `square_600` the removed-volume ratio swept/legacy is **0.9993**
-  (0.07 % difference) — the expected scallop-removal/discretization residue, confirming geometric
-  equivalence.
+- **Swept vs. legacy stamping (not a scallop).** On `square_600` the swept/legacy removed-volume ratio
+  is **0.99949** at the default step — the swept removes ≈0.05 % *less*, and a finer stamper removes
+  progressively *more*, converging toward the continuum. The sign rules out a scallop (which would
+  leave the stamper removing less): the effect is a bounded sub-voxel **under-removal** by the swept
+  envelope, isolated on a single segment (≈0.05 % axis-aligned, ≈0.15 % at 45°, vs a quarter-voxel
+  stamper). A separate off-by-one in the legacy reference — it skipped each segment's start sample —
+  was found and **fixed**; on `square_600` its start is in-air, so that fix leaves this ratio
+  unchanged. The stamper is a coarse timing/behavioural reference, not a geometric ground truth.
 - **Bit-exactness across §5.3–5.4.** After sub-step bounding and after GPU compaction, the residual
   solid is **identical to the byte**: `square_600` = 281 165 072 voxels; `star_pocket` (diagonal,
   exercises the substep fallback) = 462 722 118 voxels.
@@ -237,7 +246,7 @@ steady state:
 | §5.4 GPU compaction | 9 | total ~67 ms | read-back 72→8 ms |
 | §5.3 substep bounding | 9 | net carving ~26 ms, total ~40 ms | |
 
-Overall: **~1320 ms → ~40 ms total (~33×)**, net GPU carving ~26 ms, geometry bit-identical.
+Overall: **~1232 ms → ~40 ms total (~31×)**, net GPU carving ~26 ms, geometry bit-identical.
 
 **Where the time now goes** (post-optimization): dispatch enqueue ~0.4 ms (flat in segment count:
 9→202 segments stays ~0.4 ms — confirming the per-segment "push" to the GPU is *not* a bottleneck;
@@ -245,9 +254,70 @@ tool and stock are uploaded once); GPU carving ~26 ms; read-back/compaction ~14 
 is dominated by the **per-column merge over the 128 MB unpacked stock buffer** (strided access),
 i.e. it is **memory-bound**.
 
+### 7.1 A cross-workload matrix: established methods vs. this work
+
+The single-benchmark figures above track one program; to separate what a *known* method already buys
+from this work's contributions, we ran a suite of machining workloads that stress different axes, at
+**four** refinement **levels**, all on the **same binary, representation and GPU** — an apples-to-apples
+comparison. We deliberately did **not** quote other authors' millisecond figures (meaningless across
+hardware, representation, tool and resolution); instead each level is *our* fair, optimized
+implementation of the corresponding algorithm class, anchored to the literature it represents:
+
+- **S0 — per-step stamping** — the classic z-map/dexel display method (van Hook 1986): the tool is
+  stamped at ~1-voxel jog steps (`--legacy`).
+- **S1 — swept, external buffer** — the straightforward per-move swept implementation (multi-/tri-dexel
+  class; Müller & Surmann 2003; Tukora & Szalay 2012; Inui et al. 2019): the swept volume is
+  materialized in a separate full-size buffer, then subtracted (`--legacy-external-buffer`).
+- **S2 — swept, fused in-place** — *this work's fusion*: the swept envelope is computed on the fly and
+  subtracted in place, with no intermediate buffer (§5.2; `AUTOCAM_SWEPT_SKIP=0`).
+- **S3 — + tube pruning + in-air skip** — this work, on top of S2 (§8.2).
+
+The design decision — fuse rather than materialize — is isolated as the single step **S1→S2**.
+
+Workloads (small `hemispheric_mill_3` tool, 32 voxels; `carving netto`, min of 5 interleaved runs,
+Intel iris; all levels bit-exact):
+
+| Workload (what it stresses) | S0 | S1 | S2 | S3 | S1→S2 | S2→S3 | S0→S3 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| *what the level is* | *stamping* | *swept, ext. buffer* | *swept, fused* | *+ prune + air-skip* | *(fusion)* | *(prune)* | |
+| *attribution* | *van Hook* | *straightforward swept* | *this work* | *this work* | | | |
+| `contour` — axis-aligned perimeter | 46.5 | 9.47 | 3.89 | 4.25 | **2.43×** | 0.92× | 10.9× |
+| `pocket_axis` — axis-aligned raster | 117.1 | 16.4 | 7.71 | 8.68 | **2.13×** | 0.89× | 13.5× |
+| `raster45` — 45° diagonal raster | 191.9 | 46.6 | 37.2 | 13.6 | 1.25× | **2.74×** | 14.1× |
+| `rapids` — scattered cuts, long air moves | 72.2 | 17.9 | 12.1 | 6.68 | 1.48× | **1.81×** | 10.8× |
+| `localized` — small corner feature | 37.7 | 11.7 | 5.22 | 4.05 | **2.24×** | 1.29× | 9.3× |
+| `finishing` — fine-stepover raster | 192.8 | 24.1 | 12.5 | 13.6 | **1.93×** | 0.92× | 14.2× |
+
+Reading: **S0→S1 (≈3–8×)** is the per-move swept formulation over per-step stamping — the established
+gain. **S1→S2 (≈1.25–2.4×, geomean ≈1.9×)** is *this work's fusion*: computing the envelope on the fly
+and subtracting it in place, instead of materializing the swept volume in a buffer and subtracting it in
+a second pass, is a consistent speed win *and* removes a full-size resident buffer (below). **S2→S3** is
+this work's pruning, **workload-dependent by construction**: it removes the over-dispatch of
+*non-axis-aligned* segments (45° raster **2.74×**) and *in-air* rapids (**1.81×**), is roughly neutral on
+axis-aligned programs, and costs a few percent on dense axis-aligned rasters (the per-column branch).
+Reproducible via `tools/bench_matrix.sh`.
+
+The matrix reports *speed*, but each step also shrinks memory. The fusion (S1→S2) is the clearest case:
+the external-buffer swept (S1) needs a full-size **128 MB twin** of the working buffer to hold the
+materialized swept volume (2× resident) and round-trips the envelope through it, whereas the fused kernel
+(S2) keeps only an O(1) per-column envelope — so fusing **halves resident memory** on top of the ≈1.9×.
+The swept pipeline also compacts the read-back to ~8 MB instead of 128 MB (§5.4); the pruning step (S3)
+removes off-band/off-Z write traffic (§8.2); and the optional sparse backend cuts the resident footprint
+to ~8 MB (~15×) for localized work (§8.4). So every step pays in both time *and* memory.
+
+![Net carving time per machining workload × refinement level (log scale): S0→S1 established per-move
+swept; S1→S2 is this work's fusion (no external buffer; also halves memory); S2→S3 is this work's tube
+pruning, where the dispatch over-covers.](figures/fig9_matrix.svg)
+
 ---
 
-## 8. A negative result: directional-envelope acceleration (RMQ)
+## 8. Negative results (and the one lever that worked)
+
+Three follow-up experiments probed the post-§7 bottleneck. Read together they localize it precisely:
+the two that attacked **compute** or **launch count** failed, and the one that attacked **memory-write
+traffic** succeeded — exactly what the "bandwidth-bound" diagnosis of §7 predicts.
+
+### 8.1 Directional-envelope acceleration (RMQ) — reverted
 
 We attempted to remove the per-column sub-step loop of §5.2 by precomputing, per tool, **directional
 Z-envelopes** as range-minimum/maximum sparse tables (RMQ): for an axis-aligned constant-Z move, the
@@ -260,13 +330,110 @@ sub-step loop. The implementation was exact (bit-identical residual volume on `s
 ~22→18 ms; `pocket` ~60→40 ms), at the cost of ~8 MB of per-tool tables, a build pass, and shader
 branching. The reason is informative: eliminating the envelope computation **exposed** that the
 dominant cost is not the envelope but the **memory-bound per-column merge over the 128 MB stock
-buffer** (Section 7), plus the diagonal/in-air rapid moves that use the slower fallback. The change
-was **reverted**.
+buffer** (Section 7). The change was **reverted**. Lesson: once per-step overheads and algorithmic
+redundancy are gone, *compute* micro-optimization yields diminishing returns — the ceiling is memory.
 
-The lesson for the article: once per-step overheads and algorithmic redundancy are removed,
-the simulator is **bandwidth-bound on the working-set buffer**; further *compute* micro-optimization
-yields diminishing returns. The remaining levers are architectural (data layout / working-set size)
-or shift the bottleneck out of the inner simulation entirely (Section 9).
+### 8.2 Tube pruning — a win, by attacking memory traffic instead
+
+The swept subtraction dispatches one thread per stock column over the **axis-aligned bounding box of
+the two tool-centre endpoints, dilated by the tool footprint**. For an axis-aligned move that AABB
+already equals the swept band, but for a **diagonal** move of length `L` and tool footprint `D` it is
+`≈ (0.7L + D)²` columns while the tool only sweeps `≈ L·D` — and every over-covered column still
+rewrote all `MAX_TRANSITIONS = 32` flat-buffer slots for a no-op (the shader had no early-out before
+its write-back). In-air rapid (G0) moves are the same: the tool is above the stock, so every column is
+a no-op that still rewrites 32 slots.
+
+A one-line early-out fixes this: before the merge/write-back, `return` when the tool never covers the
+column (`hasMat == false`) or its removed interval lies entirely outside the stock's Z-range
+(`zbMin ≥ z1 || ztMax ≤ 0`). This leaves the column untouched (correct — it is unchanged) and removes
+the **write** traffic, which is the bottleneck; it is **bit-exact** (byte-identical output; residual
+volume matches the references) and gated by an `enableSkip` uniform (env `AUTOCAM_SWEPT_SKIP`, default
+on) so the baseline is A/B-benchmarkable with the same binary.
+
+**Outcome (real GPU, same Lunar Lake class):** axis-aligned ~1× (the AABB already equals the tube),
+a 45° raster ~**2.6–2.9×**, long diagonal cuts ~**5×**, in-air rapids ~**7.6×**; all bit-exact. The
+win requires segment length `L ≫ D`: short-segment programmes (`square_600`, `star_pocket`, `pocket`
+with the 256-voxel `hemispheric_mill_10`) show ~nothing, so a demonstrator needs a small tool
+(`hemispheric_mill_3`, 32 voxels) and long non-axis-aligned segments (`gcode/bench_complex.gcode`,
+`tools/bench_swept.sh`). This is the complement of §8.1: the lever that pays is the one that removes
+**memory traffic** (fewer column rewrites), not the one that removes **compute** (RMQ).
+
+**Segment-level pruning (in-air skip).** The same reasoning applies one level up, on the host: if the
+tool's Z-extent over a whole segment cannot reach the stock's `[0, z1)` range — the common case for an
+in-air G0 rapid, which maps below the stock under the inverted-Z convention — the segment removes
+nothing and its **entire dispatch is skipped**, not merely pruned per column. Rapids become essentially
+free (a synthetic all-rapid program: ~2900×) and every program with repositioning moves speeds up (the
+`rapids` workload of §7.1, 2.15×); it is host-side, gated by the same `AUTOCAM_SWEPT_SKIP`, and
+bit-exact.
+
+### 8.3 Tube dispatch (tiling) — a second negative result
+
+Encouraged by §8.2, we tried to also avoid *launching* the off-tube threads (each still does a
+per-column counter read plus the early-out) by **tiling the dispatch along the motion** so it follows
+the swept band instead of the full AABB. Each tile reuses the *same* full-segment envelope uniforms —
+so every column is computed identically to the single dispatch — and adjacent tiles overlap at the
+joins (idempotent) separated by a `GL_SHADER_STORAGE_BARRIER_BIT`, keeping the result **bit-exact**.
+
+**Outcome:** ~**2× slower** than §8.2 alone (tube/skip ≈ 0.5–0.88× across the diagonal benchmarks).
+The per-tile barriers **serialize** the tiles and the joins **double-process** columns, and that
+synchronization cost exceeds the thread-launch saving — because §8.2 already made the off-tube threads
+cheap (a counter read, no write). **Reverted.** This is the twin of §8.1: once the memory-write
+bottleneck is removed, cutting the *number of launched columns* yields negative returns on
+synchronization. The only variant that might beat §8.2 is a compacted band-column index (one thread
+per band column, no overlap, no barriers), but the per-segment index build likely does not pay either.
+
+### 8.4 Working-set layout: a sparse tiled study
+
+The last lever §8.3 pointed to is the working set itself: the 128 MB buffer is ~16× padding
+(`MAX_TRANSITIONS = 32` vs. the 2–4 real transitions per column). We built a full alternative backend
+(`AUTOCAM_CARVE_BACKEND=sparse`, selectable at runtime for A/B) that stores the stock in `32×32`-column
+**tiles** and keeps untouched tiles UNIFORM (O(1)), materializing a tile only when a segment's bounding
+box first touches it — output byte-identical to the flat backend. It isolates two effects:
+
+- **Per-carve bandwidth is bounded by the swept bounding box, not the buffer size.** A single carve
+  already touches only its bbox columns in *both* backends, so tiling does **not** reduce the carve's
+  traffic *volume*; it only improves access *locality* (the strided-access problem of §7: in the flat
+  buffer a bbox's columns are scattered ~`W·32` apart, in a tile they are compact). Measured:
+  **~1.1×** (`square_600` 1.09×, `bench_complex` 1.11×, `pocket` 1.15×) — real but modest.
+- **Footprint is a conditional win, tied to locality.** The pool holds only materialized tiles, so a
+  *localized* program uses a fraction of the flat buffer while whole-stock machining touches most tiles:
+
+  | Workload | materialized / 1024 tiles | pool footprint (flat = 122 MB) |
+  |---|--:|--:|
+  | `rapids`, `localized` | 49–56 | **8 MB** (~15×) |
+  | `finishing`, `contour` | 149–181 | 32 MB |
+  | `pocket_axis` | 470 | 64 MB |
+  | `raster45` (covers the stock) | 736 | 128 MB (no win) |
+
+  This is a **memory/scale** lever — it enables finer resolutions and larger stocks for localized work
+  and shrinks init/read-back to the touched fraction — **not** a carve-speed lever; host-side
+  materialization even makes whole-stock programs slower. `SPARSE_DBG=1` reports the footprint.
+
+### 8.5 Synthesis — a map of the bottleneck
+
+Five levers, one conclusion. The two that **remove memory traffic on the over-dispatched bounding box**
+both pay: **fusing away the swept-volume round-trip** (§7.1, S1→S2 — always ~1.9× and halves resident
+memory) and **tube pruning + in-air skip** of the off-band/off-Z write-back (§8.2, S2→S3 — where the
+dispatch over-covers). The three that attack something else — **compute** (§8.1, RMQ), **launched-thread
+count** (§8.3, tiled dispatch) or **working-set size** (§8.4, sparse tiling) — yield diminishing,
+negative or footprint-only returns. The simulator is **bbox-bandwidth-bound**, and the productive
+optimization is the one that removes bbox traffic. The cross-workload matrix (§7.1) shows this: the
+established per-move swept (S0→S1) gives the gain the literature already delivers, and this work's fusion
+(S1→S2) and pruning (S2→S3) each strip traffic on top. Remaining directions leave the inner loop
+entirely (Section 9).
+
+**Portability (why this is not machine-specific).** The diagnosis is structural, not an artefact of the
+test iGPU. The per-column merge rewrites all `MAX_TRANSITIONS = 32` slots and does only a few integer
+comparisons per 4-byte transition — an **arithmetic intensity ≪ 1 op/byte**, one to three orders of
+magnitude below the ridge point of any GPU roofline — so the kernel is memory-bound on *every* GPU, and
+**more** so on discrete NVIDIA parts (higher compute-to-bandwidth ratio). The representation, the
+bit-exactness argument, and the *geometric* workload dependence of pruning transfer unchanged; only
+magnitudes shift. Two items are API/occupancy-specific and merit re-measurement: the tiled-dispatch
+negative result (§8.3) leans on OpenGL's coarse `glMemoryBarrier`/dispatch model, which CUDA/Vulkan
+finer synchronization might rescue; and the read-back compaction (§5.4) matters *more* on a discrete
+card, where the 128 MB unpacked buffer would cross PCIe. The pipeline uses only portable primitives
+(SSBOs, dispatch, a storage barrier) — no subgroup/tensor/RT-core features — so a Vulkan or CUDA port is
+a direct transliteration.
 
 ---
 

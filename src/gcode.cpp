@@ -389,15 +389,14 @@ void GCodeInterpreter::executeCommand(const std::string& line) {
       currentFeedRate = state.feedRate;
     }
 
-    // Store the toolpath point if previewing
+    // Store the toolpath point if previewing. Keep the feed and the rapid/cut
+    // distinction: the fitness evaluator needs them for the cycle-time and
+    // air-move metrics (getToolpath otherwise collapses G0 and G1).
     if (previewMode) {
       toolpath.push_back({
-          .position = targetPos
-          // .start = startPos,
-          // .end = targetPos,
-          // .feedRate = currentFeedRate,
-          // .tool = currentTool,
-          // .spindleSpeed = spindleSpeed
+          .position = targetPos,
+          .feedRate = static_cast<float>(currentFeedRate),
+          .rapid = (cmd == "G0"),
       });
     }
 

@@ -16,6 +16,12 @@ layout(std430, binding = 0) buffer Obj1FlatData { uint obj1_flatData[]; };
 layout(std430, binding = 1) buffer Obj1DataNum { uint obj1_dataNum[]; };
 layout(std430, binding = 2) readonly buffer Obj2CompressedData { uint obj2_compressedData[]; };
 layout(std430, binding = 3) readonly buffer Obj2PrefixSumData { uint obj2_prefixSumData[]; };
+// [segmentIndex] accumulates the voxels removed by this dispatch; only touched when
+// countRemoved != 0 (fitness evaluator: per-segment material-removal / engagement metric).
+layout(std430, binding = 4) buffer RemovedBuf { uint removedCount[]; };
+// Sparse tiled backend only (tiled != 0): tile -> pool block index (>=0), or -1 if the
+// tile is UNIFORM (not materialized). Untouched by the flat path (binding may be unbound).
+layout(std430, binding = 5) readonly buffer TileDirBuf { int tileDir[]; };
 
 uniform int w1, h1, z1;       // workpiece grid
 uniform int w2, h2, z2;       // tool grid
@@ -24,17 +30,58 @@ uniform int baseX, baseY;     // workpiece-space origin of this dispatch (swept 
 uniform ivec3 translateStart; // tool-center (workpiece coords) at the segment start
 uniform ivec3 translateDelta; // translate(end) - translate(start)
 uniform int numSubsteps;      // sub-positions sampled along the segment (>= 0)
+uniform int countRemoved;     // 1 = accumulate removed voxels into removedCount[segmentIndex], 0 = off (no cost)
+uniform int segmentIndex;     // slot in removedCount[] for this segment (valid only when countRemoved != 0)
+uniform int enableSkip;       // 1 = prune no-op columns (Step 1); 0 = baseline (rewrite every column)
+// Sparse tiled backend (AUTOCAM_CARVE_BACKEND=sparse): when tiled != 0 the workpiece
+// buffers are laid out per TILE (tileTS×tileTS columns per tile, tileNX tiles per row)
+// instead of row-major; the per-column stride is still `maxTransitions`. When tiled==0
+// the addressing is the original row-major flat buffer (default, unchanged).
+uniform int tiled;            // 0 = flat row-major (default), 1 = tiled layout
+uniform int tileTS;           // tile side in columns (tiled only)
+uniform int tileNX;           // tiles per row = ceil(w1/tileTS) (tiled only)
+// Trailing zero-fill of unused column slots. 1 = zero slots [writeCount, maxTransitions)
+// (default). 0 = leave them as-is: byte-identical output (occupancy reads only the first
+// obj1_dataNum[col] slots) but far less write traffic on active columns. Benchmark lever
+// (AUTOCAM_SWEPT_ZEROFILL) — see the paper's cache-line discussion.
+uniform int zeroFill;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Solid-voxel count of a workpiece column = total length of its "inside" runs, using
+// the SAME parity convention as the occupancy read-back: paired transitions bound a
+// run, and an unpaired final transition means the column stays solid up to the top z1.
+uint columnSolid(uint base, uint n) {
+    uint s = 0u;
+    uint k = 0u;
+    for (; k + 1u < n; k += 2u) s += obj1_flatData[base + k + 1u] - obj1_flatData[base + k];
+    if (k < n) s += uint(z1) - obj1_flatData[base + k];  // unpaired last transition -> solid to top
+    return s;
+}
 
 void main() {
     uint gx = uint(baseX) + gl_GlobalInvocationID.x;
     uint gy = uint(baseY) + gl_GlobalInvocationID.y;
     if (gx >= uint(w1) || gy >= uint(h1)) return;
 
-    uint idx1 = gx + gy * uint(w1);
-    uint start1 = idx1 * maxTransitions;
-    uint count1 = obj1_dataNum[idx1];
+    // Column addressing: row-major flat (tiled==0) or per-tile (tiled!=0). Both use
+    // a fixed per-column stride `maxTransitions`; only the column ordering differs.
+    uint countIdx;
+    if (tiled != 0) {
+        uint tx = gx / uint(tileTS), ty = gy / uint(tileTS);
+        int block = tileDir[tx + ty * uint(tileNX)];
+        if (block < 0) return;  // UNIFORM tile not materialized (dispatched tiles are always materialized)
+        uint lcol = (gx - tx * uint(tileTS)) + (gy - ty * uint(tileTS)) * uint(tileTS);
+        countIdx = uint(block) * uint(tileTS) * uint(tileTS) + lcol;
+    } else {
+        countIdx = gx + gy * uint(w1);
+    }
+    uint start1 = countIdx * maxTransitions;
+    uint count1 = obj1_dataNum[countIdx];
+
+    // Snapshot the column's solid before the subtract (the writeback below overwrites
+    // obj1_flatData in place); the removed voxels are oldSolid - newSolid afterwards.
+    uint oldSolid = (countRemoved != 0) ? columnSolid(start1, count1) : 0u;
 
     // --- (1) Swept-tool column: Z envelope of the tool over the segment ---------
     int zbMin = 2147483647;
@@ -93,6 +140,18 @@ void main() {
 
     uint count2 = hasMat ? 2u : 0u;  // swept-tool column = single interval [zbMin, ztMax]
 
+    // Fast skip (swept "tube" pruning): if the swept tool never covers this column
+    // (hasMat == false), or its removed interval lies entirely outside the stock's
+    // Z-range [0, z1), the subtract below is a no-op that would still rewrite all
+    // MAX_TRANSITIONS slots. Return now, leaving the column untouched (correct: it is
+    // unchanged) and skipping that write traffic. This makes the columns the dispatch
+    // over-covers on DIAGONAL moves (AABB >> swept band) and IN-AIR (G0) moves cheap;
+    // axis-aligned dispatches are fully covered, so they are unaffected and bit-exact.
+    // Removed-voxel counter stays consistent: removed == 0 here, so the skipped
+    // atomicAdd(oldSolid - newSolid) would have added 0.
+    // Gated by enableSkip so the baseline (AABB rewrite) can be benchmarked A/B.
+    if (enableSkip != 0 && (!hasMat || zbMin >= z1 || ztMax <= 0)) return;
+
     // --- (2) Subtract [zbMin, ztMax] from the workpiece column ------------------
     uint i1 = 0u, i2 = 0u;
     uint outCount = 0u;
@@ -129,6 +188,13 @@ void main() {
         int z = int(localOut[i]);
         if (z >= 0 && z < z1) obj1_flatData[start1 + writeCount++] = uint(z);
     }
-    for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
-    obj1_dataNum[idx1] = writeCount;
+    if (zeroFill != 0) {
+        for (uint i = writeCount; i < maxTransitions; ++i) obj1_flatData[start1 + i] = 0u;
+    }
+    obj1_dataNum[countIdx] = writeCount;
+
+    if (countRemoved != 0) {
+        uint newSolid = columnSolid(start1, writeCount);
+        if (oldSolid > newSolid) atomicAdd(removedCount[segmentIndex], oldSolid - newSolid);
+    }
 }

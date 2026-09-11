@@ -14,6 +14,7 @@
 #include "GLUtils.hpp"
 #include "boolOps.hpp"  // BoolOps + VoxelObject
 #include "cli.hpp"
+#include "meshDisplay.hpp"
 #include "modes.hpp"
 #include "voxelViewer.hpp"
 
@@ -45,6 +46,16 @@ int runView(const CliArgs& args) {
   if (!ok) {
     std::cerr << "Failed to load voxel object: " << binPath << "\n";
     return EXIT_FAILURE;
+  }
+
+  // --mesh / --out-mesh: show (and/or save) a marching-cubes mesh instead of the
+  // raymarcher. --out-mesh alone works headless (no window). --mesh-step subsamples.
+  const std::string outMesh = args.get("--out-mesh", "");
+  if (args.has("--mesh") || !outMesh.empty()) {
+    const int meshStep = args.getInt("--mesh-step", 1);
+    const int meshSmooth = args.getInt("--smooth", 0);  // 0 = GPU smooth normals only; >0 = CPU Taubin
+    const bool useGpu = !args.has("--cpu");
+    return showVoxelObjectAsMesh(obj, meshStep, meshSmooth, outMesh, args.has("--mesh"), useGpu) ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
   // VoxelViewer manages its own OpenGL context/window for the render loop.

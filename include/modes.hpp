@@ -20,5 +20,8 @@ int runSimulate(const CliArgs& args);
 // view: load a .bin voxel object and show it with the raymarching viewer.
 int runView(const CliArgs& args);
 
+// fitness: headless-evaluate a G-code gene against a target part (for the GA).
+int runFitness(const CliArgs& args);
+
 // Print top-level usage/help.
 void printUsage();

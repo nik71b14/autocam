@@ -4,7 +4,9 @@
 #include <glad/glad.h>
 
 #include <chrono>
+#include <cstdlib>  // getenv (AUTOCAM_SWEPT_SKIP / _TUBE benchmark toggles)
 
+#include "voxelFile.hpp"
 #include "voxelViewer.hpp"
 #include "voxelizer.hpp"
 
@@ -30,6 +32,7 @@ BoolOps::BoolOps() {
   // shader2 = new Shader("shaders/subtract2.comp");          // Path to your compute shader file
   shader_flat = new Shader("shaders/subtract_flat.comp");            // per-step subtraction
   shader_swept = new Shader("shaders/subtract_swept.comp");          // swept-segment subtraction
+  shader_swept_ext = new Shader("shaders/subtract_swept_ext.comp");  // two-pass external-buffer variant (benchmark)
   compressShader = new Shader("shaders/compress_transitions.comp");  // GPU compaction for copyback
 }
 
@@ -48,6 +51,8 @@ BoolOps::~BoolOps() {
   if (obj2_compressed) glDeleteBuffers(1, &obj2_compressed);
   if (obj2_prefix) glDeleteBuffers(1, &obj2_prefix);
   if (atomicCounter) glDeleteBuffers(1, &atomicCounter);
+  if (swept_flat) glDeleteBuffers(1, &swept_flat);
+  if (swept_dataNum) glDeleteBuffers(1, &swept_dataNum);
 
   // if (shader) {
   //   delete shader;
@@ -65,6 +70,10 @@ BoolOps::~BoolOps() {
     delete shader_swept;
     shader_swept = nullptr;
   }
+  if (shader_swept_ext) {
+    delete shader_swept_ext;
+    shader_swept_ext = nullptr;
+  }
   if (compressShader) {
     delete compressShader;
     compressShader = nullptr;
@@ -74,73 +83,19 @@ BoolOps::~BoolOps() {
 }
 
 bool BoolOps::load(const std::string& filename) {
-  std::ifstream file(filename, std::ios::binary);
-  if (!file) {
-#ifdef DEBUG_OUTPUT
-    std::cerr << "Failed to open file for reading: " << filename << std::endl;
-#endif
-    return false;
-  }
-
   VoxelObject obj;
-
-  // Read VoxelizationParams
-  file.read(reinterpret_cast<char*>(&obj.params), sizeof(VoxelizationParams));
-  if (!file) {
-#ifdef DEBUG_OUTPUT
-    std::cerr << "Failed to read params from file: " << filename << std::endl;
-#endif
-    return false;
-  }
-
-  // Read the rest of the file into memory
-  file.seekg(0, std::ios::end);                           // Move to the end of the file
-  size_t fileSize = file.tellg();                         // Get the size of the file
-  file.seekg(sizeof(VoxelizationParams), std::ios::beg);  // Move back to the position after params
-
-  size_t dataSize = 0;
-  size_t prefixSize = 0;
-
-  file.read(reinterpret_cast<char*>(&dataSize), sizeof(size_t));
-  file.read(reinterpret_cast<char*>(&prefixSize), sizeof(size_t));
-
-  if (!file) {
-#ifdef DEBUG_OUTPUT
-    std::cerr << "Failed to read data sizes from file: " << filename << std::endl;
-#endif
-    return false;
-  }
-
-  // Sanity check
-  if (fileSize != sizeof(VoxelizationParams) + 2 * sizeof(size_t) + dataSize + prefixSize) {
-#ifdef DEBUG_OUTPUT
-    std::cerr << "File size mismatch for " << filename << std::endl;
-#endif
-    return false;
-  } else {
-#ifdef DEBUG_OUTPUT
-    std::cout << "File size matches expected size." << std::endl;
-#endif
-  }
-
-  // Read the compressed data and prefix sum data
-  obj.compressedData.resize(dataSize / sizeof(GLuint));
-  obj.prefixSumData.resize(prefixSize / sizeof(GLuint));
-  file.read(reinterpret_cast<char*>(obj.compressedData.data()), dataSize);
-  file.read(reinterpret_cast<char*>(obj.prefixSumData.data()), prefixSize);
-  if (!file) {
-    std::cerr << "Failed to read data from file: " << filename << std::endl;
+  // The on-disk layout lives in voxelfile (versioned, self-describing header).
+  if (!voxelfile::read(filename, obj.params, obj.compressedData, obj.prefixSumData)) {
     return false;
   }
 
 #ifdef DEBUG_OUTPUT
-  std::cout << "fileSize: " << fileSize << std::endl;
   std::cout << "VoxelizationParams:" << std::endl;
   std::cout << "  resolutionXYZ: (" << obj.params.resolutionXYZ.x << ", " << obj.params.resolutionXYZ.y << ", " << obj.params.resolutionXYZ.z << ")"
             << std::endl;
   std::cout << "  resolution: " << obj.params.resolution << std::endl;
-  std::cout << "  dataSize: " << dataSize << std::endl;
-  std::cout << "  prefixSize: " << prefixSize << std::endl;
+  std::cout << "  dataSize: " << obj.compressedData.size() * sizeof(GLuint) << std::endl;
+  std::cout << "  prefixSize: " << obj.prefixSumData.size() * sizeof(GLuint) << std::endl;
 #endif
 
   this->objects.push_back(std::move(obj));
@@ -158,44 +113,8 @@ bool BoolOps::save(const std::string& filename, int idx) {
   }
 
   const VoxelObject& obj = this->objects[idx];
-
-  if (obj.compressedData.empty() || obj.prefixSumData.empty()) {
-    std::cerr << "No data to save. Run voxelization first." << std::endl;
-    return false;
-  }
-
-  std::ofstream file(filename, std::ios::binary);
-  if (!file) {
-    std::cerr << "Failed to open file for writing: " << filename << std::endl;
-    return false;
-  }
-
-  // Save params first
-  file.write(reinterpret_cast<const char*>(&obj.params), sizeof(VoxelizationParams));
-  if (!file) {
-    std::cerr << "Failed to write params to file: " << filename << std::endl;
-    return false;
-  }
-
-  size_t dataSize = obj.compressedData.size() * sizeof(GLuint);
-  size_t prefixSize = obj.prefixSumData.size() * sizeof(GLuint);
-
-  std::cout << "Data size write (compressedData): " << dataSize << " bytes\n";
-  std::cout << "Prefix size write (prefixSumData): " << prefixSize << " bytes\n";
-
-  file.write(reinterpret_cast<const char*>(&dataSize), sizeof(size_t));
-  file.write(reinterpret_cast<const char*>(&prefixSize), sizeof(size_t));
-
-  file.write(reinterpret_cast<const char*>(obj.compressedData.data()), dataSize);
-  file.write(reinterpret_cast<const char*>(obj.prefixSumData.data()), prefixSize);
-
-  if (!file) {
-    throw std::runtime_error("Failed to write data to file: " + filename);
-  }
-
-  file.close();
-
-  return true;
+  // The on-disk layout lives in voxelfile (versioned, self-describing header).
+  return voxelfile::write(filename, obj.params, obj.compressedData, obj.prefixSumData);
 }
 
 GLuint BoolOps::createBuffer(GLsizeiptr size, GLuint binding, GLenum usage) {
@@ -829,6 +748,11 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   deleteBuffer(obj2_compressed);
   deleteBuffer(obj2_prefix);
 
+  // External-buffer benchmark twins are (re)allocated lazily on first use, so a normal
+  // run never pays the extra 128 MB. Drop any from a previous session/object.
+  if (swept_flat) { glDeleteBuffers(1, &swept_flat); swept_flat = 0; }
+  if (swept_dataNum) { glDeleteBuffers(1, &swept_dataNum); swept_dataNum = 0; }
+
   // Create buffers
   // IN/OUT
   obj1_flat = createBuffer(unpacked.size() * sizeof(GLuint), 0, GL_DYNAMIC_COPY);
@@ -840,6 +764,15 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   debugCounter = createAtomicCounter(4);
   zeroAtomicCounter(debugCounter);  // Initialize atomic counter to zero
 #endif
+
+  // Per-segment removed-voxel accumulator for the swept shader's binding 4. Always
+  // present (size 1) so the binding is satisfied during normal carving; the fitness
+  // evaluator resizes it to one slot per segment via beginRemovedTracking().
+  deleteBuffer(removedBuf);
+  removedBuf = createBuffer(sizeof(GLuint), 4, GL_DYNAMIC_COPY);
+  zeroBuffer(removedBuf);
+  removedTracking = false;
+  removedCapacity = 1;
 
   loadBuffer(obj1_flat, unpacked);                   // Load data into the buffer
   loadBuffer(obj1_dataNum, dataNum);                 // Load valid data count into the buffer
@@ -870,11 +803,14 @@ bool BoolOps::subtractGPU_init(const VoxelObject& obj1, const VoxelObject& obj2)
   return true;
 }
 
-bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
+bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int segmentIndex) {
   if (objects.size() != 2) {
     std::cerr << "BoolOps::subtractSwept: Expected exactly 2 objects, got " << objects.size() << std::endl;
     return false;
   }
+  // Benchmark A/B: the "external buffer" baseline runs the two-pass materialize+subtract
+  // instead of this fused in-place kernel (see setExternalBuffer / --legacy-external-buffer).
+  if (useExternalBuffer_) return subtractSweptExternal(startOffset, displacement, segmentIndex);
   const VoxelObject& obj1 = objects[0];  // workpiece
   const VoxelObject& obj2 = objects[1];  // tool
 
@@ -891,6 +827,29 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
   // Sub-positions sampled at ~1-voxel spacing along the dominant axis.
   glm::ivec3 ad = glm::abs(tDelta);
   int K = glm::max(glm::max(ad.x, ad.y), ad.z);
+
+  // Benchmark toggle (host + shader): AUTOCAM_SWEPT_SKIP=0 = baseline, 1 = pruning (default).
+  static const int sweptSkip = [] {
+    const char* e = std::getenv("AUTOCAM_SWEPT_SKIP");
+    return (e && e[0] == '0') ? 0 : 1;
+  }();
+
+  // Benchmark toggle: AUTOCAM_SWEPT_ZEROFILL=0 drops the trailing zero-fill of unused
+  // column slots (byte-identical output, less write traffic on active columns); default 1.
+  static const int zeroFill = [] {
+    const char* e = std::getenv("AUTOCAM_SWEPT_ZEROFILL");
+    return (e && e[0] == '0') ? 0 : 1;
+  }();
+
+  // Whole-segment skip: if the tool's Z-extent over the segment cannot reach the
+  // stock's [0,z1) range (e.g. an in-air G0 rapid), the segment removes nothing —
+  // skip the entire dispatch, not just per column. Conservative (uses the full tool
+  // grid height z2), so it never skips a segment that could cut.
+  if (sweptSkip) {
+    long zA = tStart.z < tEnd.z ? tStart.z : tEnd.z;
+    long zB = tStart.z > tEnd.z ? tStart.z : tEnd.z;
+    if (zB + z2 / 2 <= 0 || zA - z2 / 2 >= z1) return true;
+  }
 
   // Swept bounding box in workpiece space (tool footprint over the whole segment).
   long minTx = glm::min(tStart.x, tEnd.x), maxTx = glm::max(tStart.x, tEnd.x);
@@ -915,11 +874,118 @@ bool BoolOps::subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement) {
   shader_swept->setIVec3("translateDelta", tDelta);
   shader_swept->setInt("numSubsteps", K);
 
+  // Per-segment removed-voxel tracking (fitness). When active, this segment's removed
+  // voxels are accumulated into removedCount[segmentIndex]; otherwise the shader skips
+  // the accumulation entirely (countRemoved = 0). Bind removedBuf so binding 4 is valid.
+  bool track = removedTracking && segmentIndex >= 0 && segmentIndex < removedCapacity && removedBuf != 0;
+  shader_swept->setInt("countRemoved", track ? 1 : 0);
+  shader_swept->setInt("segmentIndex", track ? segmentIndex : 0);
+  if (removedBuf != 0) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, removedBuf);
+
+  shader_swept->setInt("enableSkip", sweptSkip);
+  shader_swept->setInt("tiled", 0);  // flat row-major addressing (sparse backend uses tiled=1)
+  shader_swept->setInt("zeroFill", zeroFill);
+
   GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
   glDispatchCompute(gX, gY, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   return true;
+}
+
+bool BoolOps::subtractSweptExternal(glm::ivec3 startOffset, glm::ivec3 displacement, int segmentIndex) {
+  (void)segmentIndex;  // removed-voxel tracking is not needed for this benchmark path
+  if (objects.size() != 2) {
+    std::cerr << "BoolOps::subtractSweptExternal: Expected exactly 2 objects, got " << objects.size() << std::endl;
+    return false;
+  }
+  const VoxelObject& obj1 = objects[0];  // workpiece
+  const VoxelObject& obj2 = objects[1];  // tool
+
+  long w1 = obj1.params.resolutionXYZ.x, h1 = obj1.params.resolutionXYZ.y, z1 = obj1.params.resolutionXYZ.z;
+  long w2 = obj2.params.resolutionXYZ.x, h2 = obj2.params.resolutionXYZ.y, z2 = obj2.params.resolutionXYZ.z;
+
+  // Tool-center positions and substep count — identical to subtractSwept.
+  glm::ivec3 endOffset = startOffset + displacement;
+  glm::ivec3 tStart(w1 / 2 + startOffset.x, h1 / 2 + startOffset.y, z1 / 2 - startOffset.z);
+  glm::ivec3 tEnd(w1 / 2 + endOffset.x, h1 / 2 + endOffset.y, z1 / 2 - endOffset.z);
+  glm::ivec3 tDelta = tEnd - tStart;
+  glm::ivec3 ad = glm::abs(tDelta);
+  int K = glm::max(glm::max(ad.x, ad.y), ad.z);
+
+  // Swept bounding box (same as the fused path). No whole-segment air-skip and no
+  // per-column pruning here: this is the pre-pruning S1-class baseline, only un-fused.
+  long minTx = glm::min(tStart.x, tEnd.x), maxTx = glm::max(tStart.x, tEnd.x);
+  long minTy = glm::min(tStart.y, tEnd.y), maxTy = glm::max(tStart.y, tEnd.y);
+  long baseX = glm::clamp(minTx - w2 / 2, 0L, w1);
+  long endX = glm::clamp(maxTx + w2 / 2, 0L, w1);
+  long baseY = glm::clamp(minTy - h2 / 2, 0L, h1);
+  long endY = glm::clamp(maxTy + h2 / 2, 0L, h1);
+  if (endX <= baseX || endY <= baseY) return true;  // swept tool entirely outside the workpiece
+
+  // Lazily allocate the external swept-volume buffer — a full-size twin of obj1_flat.
+  // This extra 128 MB (for the reference stock) is exactly the resident-memory cost the
+  // fused path avoids; allocating it once (reused across segments) is the fair, optimized
+  // version of "materialize the swept volume then subtract it".
+  if (swept_flat == 0) {
+    swept_flat = createBuffer((GLsizeiptr)unpacked.size() * sizeof(GLuint), 6, GL_DYNAMIC_COPY);
+    swept_dataNum = createBuffer((GLsizeiptr)dataNum.size() * sizeof(GLuint), 7, GL_DYNAMIC_COPY);
+    std::cout << "[carve] external-buffer swept twin allocated: "
+              << (unpacked.size() * sizeof(GLuint)) / (1024.0 * 1024.0) << " MB (extra resident memory)\n";
+  }
+
+  shader_swept_ext->use();
+  // Bind the workpiece, tool and swept-scratch buffers to their slots (defensive: the
+  // fused path binds removed-tracking at 4 and copyback rebinds 2/3).
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, obj1_flat);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, obj1_dataNum);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, obj2_compressed);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, obj2_prefix);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, swept_flat);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, swept_dataNum);
+
+  shader_swept_ext->setInt("w1", w1);
+  shader_swept_ext->setInt("h1", h1);
+  shader_swept_ext->setInt("z1", z1);
+  shader_swept_ext->setInt("w2", w2);
+  shader_swept_ext->setInt("h2", h2);
+  shader_swept_ext->setInt("z2", z2);
+  shader_swept_ext->setUInt("maxTransitions", MAX_TRANSITIONS);
+  shader_swept_ext->setInt("baseX", (int)baseX);
+  shader_swept_ext->setInt("baseY", (int)baseY);
+  shader_swept_ext->setIVec3("translateStart", tStart);
+  shader_swept_ext->setIVec3("translateDelta", tDelta);
+  shader_swept_ext->setInt("numSubsteps", K);
+
+  GLuint gX = (GLuint)((endX - baseX + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+  GLuint gY = (GLuint)((endY - baseY + WORKGROUPS_FLAT - 1) / WORKGROUPS_FLAT);
+
+  // Pass 0: materialize the swept envelope into the external buffer.
+  shader_swept_ext->setInt("pass", 0);
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  // Pass 1: subtract the materialized swept volume from the workpiece, in place.
+  shader_swept_ext->setInt("pass", 1);
+  glDispatchCompute(gX, gY, 1);
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  return true;
+}
+
+void BoolOps::beginRemovedTracking(int nSegments) {
+  int n = nSegments > 1 ? nSegments : 1;
+  deleteBuffer(removedBuf);
+  removedBuf = createBuffer((GLsizeiptr)n * sizeof(GLuint), 4, GL_DYNAMIC_COPY);
+  zeroBuffer(removedBuf);
+  removedCapacity = n;
+  removedTracking = true;
+}
+
+std::vector<GLuint> BoolOps::readRemovedPerSegment() {
+  if (removedBuf == 0 || removedCapacity <= 0) return {};
+  // Ensure every swept dispatch's atomicAdd is complete and visible to the client read.
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+  glFinish();
+  return readBuffer(removedBuf, removedCapacity);
 }
 
 void BoolOps::subtractGPU_copyback(VoxelObject& out) {

@@ -10,18 +10,24 @@
 #include "meshLoader.hpp"
 #include "meshTypes.hpp"
 
-// Parameters for voxelization
+// Parameters for voxelization (the persisted record for a voxel object).
+// CANONICAL scale fields: `resolution` (mm per voxel), `resolutionXYZ` (grid size)
+// and `center` (bbox centre, mm); physical extent = resolutionXYZ * resolution.
+// `scale`/`zSpan` are DERIVED — kept only for the voxelizer's internal slicing pass
+// and the raymarch shader box. Read scale/units through CoordinateSystem
+// (coordinateSystem.hpp), not these directly. See DOCS/MANUAL.md
+// ("Scale, unità e sistemi di coordinate").
 struct VoxelizationParams {
-  float resolution = 0.1;                                   // Resolution referred to the units of the model (agnostic with reference to which units are used)
-  glm::ivec3 resolutionXYZ = glm::ivec3(1024, 1024, 1024);  // Resolution in pixels for each axis
+  float resolution = 0.1;                                   // CANONICAL: mm per voxel (object units; unit-agnostic)
+  glm::ivec3 resolutionXYZ = glm::ivec3(1024, 1024, 1024);  // CANONICAL: grid size in voxels per axis
 
   int slicesPerBlock = 32;
   size_t maxMemoryBudgetBytes = 512 * 1024 * 1024;  // 512 MB
   int maxTransitionsPerZColumn = 32;
-  glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);  // Default color (white)
-  float zSpan = 1.0f;
-  glm::vec3 center = glm::vec3(0.0f, 0.0f, 0.0f);  // Center of the mesh in world coordinates
-  float scale = 1.0f;                              // Scale factor for normalization, used to fit the mesh in the voxel grid
+  glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);   // Default color (white)
+  float zSpan = 1.0f;                              // DERIVED: normalized Z extent (resolutionXYZ.z*resolution*scale); shader box only
+  glm::vec3 center = glm::vec3(0.0f, 0.0f, 0.0f);  // CANONICAL: bbox centre in world mm
+  float scale = 1.0f;                              // DERIVED: 1/max(sizeX,sizeY) mm; slicing/normalization pass only
 
   bool preview = false;  // Whether to render a preview during voxelization
 };

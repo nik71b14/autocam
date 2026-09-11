@@ -1,0 +1,74 @@
+// GPU Marching Cubes — Pass B: emit shared vertices.
+// One thread per padded lattice point. For each of the point's 3 active edges it
+// writes one vertex (interleaved pos+normal, stride 6 floats) at the slot assigned
+// by the edge prefix-sum. Vertex position = edge midpoint in mm; normal = the
+// (smooth) negated gradient of the occupancy field, averaged over the two edge
+// endpoints — shared across triangles, so shading is smooth.
+#version 460 core
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(std430, binding = 0) readonly buffer TransitionBuffer { uint transitions[]; };
+layout(std430, binding = 1) readonly buffer PrefixSumBuffer { uint prefixSums[]; };
+layout(std430, binding = 2) readonly buffer EdgeFlagBuffer { uint edgeFlag[]; };
+layout(std430, binding = 3) readonly buffer EdgeVertexIndexBuffer { uint edgeVertexIndex[]; };
+layout(std430, binding = 4) writeonly buffer VertexBuffer { float vbo[]; };  // interleaved pos.xyz, normal.xyz
+
+uniform ivec3 resolution;
+uniform ivec3 pointDims;
+uniform int step;
+uniform int zBase;      // global virtual-Z offset of this (slab's) local Z=0; -1 for single-shot
+uniform vec3 originMm;  // world-mm corner of voxel (0,0,0)
+uniform vec3 stepMm;    // voxelSizeMm * step
+
+bool occAt(ivec3 g) {
+  if (g.x < 0 || g.y < 0 || g.z < 0 || g.x >= resolution.x || g.y >= resolution.y || g.z >= resolution.z) return false;
+  int ci = g.y * resolution.x + g.x;
+  uint start = prefixSums[ci];
+  uint end = (uint(ci) + 1u < prefixSums.length()) ? prefixSums[ci + 1] : uint(transitions.length());
+  bool inside = false;
+  for (uint i = start; i < end && i < transitions.length(); ++i) {
+    if (g.z < int(transitions[i])) break;
+    inside = !inside;
+  }
+  return inside;
+}
+bool occPoint(ivec3 p) { return occAt((p + ivec3(-1, -1, zBase)) * step); }
+float fOcc(ivec3 p) { return occPoint(p) ? 1.0 : 0.0; }
+
+// Central-difference gradient of the occupancy field at a lattice point.
+vec3 grad(ivec3 p) {
+  return vec3(fOcc(p + ivec3(1, 0, 0)) - fOcc(p - ivec3(1, 0, 0)), fOcc(p + ivec3(0, 1, 0)) - fOcc(p - ivec3(0, 1, 0)),
+              fOcc(p + ivec3(0, 0, 1)) - fOcc(p - ivec3(0, 0, 1)));
+}
+
+vec3 worldPos(ivec3 p) { return originMm + vec3(p + ivec3(-1, -1, zBase)) * stepMm; }
+
+void writeVertex(uint vIdx, vec3 pos, vec3 nrm) {
+  uint o = 6u * vIdx;
+  vbo[o + 0u] = pos.x;
+  vbo[o + 1u] = pos.y;
+  vbo[o + 2u] = pos.z;
+  vbo[o + 3u] = nrm.x;
+  vbo[o + 4u] = nrm.y;
+  vbo[o + 5u] = nrm.z;
+}
+
+void main() {
+  ivec3 p = ivec3(gl_GlobalInvocationID);
+  if (p.x >= pointDims.x || p.y >= pointDims.y || p.z >= pointDims.z) return;
+  int base = (p.z * pointDims.y + p.y) * pointDims.x + p.x;
+
+  const ivec3 axes[3] = ivec3[](ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(0, 0, 1));
+  for (int a = 0; a < 3; ++a) {
+    if (edgeFlag[base * 3 + a] == 0u) continue;
+    ivec3 p1 = p + axes[a];
+    uint vIdx = edgeVertexIndex[base * 3 + a];
+    vec3 pos = worldPos(p) + 0.5 * stepMm * vec3(axes[a]);
+    // Outward normal: occupancy increases inward, so negate the gradient. Average
+    // the gradient at the two endpoints for a smoother, shared normal.
+    vec3 g = grad(p) + grad(p1);
+    float l = length(g);
+    vec3 nrm = (l > 1e-12) ? (-g / l) : vec3(axes[a]);
+    writeVertex(vIdx, pos, nrm);
+  }
+}

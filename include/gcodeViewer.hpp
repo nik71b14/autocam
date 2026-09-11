@@ -2,9 +2,13 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <memory>
 #include <vector>
 
 #include "boolOps.hpp"
+#include "carveBackend.hpp"
+#include "coordinateSystem.hpp"
+#include "voxelFile.hpp"
 #include "gcode.hpp"
 #include "gcode_params.hpp"
 #include "shader.hpp"
@@ -13,6 +17,14 @@
 // Enums
 enum class ProjectionType { ORTHOGRAPHIC, PERSPECTIVE };
 enum class VOType { WORKPIECE, TOOL };
+
+// How to interpret the numeric X/Y/Z in the G-code program:
+//   MM    - millimetres in world space (canonical, physically correct). Converted
+//           to stock voxels host-side via the stock CoordinateSystem; requires the
+//           tool and stock to share a voxel size.
+//   VOXEL - raw stock voxel indices (legacy). 1 G-code unit == 1 stock voxel. Kept
+//           for the original sample programs (e.g. gcode/square_600.gcode).
+enum class GcodeUnits { MM, VOXEL };
 
 struct GLFWwindow;  // Forward declaration for GLFW window to avoid prbles with glad/glad.h
 
@@ -25,9 +37,20 @@ class GcodeViewer {
   void drawFrame();
   void carve(glm::vec3 pos);
   // Subtract the volume swept by the tool along the linear segment p0 -> p1 in one dispatch.
-  void carveSwept(glm::vec3 p0, glm::vec3 p1);
+  // When per-segment removed-voxel tracking is active, pass this segment's index so the
+  // carver records how many voxels it removed (see beginRemovedTracking).
+  void carveSwept(glm::vec3 p0, glm::vec3 p1, int segmentIndex = -1);
   // Block until all queued GPU carving work has completed (for timing/sync).
   void finishGPU();
+
+  // Benchmark A/B: route swept carving through the two-pass external-buffer path
+  // (--legacy-external-buffer). Flat backend only; no effect on the sparse backend.
+  void setExternalBuffer(bool b) { ops.setExternalBuffer(b); }
+
+  // --- Per-segment material-removal tracking (fitness evaluator) ------------------
+  void beginRemovedTracking(int nSegments) { ops.beginRemovedTracking(nSegments); }
+  void endRemovedTracking() { ops.endRemovedTracking(); }
+  std::vector<GLuint> readRemovedPerSegment() { return ops.readRemovedPerSegment(); }
 
   // Set Voxelized Objects
   void setWorkpiece(std::string workpiecePath);
@@ -36,20 +59,25 @@ class GcodeViewer {
   void setToolPosition(const glm::vec3& pos);
   void setProjectionType(ProjectionType type) { projectionType = type; };
 
-  void copyBack() {
-    // Copy back the voxelized workpiece data after carving
-    ops.subtractGPU_copyback(ops.getObjects()[0]);  // Copy back from GPU to CPU
-  }
-  VoxelObject getWorkpiece() const {
-    if (ops.getObjects().empty()) {
-      throw std::runtime_error("No workpiece voxel object loaded.");
-    }
-    return ops.getObjects()[0];  // Return the first object (workpiece)
-  }
+  // G-code unit handling (see GcodeUnits). Defaults: VOXEL, zero work offset.
+  void setGcodeUnits(GcodeUnits u) { gcodeUnits = u; }
+  void setWorkOffsetMm(const glm::vec3& mm) { workOffsetMm = mm; }
+  // Validate the stock/tool pairing for the active units mode. In MM mode the
+  // voxel sizes MUST match (the integer GPU kernels add tool transitions straight
+  // into stock indices); returns false with an explanatory error if they differ.
+  // In VOXEL mode it only warns on a mismatch, since that mode is grid-index only.
+  // Call after setWorkpiece()+setTool(), before carving.
+  bool checkUnitsConsistency() const;
 
-  // Save the carved workpiece (object 0) to a .bin voxel file.
-  // Call after copyBack() so the CPU-side data is populated.
-  bool saveWorkpiece(const std::string& path) { return ops.save(path, 0); }
+  // Assemble the carved result from the active backend (flat: GPU readback; sparse:
+  // tiled assembly) into resultVO. Call once after finishGPU(), before getWorkpiece().
+  void copyBack() { carveBackend->readResult(resultVO); }
+  VoxelObject getWorkpiece() const { return resultVO; }
+
+  // Save the carved workpiece to a .bin voxel file. Call after copyBack().
+  bool saveWorkpiece(const std::string& path) {
+    return voxelfile::write(path, resultVO.params, resultVO.compressedData, resultVO.prefixSumData);
+  }
 
  private:
   void init();
@@ -65,6 +93,11 @@ class GcodeViewer {
   glm::vec3 toolPosition;
   glm::mat4 projection, view;
   ProjectionType projectionType = ProjectionType::ORTHOGRAPHIC;  // Default to orthographic projection
+
+  // G-code unit interpretation. VOXEL (default) reproduces the legacy behaviour
+  // where a G-code number is a stock voxel index; MM treats it as world mm.
+  GcodeUnits gcodeUnits = GcodeUnits::VOXEL;
+  glm::vec3 workOffsetMm = glm::vec3(0.0f);  // G-code origin offset from the stock centre, in mm (MM mode only)
 
   void checkContext();
   void createShaders();
@@ -141,6 +174,10 @@ class GcodeViewer {
   // Boolean operations for voxel objects
   // BoolOps* ops = nullptr;  // Boolean operations for voxel objects
   BoolOps ops;
+  // Runtime-selected carve backend (env AUTOCAM_CARVE_BACKEND=flat|sparse); "flat"
+  // forwards to `ops` unchanged. See DOCS/DEV_PLAN/sparse-tile-carve-plan.md.
+  std::unique_ptr<ICarveBackend> carveBackend;
+  VoxelObject resultVO;  // carved result assembled by carveBackend->readResult() (copyBack)
 
   void initVO(const std::string& path, VOType type);
 

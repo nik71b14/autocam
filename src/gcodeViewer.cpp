@@ -3,12 +3,15 @@
 #include <GLFW/glfw3.h>
 #include <glad/glad.h>
 
+#include <cstdlib>  // getenv (AUTOCAM_CARVE_BACKEND)
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 #include "boolOps.hpp"
 #include "meshLoader.hpp"
 #include "shader.hpp"
+#include "sparseTileBackend.hpp"
 
 GcodeViewer::GcodeViewer(GLFWwindow* window, const std::vector<GcodePoint>& toolpath) : window(window), toolPosition(0.0f), path(toolpath) { init(); }
 
@@ -44,6 +47,21 @@ void GcodeViewer::checkContext() {
 
 void GcodeViewer::init() {
   checkContext();
+
+  // Select the carve backend at runtime (A/B without git). Default: flat. The
+  // sparse tiled backend is added in later stages; until then "sparse" warns and
+  // falls back to flat, so the toggle is wired end-to-end with no behaviour change.
+  {
+    const char* be = std::getenv("AUTOCAM_CARVE_BACKEND");
+    std::string bn = be ? be : "flat";
+    if (bn == "sparse") {
+      carveBackend = std::make_unique<SparseTileBackend>();
+    } else {
+      if (bn != "flat") std::cout << "[carve] unknown AUTOCAM_CARVE_BACKEND='" << bn << "'; using flat.\n";
+      carveBackend = std::make_unique<FlatCarveBackend>(ops);
+    }
+    std::cout << "[carve] backend: " << carveBackend->name() << "\n";
+  }
 
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
@@ -132,6 +150,11 @@ bool GcodeViewer::shouldClose() const { return glfwWindowShouldClose(window); }
 
 void GcodeViewer::pollEvents() { glfwPollEvents(); }
 
+// NOTE: drawFrame() (and the draw* helpers it calls) is the interactive GcodeViewer
+// display path. It is currently DEAD CODE — `simulate` uses GcodeViewer only as the
+// carving controller and hands display to VoxelViewer (see simulate_mode.cpp). Kept
+// as the basis for a future combined toolpath+workpiece viewer; if revived, the
+// toolpath must be reconciled to the same mm/voxel space as the workpiece.
 void GcodeViewer::drawFrame() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -506,7 +529,7 @@ void GcodeViewer::initVO(const std::string& path, VOType type) {
 
     std::cout << "Tool loaded: " << path << std::endl;
 
-    ops.subtractGPU_init(ops.getObjects()[0], ops.getObjects()[1]);  //@@@ MOVE TO A MORE SUITED POSITION TO ALLOW RESET, TOOL CHANGE, ETC.
+    carveBackend->prepare(ops.getObjects()[0], ops.getObjects()[1]);  // flat: subtractGPU_init; sparse: build tiles
 
     return;
   }
@@ -599,13 +622,11 @@ void GcodeViewer::drawWorkpieceVO() {
   shader_raymarching->setInt("maxTransitions", params.maxTransitionsPerZColumn);
   shader_raymarching->setFloat("normalizedZSpan", params.zSpan);
 
-  // Compute model matrix, scaling back based on params.scale
-  glm::mat4 model = glm::mat4(1.0f);
-  if (this->projectionType == ProjectionType::ORTHOGRAPHIC) {
-    model = glm::scale(model, glm::vec3(1.0f / params.scale));
-    model = glm::translate(model, params.center * params.scale);  // Put the object at the correct, original position
-  }
-
+  // Place/size the workpiece in mm via the canonical transform. (This supersedes the
+  // old ortho-only `scale(1/params.scale)` hack, which distorted non-square footprints.)
+  // NB: this GcodeViewer display path (drawFrame) is currently unused — VoxelViewer is
+  // the live viewer; kept here so a future interactive GcodeViewer uses the same maths.
+  const glm::mat4 model = CoordinateSystem::fromParams(params).renderModelMatrix();
   glm::mat4 viewProj = projection * view * model;
   glm::mat4 invViewProj = glm::inverse(viewProj);
 
@@ -629,11 +650,14 @@ void GcodeViewer::initWorkpieceVO(const std::string& path) { initVO(path, VOType
 void GcodeViewer::initToolVO(const std::string& path) { initVO(path, VOType::TOOL); }
 
 void GcodeViewer::carve(glm::vec3 pos) {
-  //@@@ DEBUG
-  // std::cout << "Carve position: (" << pos.x << ", " << pos.y << ", " << pos.z << ")" << std::endl;
-
-  glm::vec3 carvePosition = pos - glm::vec3(0.0f, 0.0f, 0.0f);  //@@@ DEBUG Adjust position to center the tool
-  ops.subtractGPU(carvePosition);
+  // Convert the toolpath position into the carving offset (tool-centre displacement
+  // from the stock centre, in stock voxels). MM mode goes through the stock
+  // CoordinateSystem (mm -> voxels); VOXEL mode keeps the legacy truncation so the
+  // grid-index sample programs carve exactly as before.
+  glm::ivec3 offset = (gcodeUnits == GcodeUnits::MM)
+                          ? CoordinateSystem::fromParams(params).mmDisplacementToVoxels(workOffsetMm + pos)
+                          : glm::ivec3(pos);  // legacy: truncate toward zero
+  ops.subtractGPU(offset);
 
   //@@@ DEBUG: Increment a counter to track the number of carvings
   carvingCounter++;
@@ -681,14 +705,50 @@ void GcodeViewer::carve(glm::vec3 pos) {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, workpieceVO_prefixSumBuffer);
 }
 
-void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1) {
+void GcodeViewer::carveSwept(glm::vec3 p0, glm::vec3 p1, int segmentIndex) {
   // Subtract the volume swept by the tool along the segment p0 -> p1 in one dispatch.
-  glm::ivec3 startOffset = glm::ivec3(glm::round(p0));
-  glm::ivec3 displacement = glm::ivec3(glm::round(p1)) - startOffset;
-  ops.subtractSwept(startOffset, displacement);
+  // Endpoints are converted to carving offsets per the active units mode: MM goes
+  // through the stock CoordinateSystem; VOXEL keeps the legacy nearest-voxel round
+  // so the grid-index sample programs sweep exactly as before.
+  glm::ivec3 startOffset, endOffset;
+  if (gcodeUnits == GcodeUnits::MM) {
+    const CoordinateSystem stock = CoordinateSystem::fromParams(params);
+    startOffset = stock.mmDisplacementToVoxels(workOffsetMm + p0);
+    endOffset = stock.mmDisplacementToVoxels(workOffsetMm + p1);
+  } else {
+    startOffset = glm::ivec3(glm::round(p0));
+    endOffset = glm::ivec3(glm::round(p1));
+  }
+  // Routed through the selected carve backend (flat forwards to ops unchanged).
+  carveBackend->carveSwept(startOffset, endOffset - startOffset, segmentIndex);
 
   carvingCounter++;
   if (carvingCounter % 64 == 0) printCounter(carvingCounter);
 }
 
-void GcodeViewer::finishGPU() { glFinish(); }
+// See header. MM mode requires matching voxel sizes; VOXEL mode only warns.
+bool GcodeViewer::checkUnitsConsistency() const {
+  const auto& objs = ops.getObjects();
+  if (objs.size() < 2) {
+    std::cerr << "checkUnitsConsistency: workpiece and tool must both be loaded first." << std::endl;
+    return false;
+  }
+  const CoordinateSystem stock = CoordinateSystem::fromParams(objs[0].params);
+  const CoordinateSystem tool = CoordinateSystem::fromParams(objs[1].params);
+  if (stock.sameVoxelSizeAs(tool)) return true;
+
+  if (gcodeUnits == GcodeUnits::MM) {
+    std::cerr << "ERROR: tool and workpiece have different voxel sizes ("
+              << tool.voxelSizeMm.x << " vs " << stock.voxelSizeMm.x << " mm/voxel).\n"
+              << "       MM-unit carving needs them equal — re-voxelize the tool at the\n"
+              << "       stock resolution, e.g.  autocam voxelize <tool.stl> --res "
+              << stock.voxelSizeMm.x << std::endl;
+    return false;
+  }
+  std::cerr << "WARNING: tool voxel size " << tool.voxelSizeMm.x << " mm differs from stock "
+            << stock.voxelSizeMm.x << " mm; in VOXEL mode the tool is stamped 1 tool-voxel == 1 "
+            << "stock-voxel, so the physical cut size is not the tool's real size." << std::endl;
+  return true;
+}
+
+void GcodeViewer::finishGPU() { carveBackend->finish(); }

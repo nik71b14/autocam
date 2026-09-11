@@ -32,11 +32,22 @@ void printUsage() {
       "      Default output: test/<stlname>.bin\n\n"
       "  simulate --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin>\n"
       "           [--out <r.bin>] [--step <float>] [--perspective] [--no-view] [--legacy]\n"
+      "           [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>] [--smooth <int>]\n"
       "      Carve the workpiece along the G-code toolpath with the tool.\n"
       "      --no-view runs headless (no window); --out saves the carved result.\n"
-      "      --legacy uses per-step stamping instead of the swept subtraction.\n\n"
-      "  view <file.bin> [--ortho]\n"
-      "      Raymarch-view a .bin voxel object.\n\n"
+      "      --legacy uses per-step stamping instead of the swept subtraction.\n"
+      "      --legacy-external-buffer materializes the swept volume in a separate buffer\n"
+      "      and subtracts it in a second pass (A/B baseline for the fused in-place path).\n"
+      "      --mesh shows the result as a marching-cubes mesh (instead of raymarching);\n"
+      "      --out-mesh saves that mesh as a binary STL; --mesh-step N subsamples it;\n"
+      "      --smooth N adds N CPU Taubin smoothing passes (default 0); --cpu forces the\n"
+      "      CPU mesher (GPU marching cubes is the default).\n\n"
+      "  view <file.bin> [--ortho] [--mesh] [--out-mesh <file.stl>] [--mesh-step <int>] [--smooth <int>] [--cpu]\n"
+      "      Raymarch-view a .bin voxel object (or --mesh for a GPU marching-cubes mesh).\n\n"
+      "  fitness --gcode <f.gcode> --workpiece <w.bin> --tool <t.bin> --target <part.bin>\n"
+      "          [--config <fitness.conf>] [--gcode-units mm|voxel] [--work-origin x,y,z]\n"
+      "      Headless: carve the workpiece with the gene and score it against the target\n"
+      "      part (accuracy/time/safety). Prints raw metrics and a scalar fitness for the GA.\n\n"
       "  help, --help\n"
       "      Show this message.\n";
 }
@@ -44,7 +55,7 @@ void printUsage() {
 int main(int argc, char** argv) {
   // Valueless flags: tokens the parser must NOT treat as "--key <value>".
   const std::unordered_set<std::string> valuelessFlags = {
-      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--help"};
+      "--ortho", "--perspective", "--no-view", "--verbose", "--legacy", "--legacy-external-buffer", "--mesh", "--cpu", "--help"};
 
   try {
     CliArgs args = parseCli(argc, argv, valuelessFlags);
@@ -59,6 +70,7 @@ int main(int argc, char** argv) {
     if (args.command == "voxelize") return runVoxelize(args);
     if (args.command == "simulate") return runSimulate(args);
     if (args.command == "view") return runView(args);
+    if (args.command == "fitness") return runFitness(args);
 
     std::cerr << "Unknown command: '" << args.command << "'\n\n";
     printUsage();

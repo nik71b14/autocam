@@ -54,8 +54,26 @@ class BoolOps {
   bool subtractGPU(glm::ivec3 offset);
   // Subtract the volume swept by the tool along a linear segment (start -> start+displacement)
   // in a single dispatch. Requires subtractGPU_init() to have been called.
-  bool subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement);
+  // If removed-voxel tracking is active (see beginRemovedTracking) and segmentIndex >= 0,
+  // the shader accumulates the voxels removed by this segment into removedCount[segmentIndex].
+  bool subtractSwept(glm::ivec3 startOffset, glm::ivec3 displacement, int segmentIndex = -1);
   void subtractGPU_copyback(VoxelObject& outData);
+
+  // Benchmark A/B: route subtractSwept through the two-pass "external buffer" path
+  // (materialize the swept volume in a separate full-size buffer, THEN subtract it),
+  // instead of the fused in-place kernel. Isolates the cost of the fusion / no-buffer
+  // design (extra resident memory + an extra pass) — see shaders/subtract_swept_ext.comp
+  // and the --legacy-external-buffer flag. Off by default. Bit-exact with the fused
+  // S1 level (AUTOCAM_SWEPT_SKIP=0). Flat backend only.
+  void setExternalBuffer(bool b) { useExternalBuffer_ = b; }
+
+  // --- Per-segment material-removal tracking (used by the fitness evaluator) ------
+  // Allocate a GPU accumulator of `nSegments` counters and start tracking. Each
+  // subsequent subtractSwept(..., i) adds its removed voxels into slot i. Read them
+  // all back once with readRemovedPerSegment(). Off by default (zero carving cost).
+  void beginRemovedTracking(int nSegments);
+  void endRemovedTracking() { removedTracking = false; }
+  std::vector<GLuint> readRemovedPerSegment();
 
  private:
   std::vector<VoxelObject> objects;
@@ -85,6 +103,11 @@ class BoolOps {
   GLuint atomicCounter;
   GLuint debugCounter;
 
+  // Per-segment removed-voxel accumulator (SSBO at binding 4, one uint per segment).
+  GLuint removedBuf = 0;            // created in subtractGPU_init (size 1) / resized by beginRemovedTracking
+  bool removedTracking = false;     // gates the shader's atomicAdd via the countRemoved uniform
+  int removedCapacity = 0;          // number of segment slots currently allocated
+
   // Dispatch parameters
   GLuint groupsX;
   GLuint groupsY;
@@ -110,4 +133,14 @@ class BoolOps {
   GLuint readAtomicCounter(GLuint binding);
 
   bool unpackObject(const VoxelObject& obj, uint maxTransitions, std::vector<GLuint>& unpackedData, std::vector<GLuint>& validDataNum);
+
+  // Two-pass external-buffer variant of subtractSwept (see setExternalBuffer). Same
+  // signature so the flat backend routes to it transparently when the toggle is on.
+  bool subtractSweptExternal(glm::ivec3 startOffset, glm::ivec3 displacement, int segmentIndex = -1);
+
+  // --- External-buffer benchmark path (setExternalBuffer) --------------------------
+  Shader* shader_swept_ext = nullptr;  // two-pass materialize+subtract shader (benchmark only)
+  GLuint swept_flat = 0;               // external swept-volume buffer (binding 6); full-size twin of obj1_flat
+  GLuint swept_dataNum = 0;            // per-column count for the swept buffer (binding 7)
+  bool useExternalBuffer_ = false;     // when true, subtractSwept -> subtractSweptExternal
 };

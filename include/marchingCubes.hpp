@@ -33,6 +33,14 @@ class MarchingCubes {
 
   // Main API
   void go();
+
+  // Post-process to remove the "stepped" look: welds coincident vertices, applies
+  // `taubinIterations` of Taubin (lambda/mu) smoothing to the geometry, and assigns
+  // averaged per-vertex normals (so shading is smooth, not faceted). Call after go();
+  // welding + averaged normals happen even at taubinIterations == 0 (exact geometry,
+  // smooth shading). Higher iterations = smoother silhouette but rounder sharp edges.
+  void smooth(int taubinIterations);
+
   void saveStl(const std::string& filename) const;
 
   // Getters
@@ -45,8 +53,13 @@ class MarchingCubes {
   void setTriangles(const std::vector<int>& triangles);
   void setNormals(const std::vector<float>& normals);
 
+  // Subsampling: sample one voxel every `s` along each axis (s >= 1). Higher = a
+  // coarser, lighter, faster mesh. Default 1 = full resolution. Set before go().
+  void setStep(int s);
+
  private:
   const VoxelObject* voxelObj = nullptr;
+  int step = 1;
 
   std::vector<float> verticesFlat;
   std::vector<int> trianglesFlat;
