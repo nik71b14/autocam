@@ -324,13 +324,13 @@ the grid depth z1 used as the clamping bound in §3.6 and §4.4.
 
 \begin{center}\includegraphics[width=6.26806in,height=2.63889in]{figures/image1.png}\end{center}
 
-\textbf{Fig.
+{\small \textbf{Fig.
 1} The single-axis dexel (Z-transition column) representation. A column
 stores the sorted heights at which occupancy flips; two flat arrays
 encode the whole object, and occupancy at any voxel is recovered by a
 parity walk. Storage scales with the complexity of the boundary rather
 than with the enclosed volume, and any Boolean operation becomes a merge
-of sorted lists, independent per column
+of sorted lists, independent per column}
 
 The whole object is a struct VoxelObject, used for both stock and tool,
 consisting of two flat arrays. Columns are addressed by the linear index
@@ -442,12 +442,12 @@ relates to that limit and to the stamper.
 
 \begin{center}\includegraphics[width=6.26806in,height=2.60069in]{figures/image3.png}\end{center}
 
-\textbf{Fig.
+{\small \textbf{Fig.
 2} Stamping versus swept subtraction. Left: many overlapping stamps
 along the path: a coarse step leaves a stepped floor and re-processes
 each column many times (the tool is a ball-end mill: hemisphere tip plus
 shank). Right: a single subtraction of the swept volume, one pass with a
-step-free floor
+step-free floor}
 
 \hypertarget{swept-segment-subtraction}{%
 \subsubsection{3.2 Swept-segment
@@ -496,7 +496,7 @@ stock at every instant.
 
 
 
-\textbf{Fig. 3} The per-column Z-envelope. The three panels share one
+{\small \textbf{Fig. 3} The per-column Z-envelope. The three panels share one
 vertical Z scale. (a) Vertical section through the tool axis: the
 ball-end mill at three sub-steps over one fixed stock column, with the
 shank rising out of the workpiece. Each sub-step meets the column at its
@@ -507,7 +507,7 @@ Because the tool moves by at most one voxel per sub-step, consecutive
 intervals overlap and their union is again one interval: the envelope
 {[}zbMin, shankTop{]}. (c) The envelope is subtracted from the column in
 place, the shank-top transition being clamped away because it lies above
-z\_top, leaving {[}0, zbMin{]}
+z\_top, leaving {[}0, zbMin{]}}
 
 A single fused compute shader accumulates this envelope in registers as
 it walks only the sub-positions that overlap the column, then subtracts
@@ -578,7 +578,7 @@ still rewrites its slots (Fig. 4c).
 
 
 
-\textbf{Fig. 4} Tube pruning. (a) A long diagonal segment seen from
+{\small \textbf{Fig. 4} Tube pruning. (a) A long diagonal segment seen from
 above: the dispatch AABB (dashed) is far larger than the swept band it
 contains, and the off-band columns are no-ops that the baseline still
 rewrites. (b) Columns written per segment, with and without pruning, in
@@ -587,7 +587,7 @@ leaves the off-band columns untouched, so the result is byte-identical.
 (c) In-air rapids are the extreme case: the removed interval lies
 entirely outside the stock\textquotesingle s Z-range, so every column is
 skipped and the whole segment is dropped on the host. Panels (a) and (c)
-correspond to the two branches of the same early-out
+correspond to the two branches of the same early-out}
 
 The solution is a single early-out in the shader (§4.4): before the
 merge and write-back, the shader returns when the tool never covers the
@@ -702,14 +702,14 @@ against the workgroup rounding.
 
 
 
-\textbf{Fig. 5} Mapping compute threads onto the workpiece column grid.
+{\small \textbf{Fig. 5} Mapping compute threads onto the workpiece column grid.
 (a) The host restricts the dispatch to the swept bounding box, the AABB
 of the segment endpoints dilated by F/2 and clamped to the grid, giving
 the origin (baseX, baseY) and the size bboxW × bboxH. (b) The box is
 tiled into ⌈bboxW/8⌉ × ⌈bboxH/8⌉ workgroups of 8×8 threads; rounding up
 overshoots, so the last workgroups cover columns outside the box, and
 those past the edge of the workpiece return immediately. (c) Each thread
-handles one column, recovered from its global invocation ID
+handles one column, recovered from its global invocation ID}
 
 \hypertarget{the-subtract_swept-shader-step-by-step}{%
 \subsubsection{4.4 The subtract\_swept shader, step by
@@ -772,13 +772,13 @@ the large obj1\_flat buffer is read once and written once per column.
 
 
 
-\textbf{Fig. 6} Per-thread control flow of subtract\_swept.comp, with
+{\small \textbf{Fig. 6} Per-thread control flow of subtract\_swept.comp, with
 the step numbers of §4.4. One GPU thread handles one column, and every
 column of the swept bounding box runs this independently. The two exits
 leave without writing: the first on the workgroup rounding overhang past
 the edge of the workpiece (§4.3), the second on the tube-pruning
 early-out of step 5 (§3.6), which is what removes the write-back of step
-7 for columns the tool never touches
+7 for columns the tool never touches}
 
 Two design points matter for performance. The merge is in place: the
 column is read once and written once, with no round-trip through an
@@ -1050,7 +1050,7 @@ on the axis-aligned control, from the naive stamper (S0) to this
 work\textquotesingle s pruned kernel (S3). The memory side is
 consolidated in §6.3 and the sparse tiled working set in §6.2.
 
-\textbf{Table 1} Tube pruning on the two diagonal stress benchmarks: net
+{\small \textbf{Table 1} Tube pruning on the two diagonal stress benchmarks: net
 carving time (ms), Intel Lunar Lake / iris, mean of ten interleaved
 campaigns ± population sd (§5.4), S2 and S3 byte-identical. "S2 swept"
 is the fused baseline of §3.3; "S3 +pruning" is this work. diag\_cut
@@ -1059,7 +1059,7 @@ the whole-dispatch air-skip of in-air rapids. The axis-aligned control,
 whose dispatch bounding box already nearly matches the swept band with
 the 256-voxel tool, is the four-level ablation of Table 2; with the
 32-voxel tool the same per-column skip test costs at most ≈8 \% on dense
-rasters (Table 3).
+rasters (Table 3).}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.4384}}
@@ -1088,20 +1088,20 @@ air\_moves (mill\_3, air-heavy) & 39.0 ± 1.9 & 5.3 ± 0.4 & 7.45× \\
 
 
 
-\textbf{Fig. 7} Tube pruning on the stress benchmarks, normalized to the
+{\small \textbf{Fig. 7} Tube pruning on the stress benchmarks, normalized to the
 fused S2 baseline; shorter is faster. Net carving time, Intel Lunar Lake
 / iris, mean of ten campaigns (§5.4), byte-identical output. S3 wins
 large on diagonal cutting (diag\_cut) and in-air work (air\_moves); the
 axis-aligned control (square\_600) barely moves - 1.15× here (Table 2),
 because with the 256-voxel tool the dispatch bounding box already nearly
-matches the swept band. Mean of ten campaigns ± sd (§5.4)
+matches the swept band. Mean of ten campaigns ± sd (§5.4)}
 
 Table 2 gives the four-level end-to-end ablation on the axis-aligned
 control, from the naive stamper (S0) through the two established swept
 baselines (S1, S2) to this work\textquotesingle s pruned kernel (S3), in
 net carving and in total wall time including read-back.
 
-\textbf{Table 2} Four-level ablation on the control (square\_600,
+{\small \textbf{Table 2} Four-level ablation on the control (square\_600,
 mill\_10): net carving and total time including read-back, mean of ten
 interleaved campaigns ± population sd (§5.4). S1--S3 are byte-identical;
 S0 is a coarse, differently-sampled reference, not a geometric ground
@@ -1110,7 +1110,7 @@ including read-back), and the fusion step S1→S2 is 1.54 ± 0.03×. Pruning
 on this axis-aligned control (S2→S3) is a modest 1.15 ± 0.02× as
 measured inside the sweep, rising to 1.25 ± 0.01× in a standalone high-N
 run (N = 30 per campaign) that removes the clock recovery the long S0
-stage affords between swept runs (§5.4).
+stage affords between swept runs (§5.4).}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3999}}
@@ -1185,12 +1185,12 @@ step, S1→S2. The three swept levels (S1--S3) are byte-identical to one
 another; S0 is a timing and behavioural reference, not a geometric
 ground truth (§4.6).
 
-\textbf{Table 3} Net carving time (ms) per machining workload and
+{\small \textbf{Table 3} Net carving time (ms) per machining workload and
 refinement level (32-voxel tool; mean of ten interleaved campaigns ±
 population sd, cross-campaign CV ≤ 6\% (§5.4), Intel iris; swept levels
 byte-identical, S0 a coarse reference not a ground truth). S1→S2 is the
 fusion / no-external-buffer gain (this work); S2→S3 is pruning (this
-work); S0→S3 is overall.
+work); S0→S3 is overall.}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 14\tabcolsep) * \real{0.1942}}
@@ -1262,13 +1262,13 @@ pays where the dispatch over-covers. Reproducible via
 
 \begin{center}\includegraphics[width=6.26806in,height=4.53333in]{figures/image14.png}\end{center}
 
-\textbf{Fig.
+{\small \textbf{Fig.
 8} Net carving time per machining workload and refinement level (log
 scale). S0→S1 is the established per-move swept method; S1→S2 is this
 work's fusion - the swept volume computed on the fly and subtracted in
 place instead of via a separate buffer (≈1.2-2.5×, and it halves
 resident memory); S2→S3 is this work's tube-pruning + in-air skip, which
-pays where the dispatch over-covers (45° raster 2.41×, air-heavy 1.93×)
+pays where the dispatch over-covers (45° raster 2.41×, air-heavy 1.93×)}
 
 \hypertarget{working-set-a-sparse-tiled-study}{%
 \subsubsection{6.2 Working-set: a sparse tiled
@@ -1302,8 +1302,8 @@ hold and move. Table 4 consolidates the footprint and data-movement
 figures introduced piecemeal above (§3.3, §3.5, §6.2) for the reference
 stock.
 
-\textbf{Table 4} Resident footprint and data movement, per level
-(reference stock)
+{\small \textbf{Table 4} Resident footprint and data movement, per level
+(reference stock)}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2247}}
@@ -1374,7 +1374,7 @@ On the fused kernel (pruning off) it removes real write traffic. Table 5
 gives one interleaved session with three configurations side by side, so
 every comparison below can be checked against it directly.
 
-\textbf{Table 5} The zero-fill lever and the best available
+{\small \textbf{Table 5} The zero-fill lever and the best available
 configuration, from one interleaved loop within the campaign (32-voxel
 tool, net carving ms, mean of ten campaigns ± sd, §5.4). Absolute times
 differ from Tables 2--3 because this loop interleaves only cheap swept
@@ -1382,7 +1382,7 @@ configs, so the GPU stays in a hotter clock state (§5.4); the
 comparisons of interest are within this table. The two S2 columns are
 byte-identical (verified by a \texttt{.bin} diff). The pruned kernel
 without zero-fill was measured in the same campaign and is discussed in
-the text.
+the text.}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2499}}
